@@ -1,0 +1,31 @@
+name: Build Bat TV GeckoView Android TV APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-geckoview-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Dependencies & Build Bat TV Web Bundle
+        run: |
+          npm install
+          npm run build
+
+      - name: Upload Bat TV Ready-to-Use Release Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatTV-GeckoView-Release
+          path: |
+            dist/
+            android-geckoview/

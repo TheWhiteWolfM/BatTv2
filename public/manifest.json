@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "Bat TV — Navegador Ligero para Google TV",
+  "short_name": "Bat TV",
+  "description": "Navegador ultra ligero y optimizado para Chromecast con Google TV 1080p y Onn TV, con uBlock Origin, Popup Blocker (strict) y Violentmonkey preinstalados.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0D0E12",
+  "theme_color": "#0F0B24",
+  "icons": [
+    {
+      "src": "/assets/aistudio/file_0000000004d881f583380aa06d6466dd_ffbd0340.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/aistudio/file_0000000004d881f583380aa06d6466dd_ffbd0340.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
