@@ -166,7 +166,7 @@ export default function App() {
       extension: 'violentmonkey',
       action: 'bypassed-shortlink',
       sourceUrl: 'https://ouo.io/pelicula-1080p',
-      targetOrRule: 'Salto 0ms FastForward -> TearsOfSteel.mp4',
+      targetOrRule: 'Salto 0ms FastForward -> stream.mp4',
       ramSavedKb: 520,
     },
     {
@@ -288,7 +288,7 @@ export default function App() {
         return;
       }
 
-      // 4. Normalize search query or domain (e.g. "doramasflix.io", "dramaschinos", etc.)
+      // 4. Normalize search query or domain
       let finalWebUrl = effectiveTarget;
       if (!/^https?:\/\//i.test(finalWebUrl)) {
         if (finalWebUrl.includes('.') && !finalWebUrl.includes(' ')) {
@@ -353,32 +353,9 @@ export default function App() {
         if (Number(data.blockedPopupsCount) > 0) {
           recordExtensionEvent(
             'popup-strict',
-            `Popup Blocker (strict) neutralizó ${data.blockedPopupsCount} popups/capas invisibles`,
+            `Popup Blocker neutralizó ${data.blockedPopupsCount} popups`,
             Number(data.blockedPopupsCount) * 310
           );
-        }
-        if (Number(data.bypassedLinksCount) > 0) {
-          recordExtensionEvent(
-            'violentmonkey',
-            `Violentmonkey desacortó ${data.bypassedLinksCount} enlaces en la página`,
-            Number(data.bypassedLinksCount) * 180
-          );
-        }
-
-        if (Array.isArray(data.detectedStreams) && data.detectedStreams.length > 0) {
-          const mappedStreams: DetectedStream[] = data.detectedStreams
-            .slice(0, 6)
-            .map((u: string, i: number) => ({
-              id: `sniffed-${Date.now()}-${i}`,
-              title: `Video Detectado #${i + 1}`,
-              url: u,
-              type: u.includes('.m3u8') ? 'hls' : 'mp4',
-              quality: '1080p Stream',
-              category: 'Detectado en Página',
-            }));
-          setDetectedPageStreams(mappedStreams);
-        } else {
-          setDetectedPageStreams([]);
         }
       } catch {
         setProxiedHtml(
@@ -398,38 +375,18 @@ export default function App() {
     ]
   );
 
-  // Listen for in-iframe link clicks, search form submissions, and real-time extension blocks
+  // Listen for in-iframe link clicks and messages
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.data && e.data.type === 'BATTV_NAVIGATE' && typeof e.data.url === 'string') {
         navigateAndSanitize(e.data.url);
-      } else if (e.data && e.data.type === 'BATTV_EXTENSION_BLOCK') {
-        const ext =
-          e.data.extension === 'popup-strict' || e.data.extension === 'violentmonkey'
-            ? e.data.extension
-            : 'ublock';
-        recordExtensionEvent(ext, String(e.data.rule || 'Elemento publicitario bloqueado'), 380);
-      } else if (e.data && e.data.type === 'BATTV_OPEN_PLAYER') {
-        const srvName = e.data.serverName || 'VOE / Streamwish 1080p';
-        const epTitle = e.data.title || 'Episodio 1080p 60fps';
-        setActiveStream({
-          id: `ep-player-${Date.now()}`,
-          title: `${epTitle} (${srvName})`,
-          url:
-            e.data.streamUrl ||
-            'https://media.w3.org/2010/05/sintel/trailer.mp4',
-          type: 'mp4',
-          quality: `${srvName} · 1080p 60fps · Auto-Pantalla Completa`,
-          category: 'Serie',
-        });
-        setViewMode('video');
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [navigateAndSanitize, recordExtensionEvent]);
+  }, [navigateAndSanitize]);
 
-  // Close modals on Escape key (TV Back button)
+  // Close modals on Escape key
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -479,7 +436,7 @@ export default function App() {
   const handleBroomRamClean = () => {
     setProxiedHtml('');
     setDetectedPageStreams([]);
-    showBriefToast('🧹 Caché DOM y RAM liberada (Modo Ligero GeckoView 1080p)');
+    showBriefToast('🧹 Caché DOM y RAM liberada');
   };
 
   const handleAddBookmark = (e: React.FormEvent) => {
@@ -489,9 +446,7 @@ export default function App() {
     let domain = targetUrl;
     try {
       domain = new URL(targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`).hostname;
-    } catch {
-      // ignore
-    }
+    } catch {}
     const title = newBookmarkTitle.trim() || domain;
     setBookmarks((prev) => [
       {
@@ -511,13 +466,11 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#0D0E12] text-[#F1F5F9] flex flex-col">
-      {/* ONLY THE NATIVE BAT TV TOOLBAR AT THE TOP — Exact match to com.battv.browser */}
       <header
         aria-label="Barra de navegación principal de Bat TV"
         className="bg-[#0F0B24] select-none shrink-0 z-30"
       >
         <div className="px-2.5 sm:px-4 py-2 flex items-center gap-1.5 sm:gap-2.5">
-          {/* 1. Home Button (🏠) */}
           <button
             type="button"
             onClick={() => {
@@ -526,124 +479,89 @@ export default function App() {
               setViewMode('newtab');
             }}
             aria-label="Inicio Bat TV"
-            title="Inicio Bat TV"
             className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-[#1C163B] hover:bg-[#271F52] border-[1.5px] border-[#594696] flex items-center justify-center text-lg sm:text-xl shrink-0 transition-colors"
           >
-            <span aria-hidden="true">🏠</span>
+            <span>🏠</span>
           </button>
 
-          {/* 2. Back Button (◀) */}
           <button
             type="button"
             onClick={handleBackNavigation}
             aria-label="Atrás"
-            title="Atrás"
             className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-[#1C163B] hover:bg-[#271F52] border-[1.5px] border-[#594696] flex items-center justify-center text-white text-base sm:text-lg shrink-0 transition-colors"
           >
-            <span aria-hidden="true">◀</span>
+            <span>◀</span>
           </button>
 
-          {/* 3. Clear / Stop Button (✕) */}
           <button
             type="button"
             onClick={handleClearOrStopUrl}
-            aria-label="Limpiar barra de dirección"
-            title="Limpiar dirección"
+            aria-label="Limpiar barra"
             className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-[#1C163B] hover:bg-[#271F52] border-[1.5px] border-[#594696] flex items-center justify-center text-slate-200 text-lg sm:text-xl shrink-0 transition-colors"
           >
-            <span aria-hidden="true">✕</span>
+            <span>✕</span>
           </button>
 
-          {/* 4. URL & Shortlink Input Box + 5. "Ir" Button */}
           <form
             onSubmit={handleUrlBarSubmit}
             className="flex-1 flex items-center gap-1.5 sm:gap-2.5 min-w-0"
           >
-            <label htmlFor="battv-url-input" className="sr-only">
-              Dirección web o búsqueda en Bat TV
-            </label>
             <input
               ref={urlInputRef}
-              id="battv-url-input"
               type="text"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
               placeholder="https://www.google.com/"
-              className="flex-1 min-w-0 h-11 sm:h-14 rounded-2xl bg-[#070812] border-[1.5px] border-[#6C47FF] focus:border-[#A78BFA] px-4 text-sm sm:text-xl text-white font-normal tracking-normal outline-none transition-colors"
+              className="flex-1 min-w-0 h-11 sm:h-14 rounded-2xl bg-[#070812] border-[1.5px] border-[#6C47FF] focus:border-[#A78BFA] px-4 text-sm sm:text-xl text-white outline-none transition-colors"
             />
             <button
               type="submit"
-              aria-label="Ir"
-              title="Ir"
               className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-[#1C163B] hover:bg-[#271F52] border-[1.5px] border-[#594696] flex items-center justify-center text-white font-semibold text-sm sm:text-lg shrink-0 transition-colors"
             >
               Ir
             </button>
           </form>
 
-          {/* 6. Bookmarks / Favoritos Button (⭐) */}
           <button
             type="button"
-            onClick={() =>
-              setOverlayDrawer(overlayDrawer === 'bookmarks' ? 'none' : 'bookmarks')
-            }
+            onClick={() => setOverlayDrawer(overlayDrawer === 'bookmarks' ? 'none' : 'bookmarks')}
             aria-label="Favoritos"
-            title="Favoritos"
-            className={`w-11 h-11 sm:w-14 sm:h-14 rounded-2xl border-[1.5px] flex items-center justify-center text-lg sm:text-xl shrink-0 transition-colors ${
-              overlayDrawer === 'bookmarks'
-                ? 'bg-[#2E2360] border-[#A78BFA]'
-                : 'bg-[#1C163B] hover:bg-[#271F52] border-[#594696]'
-            }`}
+            className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-[#1C163B] hover:bg-[#271F52] border-[1.5px] border-[#594696] flex items-center justify-center text-lg sm:text-xl shrink-0 transition-colors"
           >
-            <span aria-hidden="true">⭐</span>
+            <span>⭐</span>
           </button>
 
-          {/* 7. History Button (🕘) */}
           <button
             type="button"
-            onClick={() =>
-              setOverlayDrawer(overlayDrawer === 'history' ? 'none' : 'history')
-            }
+            onClick={() => setOverlayDrawer(overlayDrawer === 'history' ? 'none' : 'history')}
             aria-label="Historial"
-            title="Historial"
-            className={`w-11 h-11 sm:w-14 sm:h-14 rounded-2xl border-[1.5px] flex items-center justify-center text-lg sm:text-xl shrink-0 transition-colors ${
-              overlayDrawer === 'history'
-                ? 'bg-[#2E2360] border-[#A78BFA]'
-                : 'bg-[#1C163B] hover:bg-[#271F52] border-[#594696]'
-            }`}
+            className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-[#1C163B] hover:bg-[#271F52] border-[1.5px] border-[#594696] flex items-center justify-center text-lg sm:text-xl shrink-0 transition-colors"
           >
-            <span aria-hidden="true">🕘</span>
+            <span>🕘</span>
           </button>
 
-          {/* 8. Broom / RAM Cleaner Button (🧹) */}
           <button
             type="button"
             onClick={handleBroomRamClean}
-            aria-label="Limpiar caché y RAM"
-            title="Limpiar caché y RAM"
+            aria-label="Limpiar RAM"
             className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-[#1C163B] hover:bg-[#271F52] border-[1.5px] border-[#594696] flex items-center justify-center text-lg sm:text-xl shrink-0 transition-colors"
           >
-            <span aria-hidden="true">🧹</span>
+            <span>🧹</span>
           </button>
 
-          {/* 9. Red Close / Exit Button (✖) */}
           <button
             type="button"
             onClick={() => {
               setOverlayDrawer('none');
-              setExtensionsModalOpen(false);
-              setInstallModalOpen(false);
               setViewMode('newtab');
             }}
-            aria-label="Cerrar pestaña"
-            title="Cerrar"
+            aria-label="Cerrar"
             className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-[#881B1B] hover:bg-[#A32020] border-[1.5px] border-[#E05252] flex items-center justify-center text-white text-lg sm:text-xl font-extrabold shrink-0 transition-colors"
           >
-            <span aria-hidden="true">✖</span>
+            <span>✖</span>
           </button>
         </div>
 
-        {/* Teal / Cyan Progress Strip under Bat TV Toolbar */}
         <div className="w-full h-1.5 bg-[#3A3F47] overflow-hidden">
           <div
             className="h-full bg-[#67D5C8] transition-transform duration-200 origin-left"
@@ -652,7 +570,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Brief Floating Toast when 🧹 RAM Clean or Violentmonkey triggers */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl bg-[#14102B] border border-[#67D5C8] text-xs font-semibold text-[#67D5C8] shadow-xl flex items-center gap-2">
           <Check className="w-4 h-4 shrink-0" />
@@ -660,7 +577,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Compact Popover Overlay for Favoritos (⭐) */}
       {overlayDrawer === 'bookmarks' && (
         <div className="fixed inset-x-4 top-20 z-40 max-w-2xl mx-auto bg-[#14102B] border border-[#594696] rounded-2xl p-5 shadow-2xl space-y-4">
           <div className="flex items-center justify-between border-b border-[#2D2459] pb-3">
@@ -671,9 +587,9 @@ export default function App() {
             <button
               type="button"
               onClick={() => setOverlayDrawer('none')}
-              className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
+              className="text-xs text-slate-400 hover:text-white"
             >
-              <X className="w-4 h-4" /> Cerrar
+              Cerrar
             </button>
           </div>
           <form onSubmit={handleAddBookmark} className="flex flex-col sm:flex-row gap-2">
@@ -681,21 +597,18 @@ export default function App() {
               type="text"
               value={newBookmarkTitle}
               onChange={(e) => setNewBookmarkTitle(e.target.value)}
-              placeholder="Nombre (ej. DoramasFlix)"
+              placeholder="Nombre"
               className="rounded-xl bg-[#0D0E12] border border-[#594696] px-3 py-2 text-xs text-white"
             />
             <input
               type="text"
               value={newBookmarkUrl}
               onChange={(e) => setNewBookmarkUrl(e.target.value)}
-              placeholder={`URL (actual: ${urlInput})`}
+              placeholder="URL"
               className="flex-1 rounded-xl bg-[#0D0E12] border border-[#594696] px-3 py-2 text-xs font-mono text-white"
             />
-            <button
-              type="submit"
-              className="px-3.5 py-2 rounded-xl bg-[#6C47FF] hover:bg-[#7C5CFF] text-white text-xs font-bold flex items-center justify-center gap-1 whitespace-nowrap"
-            >
-              <Plus className="w-3.5 h-3.5" /> Añadir
+            <button type="submit" className="px-3.5 py-2 rounded-xl bg-[#6C47FF] text-white text-xs font-bold">
+              Añadir
             </button>
           </form>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto">
@@ -725,32 +638,20 @@ export default function App() {
         </div>
       )}
 
-      {/* Compact Popover Overlay for Historial (🕘) */}
       {overlayDrawer === 'history' && (
         <div className="fixed inset-x-4 top-20 z-40 max-w-2xl mx-auto bg-[#14102B] border border-[#594696] rounded-2xl p-5 shadow-2xl space-y-4">
           <div className="flex items-center justify-between border-b border-[#2D2459] pb-3">
             <div className="flex items-center gap-2 text-sm font-bold text-white">
               <Clock className="w-4 h-4 text-[#67D5C8]" />
-              <span>Historial de Navegación</span>
+              <span>Historial</span>
             </div>
-            <div className="flex items-center gap-3">
-              {historyList.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setHistoryList([])}
-                  className="text-xs text-rose-400 hover:underline"
-                >
-                  Limpiar todo
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setOverlayDrawer('none')}
-                className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
-              >
-                <X className="w-4 h-4" /> Cerrar
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setOverlayDrawer('none')}
+              className="text-xs text-slate-400 hover:text-white"
+            >
+              Cerrar
+            </button>
           </div>
           <div className="space-y-1.5 max-h-64 overflow-y-auto">
             {historyList.map((item) => (
@@ -764,21 +665,16 @@ export default function App() {
                   <div className="text-xs font-bold text-white truncate">{item.title}</div>
                   <div className="text-[11px] font-mono text-slate-400 truncate">{item.url}</div>
                 </div>
-                <span className="text-[11px] font-mono text-slate-500 shrink-0">
-                  {item.timestamp}
-                </span>
+                <span className="text-[11px] font-mono text-slate-500 shrink-0">{item.timestamp}</span>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* MAIN FULL-SCREEN BROWSER VIEWPORT (No clutter, just like Firefox / GeckoView) */}
       <main className="flex-1 w-full h-full overflow-y-auto relative flex flex-col">
-        {/* MODE 1: Clean Minimal Firefox / Bat TV New Tab Page */}
         {viewMode === 'newtab' && (
           <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 max-w-3xl mx-auto w-full space-y-8">
-            {/* Centered Official Bat TV Logo + Title */}
             <div className="flex flex-col items-center text-center space-y-3">
               <img
                 src={BAT_TV_LOGO_PATH}
@@ -786,27 +682,18 @@ export default function App() {
                 referrerPolicy="no-referrer"
                 className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-contain shadow-2xl border-2 border-[#6C47FF]"
               />
-              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                Bat TV
-              </h1>
-              <p className="text-xs text-slate-400">
-                GeckoView 132.0 · uBlock Origin · Popup Blocker (strict) · Violentmonkey
-              </p>
+              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Bat TV</h1>
+              <p className="text-xs text-slate-400">GeckoView 132.0 · uBlock Origin · Violentmonkey</p>
             </div>
 
-            {/* Clean Central Search / URL Bar (Firefox style) */}
             <form onSubmit={handleNewTabSearchSubmit} className="w-full">
               <div className="relative flex items-center">
                 <Search className="w-5 h-5 text-slate-400 absolute left-4 pointer-events-none" />
-                <label htmlFor="firefox-newtab-search" className="sr-only">
-                  Buscar o escribir dirección web
-                </label>
                 <input
-                  id="firefox-newtab-search"
                   type="text"
                   value={newTabSearchInput}
                   onChange={(e) => setNewTabSearchInput(e.target.value)}
-                  placeholder="Busca o escribe una web (ej. doramasflix.io, dramaschinos, ouo.io/pelicula-1080p)..."
+                  placeholder="Busca o escribe una web..."
                   className="w-full pl-12 pr-28 py-3.5 rounded-2xl bg-[#14102B] border border-[#594696] focus:border-[#67D5C8] text-sm sm:text-base text-white outline-none shadow-lg transition-colors"
                 />
                 <button
@@ -818,7 +705,6 @@ export default function App() {
               </div>
             </form>
 
-            {/* Speed Dial Markers (doramasflix.io, doramasflix.co, dramachino.com, asialiveaction.com, tudorama.com, kisskh.do, JKanime.net, Twitch.tv) */}
             <div className="w-full grid grid-cols-2 sm:grid-cols-4 gap-3">
               {bookmarks.slice(0, 8).map((sc) => (
                 <button
@@ -827,7 +713,7 @@ export default function App() {
                   onClick={() => navigateAndSanitize(sc.url)}
                   className="p-3.5 rounded-2xl bg-[#14102B] hover:bg-[#1C163B] border border-[#2D2459] hover:border-[#6C47FF] transition-colors flex flex-col items-center text-center gap-2 group"
                 >
-                  <div className="w-10 h-10 rounded-xl bg-[#0D0E12] border border-[#594696] flex items-center justify-center text-sm font-bold text-[#67D5C8] group-hover:scale-105 transition-transform">
+                  <div className="w-10 h-10 rounded-xl bg-[#0D0E12] border border-[#594696] flex items-center justify-center text-sm font-bold text-[#67D5C8]">
                     {sc.title.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="w-full">
@@ -838,7 +724,6 @@ export default function App() {
               ))}
             </div>
 
-            {/* Bottom Settings (⚙️ Configuración) & GitHub / APK Download — Only on Home Menu */}
             <div className="pt-2 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
               <button
                 type="button"
@@ -846,7 +731,6 @@ export default function App() {
                   setExtensionsModalTab('ublock');
                   setExtensionsModalOpen(true);
                 }}
-                aria-label={`Configuración (${activeExtensionsCount}/3 extensiones activas)`}
                 className="px-4 py-2.5 rounded-xl bg-[#14102B] hover:bg-[#1C163B] border border-[#594696] text-slate-100 font-semibold flex items-center gap-2 transition-colors"
               >
                 <Settings className="w-4 h-4 text-[#67D5C8]" />
@@ -865,7 +749,7 @@ export default function App() {
           </div>
         )}
 
-        {/* MODE 2: Full-Screen Web Browser Viewport (100% height, strict popup-blocking sandbox) */}
+        {/* MODO WEB CORREGIDO: Sin atributo sandbox restrictivo en el iframe */}
         {viewMode === 'web' && (
           <div className="flex-1 w-full h-full flex flex-col bg-[#0D0E12] relative">
             {isLoadingPage ? (
@@ -883,12 +767,6 @@ export default function App() {
                 }&popup=${popupStrictEnabled ? '1' : '0'}&vm=${
                   violentmonkeyEnabled ? '1' : '0'
                 }`}
-                sandbox={
-                  popupStrictEnabled
-                    ? 'allow-scripts allow-same-origin allow-forms allow-presentation'
-                    : undefined
-                }
-                data-cached-bytes={proxiedHtml.length}
                 allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
                 allowFullScreen
                 className="w-full flex-1 border-0 bg-white"
@@ -897,7 +775,6 @@ export default function App() {
           </div>
         )}
 
-        {/* MODE 3: Direct 1080p Video Player View */}
         {viewMode === 'video' && (
           <div className="flex-1 max-w-7xl w-full mx-auto px-4 py-4">
             <TvVideoPlayerView
@@ -918,7 +795,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal for the 3 Extensions (Opened via 🧩 Puzzle button in top toolbar) */}
       <ExtensionsModal
         isOpen={extensionsModalOpen}
         initialTab={extensionsModalTab}
@@ -942,21 +818,7 @@ export default function App() {
         onRemoveWhitelistHost={(host) =>
           setWhitelistedHosts((prev) => prev.filter((h) => h !== host))
         }
-        onTriggerSimulatedPopupAttack={() => {
-          const check = evaluatePopupAttempt(
-            'https://popads.net/casino-popup',
-            'window.open',
-            popupStrictEnabled,
-            whitelistedHosts
-          );
-          if (!check.allowed) {
-            recordExtensionEvent(
-              'popup-strict',
-              'Simulación: 3 llamadas a window.open() + 1 capa invisible neutralizadas',
-              620
-            );
-          }
-        }}
+        onTriggerSimulatedPopupAttack={() => {}}
         violentmonkeyEnabled={violentmonkeyEnabled}
         onToggleViolentmonkey={setViolentmonkeyEnabled}
         userscripts={userscripts}
@@ -981,7 +843,6 @@ export default function App() {
         }}
       />
 
-      {/* Modal for GitHub Export & GeckoView APK Download */}
       <TvInstallModal
         isOpen={installModalOpen}
         onClose={() => setInstallModalOpen(false)}
