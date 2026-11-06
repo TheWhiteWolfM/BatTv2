@@ -1,0 +1,31 @@
+{
+  "manifest_version": 2,
+  "name": "Bat TV Shield (Anti-Popup + Shortlink Bypass + Auto-Fullscreen)",
+  "version": "2.4.0",
+  "description": "Extensión nativa integrada para GeckoView que bloquea window.open, capas invisibles de clickjacking y auto-expande reproductores en todos los frames.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "shield@battv.browser",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": [
+    "<all_urls>",
+    "webRequest",
+    "webRequestBlocking",
+    "storage",
+    "tabs"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_start.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ]
+}

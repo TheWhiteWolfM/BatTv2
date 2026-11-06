@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Search,
-  Play,
+  Settings,
   RotateCw,
   Check,
   Plus,
@@ -48,40 +48,52 @@ const BAT_TV_LOGO_PATH =
 
 const DEFAULT_SHORTCUTS: ShortcutItem[] = [
   {
-    id: 'sc-google',
-    title: 'Google',
-    domain: 'google.com',
-    url: 'https://www.google.com/',
+    id: 'sc-doramasflix-io',
+    title: 'doramasflix.io',
+    domain: 'doramasflix.io',
+    url: 'https://doramasflix.io/',
   },
   {
-    id: 'sc-doramasflix',
-    title: 'DoramasFlix',
+    id: 'sc-doramasflix-co',
+    title: 'doramasflix.co',
     domain: 'doramasflix.co',
     url: 'https://doramasflix.co/',
   },
   {
-    id: 'sc-dramaschinos',
-    title: 'Dramas Chinos (Viki)',
-    domain: 'viki.com',
-    url: 'https://www.viki.com/categories/country/mainland-china/genre/all',
+    id: 'sc-dramachino',
+    title: 'dramachino.com',
+    domain: 'dramachino.com',
+    url: 'https://dramachino.com/',
   },
   {
-    id: 'sc-pandrama',
-    title: 'Doramas & K-Dramas',
-    domain: 'es.wikipedia.org',
-    url: 'https://es.wikipedia.org/wiki/Drama_coreano',
+    id: 'sc-asialiveaction',
+    title: 'asialiveaction.com',
+    domain: 'asialiveaction.com',
+    url: 'https://asialiveaction.com/',
   },
   {
-    id: 'sc-pelicula-1080p',
-    title: 'Película 1080p (Test Bypass)',
-    domain: 'ouo.io',
-    url: 'https://ouo.io/pelicula-1080p',
+    id: 'sc-tudorama',
+    title: 'tudorama.com',
+    domain: 'tudorama.com',
+    url: 'https://tudorama.com/',
   },
   {
-    id: 'sc-directo-tv',
-    title: 'Directo TV 60fps',
-    domain: 'shrinkme.io',
-    url: 'https://shrinkme.io/directo-motor',
+    id: 'sc-kisskh',
+    title: 'kisskh.do',
+    domain: 'kisskh.do',
+    url: 'https://kisskh.do/',
+  },
+  {
+    id: 'sc-jkanime',
+    title: 'JKanime.net',
+    domain: 'jkanime.net',
+    url: 'https://jkanime.net/',
+  },
+  {
+    id: 'sc-twitch',
+    title: 'Twitch.tv 1080p60',
+    domain: 'twitch.tv',
+    url: 'https://www.twitch.tv/',
   },
 ];
 
@@ -107,20 +119,20 @@ export default function App() {
   const [historyList, setHistoryList] = useState<HistoryEntry[]>([
     {
       id: 'h-1',
-      title: 'Google',
-      url: 'https://www.google.com/',
+      title: 'DoramasFlix.io — Doramas Sub Español',
+      url: 'https://doramasflix.io/',
       timestamp: '15:53',
     },
     {
       id: 'h-2',
-      title: 'DoramasFlix — Series y Doramas Online',
-      url: 'https://doramasflix.co/',
+      title: 'KissKH.do — Asian Dramas & Movies 1080p',
+      url: 'https://kisskh.do/',
       timestamp: '15:51',
     },
     {
       id: 'h-3',
-      title: 'Dramas Chinos — Rakuten Viki',
-      url: 'https://www.viki.com/categories/country/mainland-china/genre/all',
+      title: 'JKanime.net — Anime Online Full HD',
+      url: 'https://jkanime.net/',
       timestamp: '15:48',
     },
   ]);
@@ -282,7 +294,7 @@ export default function App() {
         if (finalWebUrl.includes('.') && !finalWebUrl.includes(' ')) {
           finalWebUrl = `https://${finalWebUrl}`;
         } else {
-          finalWebUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(finalWebUrl)}`;
+          finalWebUrl = `https://www.google.com/search?q=${encodeURIComponent(finalWebUrl)}`;
         }
       }
 
@@ -303,7 +315,7 @@ export default function App() {
             popupStrictEnabled,
             violentmonkeyEnabled,
             customRulesText,
-            lowRamStripAnimations: true,
+            lowRamStripAnimations: false,
           }),
         });
         const data = await response.json();
@@ -327,6 +339,30 @@ export default function App() {
         if (data.finalUrl) {
           setCurrentBrowserUrl(data.finalUrl);
           setUrlInput(data.finalUrl);
+        }
+
+        if (Number(data.blockedAdsCount) > 0) {
+          recordExtensionEvent(
+            'ublock',
+            `uBlock Origin bloqueó ${data.blockedAdsCount} scripts/capas publicitarias en ${
+              data.finalUrl || finalWebUrl
+            }`,
+            Number(data.blockedAdsCount) * 420
+          );
+        }
+        if (Number(data.blockedPopupsCount) > 0) {
+          recordExtensionEvent(
+            'popup-strict',
+            `Popup Blocker (strict) neutralizó ${data.blockedPopupsCount} popups/capas invisibles`,
+            Number(data.blockedPopupsCount) * 310
+          );
+        }
+        if (Number(data.bypassedLinksCount) > 0) {
+          recordExtensionEvent(
+            'violentmonkey',
+            `Violentmonkey desacortó ${data.bypassedLinksCount} enlaces en la página`,
+            Number(data.bypassedLinksCount) * 180
+          );
         }
 
         if (Array.isArray(data.detectedStreams) && data.detectedStreams.length > 0) {
@@ -362,16 +398,36 @@ export default function App() {
     ]
   );
 
-  // Listen for in-iframe link clicks and search form submissions posted by our GeckoView bridge
+  // Listen for in-iframe link clicks, search form submissions, and real-time extension blocks
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.data && e.data.type === 'BATTV_NAVIGATE' && typeof e.data.url === 'string') {
         navigateAndSanitize(e.data.url);
+      } else if (e.data && e.data.type === 'BATTV_EXTENSION_BLOCK') {
+        const ext =
+          e.data.extension === 'popup-strict' || e.data.extension === 'violentmonkey'
+            ? e.data.extension
+            : 'ublock';
+        recordExtensionEvent(ext, String(e.data.rule || 'Elemento publicitario bloqueado'), 380);
+      } else if (e.data && e.data.type === 'BATTV_OPEN_PLAYER') {
+        const srvName = e.data.serverName || 'VOE / Streamwish 1080p';
+        const epTitle = e.data.title || 'Episodio 1080p 60fps';
+        setActiveStream({
+          id: `ep-player-${Date.now()}`,
+          title: `${epTitle} (${srvName})`,
+          url:
+            e.data.streamUrl ||
+            'https://media.w3.org/2010/05/sintel/trailer.mp4',
+          type: 'mp4',
+          quality: `${srvName} · 1080p 60fps · Auto-Pantalla Completa`,
+          category: 'Serie',
+        });
+        setViewMode('video');
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [navigateAndSanitize]);
+  }, [navigateAndSanitize, recordExtensionEvent]);
 
   // Close modals on Escape key (TV Back button)
   useEffect(() => {
@@ -570,21 +626,7 @@ export default function App() {
             <span aria-hidden="true">🧹</span>
           </button>
 
-          {/* 9. Extensions Puzzle Button (🧩) */}
-          <button
-            type="button"
-            onClick={() => {
-              setExtensionsModalTab('ublock');
-              setExtensionsModalOpen(true);
-            }}
-            aria-label={`Extensiones (${activeExtensionsCount}/3)`}
-            title="Extensiones: uBlock Origin, Popup Blocker (strict) y Violentmonkey"
-            className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-[#3D143C] hover:bg-[#521B50] border-[1.5px] border-[#C84B9E] flex items-center justify-center text-lg sm:text-xl shrink-0 transition-colors"
-          >
-            <span aria-hidden="true">🧩</span>
-          </button>
-
-          {/* 10. Red Close / Exit Button (✖) */}
+          {/* 9. Red Close / Exit Button (✖) */}
           <button
             type="button"
             onClick={() => {
@@ -764,7 +806,7 @@ export default function App() {
                   type="text"
                   value={newTabSearchInput}
                   onChange={(e) => setNewTabSearchInput(e.target.value)}
-                  placeholder="Busca o escribe una web (ej. doramasflix.co, dramaschinos, ouo.io/pelicula-1080p)..."
+                  placeholder="Busca o escribe una web (ej. doramasflix.io, dramaschinos, ouo.io/pelicula-1080p)..."
                   className="w-full pl-12 pr-28 py-3.5 rounded-2xl bg-[#14102B] border border-[#594696] focus:border-[#67D5C8] text-sm sm:text-base text-white outline-none shadow-lg transition-colors"
                 />
                 <button
@@ -776,9 +818,9 @@ export default function App() {
               </div>
             </form>
 
-            {/* Compact Speed Dial Row (6 tiles, clean like Firefox Home) */}
-            <div className="w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-              {bookmarks.slice(0, 6).map((sc) => (
+            {/* Speed Dial Markers (doramasflix.io, doramasflix.co, dramachino.com, asialiveaction.com, tudorama.com, kisskh.do, JKanime.net, Twitch.tv) */}
+            <div className="w-full grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {bookmarks.slice(0, 8).map((sc) => (
                 <button
                   key={sc.id}
                   type="button"
@@ -796,12 +838,25 @@ export default function App() {
               ))}
             </div>
 
-            {/* Subtle Bottom Action for GitHub / APK Download */}
-            <div className="pt-2 flex flex-wrap items-center justify-center gap-4 text-xs text-slate-400">
+            {/* Bottom Settings (⚙️ Configuración) & GitHub / APK Download — Only on Home Menu */}
+            <div className="pt-2 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
+              <button
+                type="button"
+                onClick={() => {
+                  setExtensionsModalTab('ublock');
+                  setExtensionsModalOpen(true);
+                }}
+                aria-label={`Configuración (${activeExtensionsCount}/3 extensiones activas)`}
+                className="px-4 py-2.5 rounded-xl bg-[#14102B] hover:bg-[#1C163B] border border-[#594696] text-slate-100 font-semibold flex items-center gap-2 transition-colors"
+              >
+                <Settings className="w-4 h-4 text-[#67D5C8]" />
+                <span>Configuración ({activeExtensionsCount}/3 Extensiones Activas)</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setInstallModalOpen(true)}
-                className="px-3.5 py-2 rounded-xl bg-[#14102B] hover:bg-[#1C163B] border border-[#3B2E73] text-slate-200 flex items-center gap-2 transition-colors"
+                className="px-4 py-2.5 rounded-xl bg-[#14102B] hover:bg-[#1C163B] border border-[#3B2E73] text-slate-200 flex items-center gap-2 transition-colors"
               >
                 <Github className="w-4 h-4 text-[#67D5C8]" />
                 <span>Subir a GitHub / Descargar APK GeckoView</span>
@@ -810,26 +865,9 @@ export default function App() {
           </div>
         )}
 
-        {/* MODE 2: Full-Screen Web Browser Viewport (100% height, no chrome clutter) */}
+        {/* MODE 2: Full-Screen Web Browser Viewport (100% height, strict popup-blocking sandbox) */}
         {viewMode === 'web' && (
           <div className="flex-1 w-full h-full flex flex-col bg-[#0D0E12] relative">
-            {/* Floating Mini Button ONLY if a direct video stream (.m3u8 / .mp4) was sniffed on the page */}
-            {detectedPageStreams.length > 0 && (
-              <div className="absolute bottom-4 right-4 z-20">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveStream(detectedPageStreams[0]);
-                    setViewMode('video');
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-xl flex items-center gap-2"
-                >
-                  <Play className="w-4 h-4" />
-                  <span>Abrir Stream en Reproductor 1080p ({detectedPageStreams.length})</span>
-                </button>
-              </div>
-            )}
-
             {isLoadingPage ? (
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-3">
                 <RotateCw className="w-7 h-7 text-[#67D5C8] animate-spin" />
@@ -840,8 +878,19 @@ export default function App() {
             ) : (
               <iframe
                 title="Visor Web Bat TV GeckoView"
-                srcDoc={proxiedHtml}
-                sandbox="allow-same-origin allow-scripts allow-forms"
+                src={`/api/view?url=${encodeURIComponent(currentBrowserUrl)}&ublock=${
+                  ublockEnabled ? '1' : '0'
+                }&popup=${popupStrictEnabled ? '1' : '0'}&vm=${
+                  violentmonkeyEnabled ? '1' : '0'
+                }`}
+                sandbox={
+                  popupStrictEnabled
+                    ? 'allow-scripts allow-same-origin allow-forms allow-presentation'
+                    : undefined
+                }
+                data-cached-bytes={proxiedHtml.length}
+                allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+                allowFullScreen
                 className="w-full flex-1 border-0 bg-white"
               />
             )}
