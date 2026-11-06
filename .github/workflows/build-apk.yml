@@ -1,4 +1,4 @@
-Name: Build Bat TV GeckoView Android TV APK
+name: Build Bat TV GeckoView Android TV APK
 
 on:
   push:
