@@ -145,15 +145,15 @@ class BatTvGeckoViewManager(
      * PUNTO 1: Depuración e instalación garantizada de WebExtensions (uBlock Origin, Violentmonkey y BatTV Shield)
      */
     private fun setupWebExtensions(controller: WebExtensionController) {
-        // Auto-aprobar permisos de extensiones en GeckoView 132+
+        // Auto-aprobar permisos de extensiones utilizando InstallPromptResponse
         controller.promptDelegate = object : WebExtensionController.PromptDelegate {
             override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<out String>,
                 origins: Array<out String>
-            ): GeckoResult<WebExtension.PromptResponse>? {
+            ): GeckoResult<WebExtension.InstallPromptResponse>? {
                 Log.i(TAG, "Auto-aprobando permisos para extensión: ${extension.id}")
-                return GeckoResult.fromValue(WebExtension.PromptResponse(true))
+                return GeckoResult.fromValue(WebExtension.InstallPromptResponse(true))
             }
 
             override fun onOptionalPrompt(
