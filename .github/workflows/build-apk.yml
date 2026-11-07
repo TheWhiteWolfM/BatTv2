@@ -4,6 +4,7 @@ on:
   push:
     branches: [ "main", "master" ]
     paths:
+      - ".github/workflows/build.yml"
       - ".github/workflows/build-next.yml"
   workflow_dispatch:
     inputs:
@@ -24,6 +25,9 @@ jobs:
   build-apk:
     name: Compilar Bat TV Next (GeckoView nuevo / armeabi-v7a / JDK 21)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-geckoview
 
     steps:
       - name: 1. Clonar repositorio
@@ -40,7 +44,9 @@ jobs:
         run: |
           set +o pipefail
           set -e
+          # Conservar MainActivity.kt versionada en android-geckoview/app/src/main/java.
           rm -rf app/src/main/kotlin app/src/main/res
+          test -s app/src/main/java/com/tvbrowser/gecko/MainActivity.kt
           mkdir -p app/src/main/java/com/tvbrowser/gecko
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/assets/extensions/ublock
@@ -319,12 +325,13 @@ jobs:
             'dymsNtYljwuDpq5eZPUZBbOYrdN9vqZuedjNiNGelXsyVIWXA082Pa+9Y1j7ADyuMVM163qWT/HGBBfammzhgWiWycPdk28D4O7Jt0Us72SgsvkaBbMvW6cTAkzC/XKkhXs35my6+b4LVc2ia15oRI4HLh6k0PVi8uiwdZl6Aw+Zr+PGAiGguNiqO9Xso942NCxRNFFPns0StStfVl+cAUmMgtmTrdNJQNWauuWbEgYYaD8a49UePTtgTw4k10IseMNRV7T9MvUGHkopDKjNG3df2ZwfPXNMCRbfyp7HXZOnURdlH3VeGK21OJ2y8gB6gR9F7cCItmLvxpyGxd36n+QnJUuA58uAJ0OTzfTorIKophqvjR2wM3bAnvD28nBnjF4a2fJ+sqZueUO0jWIOKK2utJSvLWv/htN+adHm7KvcXW1nNB1SyhWB9oBnFHnpFoom6mOaaaLtYlKyAtBv2u6IHQah/u6jY0Ov1ppQkMV4KRvAna3TaYB31tQtL491XE0CV2qlLnnctMXdTEA/2QuITvt5NudOoastuOO0zTEYBElutzh7GC9lk5o2lhsLhJC04/LABeUargnD3sfmaVVXwgDeALxGYGW8/eMCfGzPDV1ry9rvBSrxv+PPq0seJ37X7oaUkEfHVKOIct1ZmC4hmDUxo2es2ykitXX7W9jTtJ0iffawbyo/5wm/qyJdypI7Gbytug4AK3DvmrrlXXE7cRM56OpKy2FgSWB7H+CTC/HQPCq0E7Pe5lFys2it1iFFTUciQT/naaFGvETgRkcAxvRkKdtVHbnAHutnYft/UFOpJNKRBByYxKys4iVr6pYfToSNmOiVW11p2QF8L+BYo4bJCIlo0OCNOtGtO+MIAhsNpHp5rUOi6WKNkiDXnXHIfiuoAokESq6BAXbWHae+96+y+rwB05Wysoq/99ieG3YkykUcjvxXV1peVkGMW6mEOu+DXRIHuyTqbZ6YoE81+6h1SMrf0Itg7fPn' \
             '94K2cUS+UjbZxoZWpc41JXtkeF/ei3dkiGvL2puANwI+0e1waTShvbtqM5YhzlLegSEBHgRz+FPrz72/mcbeoQhvThH4xd0PBnUShAaNSH4twaa8+mlq7vSlj+25YdivftKM5KirKy0frS1rv43Ay8cCECW91i3Eg6jubvdZ3REDjKBtDIuoL39yiKSOjmG5jBjqU14+Bnz+jaKpI375mDjSS7e60nIImK3Xut8KnIjgcGk8oV8u0hest3mUqerIBcUfxvKd4L+lQnVnVMKVRbqUxc664+oEWQic81umZM/skcIbsQJVEK3AfX+4vWWvw6X5BZDmcGk8ASWKsdRYmC6x49wl3jv1kVLcF5ETrzbFn2NET+JDg4fs74jwAsZtrSsu+wWMIleg/WBL9npgJv7Xa0oOl0Z0uDQeh0vjDVVjk62dPdbPONgVHm1lFYaab2gFkYji5CkATu6OlwLnOPNKwLtsBYaosR5YuLasXXkJbaBc8gRqTtHh0gg76477s/8igtKP9059REnRdcM+rso01WqL+hLaba0rruhLaDVc4ba60vIG8MbasvYHgUdUIOWoJwDieCk7oRefeQYyFT/aZZeCBoRUwEiXsnwqM9WEgHthW+uKL+U1yBq+pLa60vIq8OrasvY7gVX4R/s08hc/52nxjJeyfYCQLmWJNk8rtubmiFAdLg2NDa3YPK3YehVYar8mv4hbUgWK6gkFWeXl+27/+3wRd2hbddOWycDCxobWbwNTCTwdFaWc8sU4XyHKeQ8AxycUZL3b2NC6bVvrin+MV8FHaguz/pg7oSBrOvC1xobWoB8jSPAjgn6MYEJB1se25uYjrzd+/x/3xwjiqDO9saE16Ocwomyq/BzGhIKsL8r33W77qs/9/wPDFlfWR7tJ4QAAAABJRU5ErkJgggCGktzu96kUyAABoDSINAAA7QhnhbHEZ/sCAAAAAARZWg==' | base64 -d | xz -d > app/src/main/res/drawable/ic_bat_logo.png
 
-      - name: 5. Usar MainActivity.kt versionada en el repositorio
+      - name: 5. Usar MainActivity.kt versionada en android-geckoview
         shell: bash
         run: |
           set -e
+          echo "Directorio de trabajo: $(pwd)"
           test -s app/src/main/java/com/tvbrowser/gecko/MainActivity.kt
-          echo "Se conserva la MainActivity.kt del repositorio para que las correcciones no se sobrescriban."
+          echo "Se conserva la MainActivity.kt versionada en android-geckoview."
 
       - name: 6. Generar Motor de Scripts Multimedia de Bat TV 20.32
         shell: bash
@@ -606,4 +613,4 @@ jobs:
         with:
           name: BatTV-Next-APK
           retention-days: 1
-          path: BatTV-Next-*-armeabi-v7a.apk
+          path: android-geckoview/BatTV-Next-*-armeabi-v7a.apk
