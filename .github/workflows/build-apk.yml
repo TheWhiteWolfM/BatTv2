@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/build.yml"
       - ".github/workflows/build-next.yml"
+      - ".github/workflows/build-apk.yml"
+      - "android-geckoview/**"
   workflow_dispatch:
     inputs:
       gecko_version:
@@ -44,10 +46,16 @@ jobs:
         run: |
           set +o pipefail
           set -e
-          # Conservar MainActivity.kt versionada en android-geckoview/app/src/main/java.
+          # Conservar MainActivity.kt versionada en android-geckoview/app/src/main/java/com/battv/browser.
           rm -rf app/src/main/kotlin app/src/main/res
-          test -s app/src/main/java/com/tvbrowser/gecko/MainActivity.kt
-          mkdir -p app/src/main/java/com/tvbrowser/gecko
+          MAIN_KT="app/src/main/java/com/battv/browser/MainActivity.kt"
+          if [ ! -s "$MAIN_KT" ]; then
+            echo "::error::No se encontró MainActivity.kt en: $(pwd)/$MAIN_KT"
+            echo "Archivos Kotlin disponibles:"
+            find app/src/main/java -type f -name '*.kt' -print || true
+            exit 1
+          fi
+          mkdir -p app/src/main/java/com/battv/browser
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/assets/extensions/ublock
           mkdir -p app/src/main/assets/extensions/violentmonkey
@@ -330,7 +338,11 @@ jobs:
         run: |
           set -e
           echo "Directorio de trabajo: $(pwd)"
-          test -s app/src/main/java/com/tvbrowser/gecko/MainActivity.kt
+          if [ ! -s app/src/main/java/com/battv/browser/MainActivity.kt ]; then
+            echo "::error::No se encontró MainActivity.kt en: $(pwd)/app/src/main/java/com/battv/browser/"
+            find app/src/main/java -type f -name '*.kt' -print || true
+            exit 1
+          fi
           echo "Se conserva la MainActivity.kt versionada en android-geckoview."
 
       - name: 6. Generar Motor de Scripts Multimedia de Bat TV 20.32
@@ -521,7 +533,8 @@ jobs:
           cat /tmp/gecko_candidates.txt
           [ -s /tmp/gecko_candidates.txt ] || { echo "::error::No se pudo leer la lista de versiones de GeckoView"; exit 1; }
 
-          MAIN_KT="app/src/main/java/com/tvbrowser/gecko/MainActivity.kt"
+          MAIN_KT="app/src/main/java/com/battv/browser/MainActivity.kt"
+          test -s "$MAIN_KT" || { echo "::error::No existe $MAIN_KT"; exit 1; }
           cp "$MAIN_KT" /tmp/MainActivity.orig.kt
           if [ -n "${{ secrets.BATTV_KEYSTORE_BASE64 }}" ] && [ -n "${{ secrets.BATTV_KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.BATTV_KEY_ALIAS }}" ] && [ -n "${{ secrets.BATTV_KEY_PASSWORD }}" ]; then
             printf '%s' "${{ secrets.BATTV_KEYSTORE_BASE64 }}" | base64 -d > /tmp/battv-release.jks
