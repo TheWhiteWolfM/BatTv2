@@ -87,7 +87,6 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_HISTORY = "history_json"
         private const val KEY_USERSCRIPTS = "userscripts_json"
         private const val KEY_DESKTOP_MODE = "desktop_mode_enabled"
-        private const val KEY_DESKTOP_MODE_CHOSEN = "desktop_mode_chosen"
         private const val KEY_REDIRECT_LOCK = "redirect_lock_enabled"
 
         private const val BASE_CURSOR_STEP_PX = 14f
@@ -98,7 +97,7 @@ class MainActivity : AppCompatActivity() {
         private const val SCROLL_STEP_PX = 145.0
 
         private const val CURSOR_AUTO_HIDE_MS = 3000L
-        private const val URL_BAR_INDEX = 3
+        private const val URL_BAR_INDEX = 4
 
         private const val DRAMACHINO_URL = "https://dramachino.com/"
 
@@ -247,34 +246,9 @@ class MainActivity : AppCompatActivity() {
         val initialUrl = intent?.dataString?.takeIf { it.isNotBlank() } ?: DEFAULT_HOME_URL
         webContainer.post {
             cursorOverlay.centerCursor()
-            if (prefs.getBoolean(KEY_DESKTOP_MODE_CHOSEN, false)) {
-                startBrowserAt(initialUrl)
-            } else {
-                showInitialBrowsingModePicker(initialUrl)
-            }
+            setupGeckoEngine(initialUrl)
+            activateCursorMode(showPointerNow = true)
         }
-    }
-
-    private fun showInitialBrowsingModePicker(initialUrl: String) {
-        val choices = arrayOf("Versión de PC (recomendada)", "Versión móvil")
-        AlertDialog.Builder(this)
-            .setTitle("¿Cómo quieres ver las páginas?")
-            .setSingleChoiceItems(choices, if (isDesktopMode) 0 else 1) { dialog, which ->
-                isDesktopMode = which == 0
-                prefs.edit()
-                    .putBoolean(KEY_DESKTOP_MODE, isDesktopMode)
-                    .putBoolean(KEY_DESKTOP_MODE_CHOSEN, true)
-                    .apply()
-                dialog.dismiss()
-                startBrowserAt(initialUrl)
-            }
-            .setCancelable(false)
-            .show()
-    }
-
-    private fun startBrowserAt(initialUrl: String) {
-        setupGeckoEngine(initialUrl)
-        activateCursorMode(showPointerNow = true)
     }
 
     private fun prewarmDnsCacheInBackground() {
@@ -325,7 +299,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (isFullScreenVideo) applyFullscreenSystemUi(true)
         acquireHighPerfWifiLock()
         geckoSession?.setActive(true)
         geckoSession?.setFocused(true)
@@ -584,10 +557,17 @@ class MainActivity : AppCompatActivity() {
             brandIcon,
             btnHome,
             btnBack,
+            btnReload,
             urlEditText,
+            btnPrevField,
+            btnNextField,
             btnGo,
+            btnDesktopMode,
             btnBookmarks,
-            btnHistory
+            btnHistory,
+            btnCleanCache,
+            btnExtensions,
+            btnCloseApp
         )
 
         for (item in toolbarItems) {
@@ -1071,24 +1051,6 @@ class MainActivity : AppCompatActivity() {
         exitProcess(0)
     }
 
-    @Suppress("DEPRECATION")
-    private fun applyFullscreenSystemUi(enabled: Boolean) {
-        if (enabled) {
-            window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                    View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                )
-            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-        } else {
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
-            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-        }
-    }
-
     private fun toggleDesktopMode() {
         isDesktopMode = !isDesktopMode
         prefs.edit().putBoolean(KEY_DESKTOP_MODE, isDesktopMode).apply()
@@ -1155,6 +1117,7 @@ class MainActivity : AppCompatActivity() {
                   media.mediasource.enabled: true
                   media.mediasource.mp4.enabled: true
                   media.mediasource.webm.enabled: true
+                  dom.ipc.processCount: 1
                   dom.min_background_timeout_value: 4
                   nglayout.initialpaint.delay: 0
                   layout.frame_rate: 60
@@ -1171,7 +1134,7 @@ class MainActivity : AppCompatActivity() {
                   network.http.max-connections: 96
                   network.http.max-persistent-connections-per-server: 10
                   network.http.pacing.requests.enabled: false
-                  network.cookie.cookieBehavior: 0
+                  network.cookie.cookieBehavior: 4
                   network.cookie.sameSite.laxByDefault: false
                   network.cookie.sameSite.noneRequiresSecure: false
                   network.http.sendRefererHeader: 2
@@ -1269,23 +1232,7 @@ class MainActivity : AppCompatActivity() {
         return total
     }
 
-    private fun isKnownVideoHost(url: String): Boolean {
-        return try {
-            val host = Uri.parse(url).host?.lowercase().orEmpty()
-            val allowed = listOf(
-                "filemoon.sx", "filemoon.to", "filemoon.in", "filemoon.link",
-                "doodstream.com", "dood.watch", "dood.la", "dood.so", "dood.re", "dood.pm",
-                "dood.li", "dood.wf", "dood.cx", "dood.ws", "dood.to", "dood.yt",
-                "voe.sx", "voe.to", "voe.sx", "voe-network.net"
-            )
-            allowed.any { host == it || host.endsWith(".$it") }
-        } catch (_: Exception) {
-            false
-        }
-    }
-
     private fun isAdOrPopupUrl(url: String): Boolean {
-        if (isKnownVideoHost(url)) return false
         val lower = url.lowercase()
         for (domain in AD_BLOCK_DOMAINS) {
             if (lower.contains(domain)) return true
@@ -1417,7 +1364,7 @@ class MainActivity : AppCompatActivity() {
                     return GeckoResult.fromValue(AllowOrDeny.ALLOW)
                 }
 
-                if (!isKnownVideoHost(uri) && isAdOrPopupUrl(uri)) {
+                if (isAdOrPopupUrl(uri)) {
                     Log.i(TAG, "Anuncio/Popup bloqueado: $uri")
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
@@ -1483,8 +1430,10 @@ class MainActivity : AppCompatActivity() {
                 session: GeckoSession,
                 request: GeckoSession.NavigationDelegate.LoadRequest
             ): GeckoResult<AllowOrDeny>? {
-                // No bloquear iframes: los reproductores legítimos cargan sus propios
-                // dominios auxiliares. uBlock sigue filtrando publicidad dentro de la página.
+                val uri = request.uri
+                if (isAdOrPopupUrl(uri)) {
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
                 return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
         }
@@ -1539,7 +1488,6 @@ class MainActivity : AppCompatActivity() {
 
             override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {
                 isFullScreenVideo = fullScreen
-                applyFullscreenSystemUi(fullScreen)
                 topBarLayout.visibility = if (fullScreen) View.GONE else View.VISIBLE
                 if (!fullScreen) {
                     mainHandler.removeCallbacks(hideVideoSeekRunnable)
@@ -2118,7 +2066,7 @@ class MainActivity : AppCompatActivity() {
 
         items.add("➕ Guardar página actual en Favoritos (${currentUrl.take(30)})")
         actions.add {
-            val newObj = JSONObject().put("title", compactHistoryTitle(currentTitle, currentUrl)).put("url", currentUrl)
+            val newObj = JSONObject().put("title", currentTitle.ifBlank { currentUrl }).put("url", currentUrl)
             arr.put(newObj)
             prefs.edit().putString(KEY_BOOKMARKS, arr.toString()).apply()
             Toast.makeText(this, "Guardado en Favoritos", Toast.LENGTH_SHORT).show()
@@ -2171,46 +2119,12 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun compactHistoryTitle(title: String, url: String): String {
-        val slug = try { Uri.parse(url).lastPathSegment.orEmpty().substringBefore('?') } catch (_: Exception) { "" }
-        val cleanTitle = title.trim()
-            .replace(Regex("\\s*[|–—-]\\s*(Doramasflix|Doramachinos?|DramaChino|Dramachino).*$", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\\s+"), " ")
-        val candidate = if (cleanTitle.isBlank() || cleanTitle.equals("Doramasflix", true) || cleanTitle.equals("Doramachino", true)) slug else cleanTitle
-        val episodeRegex = Regex("(?i)(?:\\b(\\d{1,2})x(\\d{1,3})\\b|\\bs(\\d{1,2})e(\\d{1,3})\\b)")
-        val titleMatch = episodeRegex.find(candidate)
-        val slugMatch = episodeRegex.find(slug)
-        val match = titleMatch ?: slugMatch
-        if (match != null) {
-            val season = match.groups[1]?.value ?: match.groups[3]?.value ?: "1"
-            val episode = match.groups[2]?.value ?: match.groups[4]?.value ?: "?"
-            val nameSource = if (titleMatch != null) {
-                candidate.substring(0, titleMatch.range.first)
-            } else {
-                slug.substring(0, slugMatch!!.range.first).replace('-', ' ')
-            }
-            val seriesName = nameSource
-                .replace(Regex("[-_]+"), " ")
-                .replace(Regex("\\s+"), " ")
-                .trim(' ', '-', '_', '|')
-                .ifBlank { "Serie" }
-            return "$seriesName • T$season Cap. $episode"
-        }
-        val shortName = candidate
-            .substringBefore(" | ")
-            .substringBefore(" - ")
-            .trim()
-            .ifBlank { Uri.parse(url).host?.removePrefix("www.") ?: "Página" }
-        return shortName.take(70)
-    }
-
     private fun saveHistoryEntry(title: String, url: String) {
         val raw = prefs.getString(KEY_HISTORY, "[]") ?: "[]"
         val oldArr = try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
         val newArr = JSONArray()
-        val displayTitle = compactHistoryTitle(title, url)
 
-        newArr.put(JSONObject().put("title", displayTitle).put("url", url))
+        newArr.put(JSONObject().put("title", title.ifBlank { url }).put("url", url))
         for (i in 0 until min(oldArr.length(), 35)) {
             val item = oldArr.optJSONObject(i) ?: continue
             if (item.optString("url") != url) {
@@ -2245,7 +2159,7 @@ class MainActivity : AppCompatActivity() {
             for (i in 0 until arr.length()) {
                 val obj = arr.optJSONObject(i) ?: continue
                 val u = obj.optString("url", DEFAULT_HOME_URL)
-                items.add("🕒 ${obj.optString("title", "Página")}")
+                items.add("🕒 $u")
                 actions.add {
                     loadUrlOrSearch(u)
                 }
@@ -2265,7 +2179,7 @@ class MainActivity : AppCompatActivity() {
         val delItems = mutableListOf<String>()
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
-            delItems.add("❌ Borrar: ${obj.optString("title", "Página")}")
+            delItems.add("❌ Borrar: ${obj.optString("url")}")
         }
         AlertDialog.Builder(this)
             .setTitle("🗑️ Selecciona la entrada a borrar")
@@ -2823,7 +2737,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
-        applyFullscreenSystemUi(false)
         releaseHighPerfWifiLock()
         clearSafeAndroidCachesOnly(silent = true)
         super.onStop()
