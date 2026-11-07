@@ -40,7 +40,7 @@ jobs:
         run: |
           set +o pipefail
           set -e
-          rm -rf app/src/main/java app/src/main/kotlin app/src/main/res
+          rm -rf app/src/main/kotlin app/src/main/res
           mkdir -p app/src/main/java/com/tvbrowser/gecko
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/assets/extensions/ublock
