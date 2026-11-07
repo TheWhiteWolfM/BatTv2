@@ -9,43 +9,182 @@ jobs:
   build-geckoview-bundle:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
+      - name: 2. Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Setup Java 17
+      - name: 3. Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle (Evita errores si falta gradle-wrapper.jar)
+      - name: 4. Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Install Dependencies & Build Bat TV Web Bundle
+      - name: 5. Build Web Bundle (Vite)
         run: |
           npm install
           npm run build
-
-      - name: Copy Web Bundle to Android Assets
-        run: |
-          mkdir -p android-geckoview/app/src/main/assets/www
-          cp -r dist/* android-geckoview/app/src/main/assets/www/
+          mkdir -p android-geckoview/app/src/main/assets
           cp -r dist/* android-geckoview/app/src/main/assets/
 
-      - name: Build Signed Android APK with Gradle
+      - name: 6. Descargar y descomprimir uBlock Origin y Violentmonkey en assets
+        run: |
+          EXT_DIR="android-geckoview/app/src/main/assets/extensions"
+          mkdir -p "$EXT_DIR/ublock_origin" "$EXT_DIR/violentmonkey"
+
+          if [ ! -f "$EXT_DIR/ublock_origin/manifest.json" ]; then
+            curl -L -o ublock.xpi "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+            unzip -q -o ublock.xpi -d "$EXT_DIR/ublock_origin/"
+            rm -rf "$EXT_DIR/ublock_origin/META-INF" ublock.xpi
+          fi
+
+          if [ ! -f "$EXT_DIR/violentmonkey/manifest.json" ]; then
+            curl -L -o vm.xpi "https://addons.mozilla.org/firefox/downloads/latest/violentmonkey/latest.xpi"
+            unzip -q -o vm.xpi -d "$EXT_DIR/violentmonkey/"
+            rm -rf "$EXT_DIR/violentmonkey/META-INF" vm.xpi
+          fi
+
+      - name: 7. Corregir metodo inexistente en BatTvGeckoViewManager.kt
+        run: |
+          KT_FILE="android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
+          if [ -f "$KT_FILE" ]; then
+            sed -i '/\.allowJavascript(true)/d' "$KT_FILE"
+          fi
+
+      - name: 8. Generar archivos de configuracion Gradle y AndroidManifest faltantes
+        run: |
+          cat << 'EOF' > android-geckoview/settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url "https://maven.mozilla.org/maven2/" }
+              }
+          }
+          rootProject.name = "BatTV"
+          include ':app'
+          EOF
+
+          cat << 'EOF' > android-geckoview/build.gradle
+          plugins {
+              id 'com.android.application' version '8.2.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+          }
+          EOF
+
+          cat << 'EOF' > android-geckoview/gradle.properties
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat << 'EOF' > android-geckoview/app/build.gradle
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'com.battv.browser'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.battv.browser"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "2.0"
+
+                  ndk {
+                      abiFilters "armeabi-v7a", "arm64-v8a"
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.debug
+                  }
+              }
+
+              aaptOptions {
+                  noCompress "xpi", "ja", "bin", "dat", "js", "json", "html", "css", "txt"
+                  ignoreAssetsPattern "!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~"
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'org.mozilla.geckoview:geckoview:132.0.20241021175835'
+          }
+          EOF
+
+          if [ ! -f android-geckoview/app/src/main/AndroidManifest.xml ]; then
+          cat << 'EOF' > android-geckoview/app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="Bat TV"
+                  android:supportsRtl="true"
+                  android:usesCleartextTraffic="true"
+                  android:hardwareAccelerated="true"
+                  android:theme="@style/Theme.AppCompat.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
+                      android:screenOrientation="landscape">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          fi
+
+      - name: 9. Build Android APK with Gradle
         working-directory: ./android-geckoview
         run: |
-          gradle assembleDebug
+          gradle assembleRelease
 
-      - name: Upload APK Artifact
+      - name: 10. Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BatTV-GeckoView-APK
-          path: android-geckoview/app/build/outputs/apk/debug/*.apk
+          name: BatTV-GeckoView-Release
+          path: android-geckoview/app/build/outputs/apk/release/*.apk
