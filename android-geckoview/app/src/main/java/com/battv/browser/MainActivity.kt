@@ -1,20 +1,22 @@
 package com.battv.browser
 
+import android.content.Context
+import android.graphics.Color
 import android.os.Bundle
+import android.text.InputType
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.Button
 import android.widget.EditText
-import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
 import org.mozilla.geckoview.GeckoView
 
-/**
- * MainActivity de Bat TV para Android TV / Google TV.
- * Conecta la barra de direcciones/búsqueda y controles D-Pad del control remoto
- * directamente con BatTvGeckoViewManager sin interfaces de búsqueda estáticas locales.
- */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var geckoView: GeckoView
@@ -25,11 +27,96 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Inicialización de vistas principales (GeckoView + Barra de direcciones superior)
-        geckoView = GeckoView(this)
-        urlAddressInput = EditText(this)
-        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+        val density = resources.displayMetrics.density
+        fun dp(value: Int): Int = (value * density).toInt()
 
+        // 1. Contenedor principal de pantalla completa
+        val rootLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#0D0D12"))
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        // 2. Barra superior de navegación (apta para control remoto D-Pad)
+        val topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.parseColor("#181824"))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // Campo de texto de URL / Búsqueda en Google
+        urlAddressInput = EditText(this).apply {
+            hint = "Buscar en Google o escribir URL (ej. doramasflix.io)..."
+            setHintTextColor(Color.parseColor("#888899"))
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setSingleLine(true)
+            imeOptions = EditorInfo.IME_ACTION_GO or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setBackgroundColor(Color.parseColor("#252538"))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            isFocusable = true
+            isFocusableInTouchMode = true
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(8)
+            }
+        }
+
+        // Botón "Ir" para confirmar con el botón central (OK) del control remoto
+        val goButton = Button(this).apply {
+            text = "IR"
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.parseColor("#F5C518"))
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(
+                 dp(64),
+                 dp(38)
+            )
+            setOnClickListener {
+                navegarDesdeBarra()
+            }
+        }
+
+        topBar.addView(urlAddressInput)
+        topBar.addView(goButton)
+
+        // 3. Barra de progreso de carga
+        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(3)
+            )
+        }
+
+        // 4. Motor GeckoView ocupando el resto del televisor
+        geckoView = GeckoView(this).apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        }
+
+        rootLayout.addView(topBar)
+        rootLayout.addView(progressBar)
+        rootLayout.addView(geckoView)
+
+        // IMPORTANTE: Dibujar el diseño en la pantalla
+        setContentView(rootLayout)
+
+        // 5. Inicializar el gestor de GeckoView + Extensiones
         geckoManager = BatTvGeckoViewManager(
             context = this,
             geckoView = geckoView,
@@ -50,9 +137,8 @@ class MainActivity : AppCompatActivity() {
 
         geckoManager.initialize()
 
-        // PUNTO 4: Al presionar "Ir" / Enter en la barra de direcciones o búsqueda,
-        // navegar directamente al sitio o a https://www.google.com/search?q=... dentro de GeckoView
-        urlAddressInput.setOnEditorActionListener { textView, actionId, keyEvent ->
+        // Evento al presionar Enter / Ir en el teclado en pantalla del TV
+        urlAddressInput.setOnEditorActionListener { _, actionId, keyEvent ->
             val isEnterKey = keyEvent != null &&
                 keyEvent.keyCode == KeyEvent.KEYCODE_ENTER &&
                 keyEvent.action == KeyEvent.ACTION_DOWN
@@ -62,22 +148,30 @@ class MainActivity : AppCompatActivity() {
                 actionId == EditorInfo.IME_ACTION_DONE ||
                 isEnterKey
             ) {
-                val queryOrUrl = textView.text.toString()
-                geckoManager.loadInputFromAddressBar(queryOrUrl)
-                geckoView.requestFocus()
+                navegarDesdeBarra()
                 true
             } else {
                 false
             }
         }
 
-        // Cargar página inicial o intent entrante
+        // Cargar página inicial
         val initialUrl = intent?.dataString ?: "https://doramasflix.io/"
         geckoManager.loadInputFromAddressBar(initialUrl)
+        geckoView.requestFocus()
     }
 
+    private fun navegarDesdeBarra() {
+        val queryOrUrl = urlAddressInput.text.toString()
+        geckoManager.loadInputFromAddressBar(queryOrUrl)
+        // Ocultar el teclado virtual del TV tras buscar
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(urlAddressInput.windowToken, 0)
+        geckoView.requestFocus()
+    }
+
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        // En Android TV, el botón Atrás del control remoto retrocede en el historial de GeckoView
         geckoManager.session.goBack()
     }
 }
