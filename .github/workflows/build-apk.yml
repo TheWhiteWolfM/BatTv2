@@ -23,19 +23,29 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Gradle (Evita errores si falta gradle-wrapper.jar)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: Install Dependencies & Build Bat TV Web Bundle
         run: |
           npm install
           npm run build
 
-      - name: Build Android APK with Gradle
+      - name: Copy Web Bundle to Android Assets
+        run: |
+          mkdir -p android-geckoview/app/src/main/assets/www
+          cp -r dist/* android-geckoview/app/src/main/assets/www/
+          cp -r dist/* android-geckoview/app/src/main/assets/
+
+      - name: Build Signed Android APK with Gradle
         working-directory: ./android-geckoview
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease
+          gradle assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BatTV-GeckoView-Release
-          path: android-geckoview/app/build/outputs/apk/release/*.apk
+          name: BatTV-GeckoView-APK
+          path: android-geckoview/app/build/outputs/apk/debug/*.apk
