@@ -1,375 +1,53 @@
-name: Build Battv.2 (GeckoView / Android TV)
-'on':
+name: Compilar Battv.2
+
+on:
   push:
     branches:
-    - main
-    - master
+      - main
+      - master
     paths:
-    - .github/workflows/build-apk.yml
-    - android-geckoview/**
-  workflow_dispatch: {}
+      - "android-geckoview/**"
+      - ".github/workflows/build-apk.yml"
+
+  workflow_dispatch:
+
 permissions:
-  contents: write
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-  GECKO_VERSION: 159.0.20261102144711
+  contents: read
+
 jobs:
-  build-apk:
-    name: Compilar Battv.2 (ARM32 + ARM64 / JDK 21)
+  build:
+    name: Compilar APK de Battv.2
     runs-on: ubuntu-latest
-    timeout-minutes: '90'
-    defaults:
-      run:
-        working-directory: android-geckoview
+    timeout-minutes: 90
+
     steps:
-    - name: 1. Clonar repositorio
-      uses: actions/checkout@v4
-    - name: 2. Configurar JDK 21 (Temurin)
-      uses: actions/setup-java@v5
-      with:
-        distribution: temurin
-        java-version: '21'
-    - name: 3. Preparar Gradle y Android SDK sin reescribir archivos del proyecto
-      uses: gradle/actions/setup-gradle@v6
-      with:
-        gradle-version: 8.14.3
-    - name: 4. Verificar configuracion y preparar Android SDK
-      shell: bash
-      run: |
-        set -euo pipefail
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
 
-        for required in \
-          settings.gradle \
-          build.gradle \
-          gradle.properties \
-          app/build.gradle \
-          app/src/main/AndroidManifest.xml \
-          app/src/main/java/com/battv/browser/MainActivity.kt \
-          app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt; do
-          if [ ! -s "$required" ]; then
-            echo "::error::Falta un archivo requerido: $required"
-            exit 1
-          fi
-        done
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
-        if grep -R -n 'com.battv.browser.next' settings.gradle build.gradle gradle.properties app/build.gradle app/src/main/AndroidManifest.xml; then
-          echo "::error::Se encontro el identificador antiguo com.battv.browser.next en la configuracion."
-          exit 1
-        fi
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
 
-        echo "Namespace esperado: com.tvbrowser.gecko"
-        echo "Application ID esperado: com.battv.browser.v2"
-        echo "GeckoView fijado: ${GECKO_VERSION}"
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-        echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-        export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-        export ANDROID_SDK_ROOT="$ANDROID_HOME"
-        SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-        if [ ! -x "$SDKMANAGER" ]; then
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
-        fi
-        if [ -z "${SDKMANAGER:-}" ] || [ ! -x "$SDKMANAGER" ]; then
-          echo "::error::No se encontro sdkmanager en Android SDK."
-          exit 1
-        fi
+      - name: Preparar permisos de Gradle
+        working-directory: android-geckoview
+        run: chmod +x gradlew
 
-        yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-        "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0"
+      - name: Compilar APK Release
+        working-directory: android-geckoview
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-        mkdir -p app/src/main/res/drawable
-        mkdir -p app/src/main/assets/extensions/ublock
-        mkdir -p app/src/main/assets/extensions/violentmonkey
-        mkdir -p app/src/main/assets/extensions/battv_scripts
-    - name: 5. Generar logo de Battv.2
-      shell: bash
-      run: |
-        set -e
-        printf '%s' \
-          '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' | base64 -d | xz -d > app/src/main/res/drawable/ic_bat_logo.png
-    - name: 6. Verificar MainActivity.kt versionada
-      shell: bash
-      run: |
-        set -e
-        echo "Directorio de trabajo: $(pwd)"
-        if [ ! -s app/src/main/java/com/battv/browser/MainActivity.kt ]; then
-          echo "::error::No se encontró MainActivity.kt en: $(pwd)/app/src/main/java/com/battv/browser/"
-          find app/src/main/java -type f -name '*.kt' -print || true
-          exit 1
-        fi
-        echo "Se conserva la MainActivity.kt versionada en android-geckoview."
-    - name: 7. Preparar scripts integrados existentes
-      shell: bash
-      run: |
-        set +o pipefail
-        set -e
-        printf '%s\n' \
-          '{' \
-          '  "manifest_version": 2,' \
-          '  "name": "Bat TV Built-in Userscripts",' \
-          '  "version": "20.32.0",' \
-          '  "description": "Cinema 60FPS & 1080p60 Live Stream Stabilizer + Native TV Keyboard Search Bridge + Anti-Tab-Under Shield.",' \
-          '  "browser_specific_settings": {' \
-          '    "gecko": {' \
-          '      "id": "battv-scripts@battv.local"' \
-          '    }' \
-          '  },' \
-          '  "permissions": [' \
-          '    "<all_urls>",' \
-          '    "storage",' \
-          '    "geckoViewAddons",' \
-          '    "nativeMessaging",' \
-          '    "nativeMessagingFromContent"' \
-          '  ],' \
-          '  "content_scripts": [' \
-          '    {' \
-          '      "matches": ["<all_urls>"],' \
-          '      "exclude_matches": [' \
-          '        "*://*.cloudflare.com/*",' \
-          '        "*://challenges.cloudflare.com/*"' \
-          '      ],' \
-          '      "js": ["userscripts_bundle.js"],' \
-          '      "run_at": "document_start",' \
-          '      "all_frames": true' \
-          '    }' \
-          '  ]' \
-          '}' > app/src/main/assets/extensions/battv_scripts/manifest.json
-        printf '%s' \
-          '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' | base64 -d | xz -d > app/src/main/assets/extensions/battv_scripts/userscripts_bundle.js
-    - name: 8. Preparar uBlock Origin y Violentmonkey
-      shell: bash
-      run: |
-        set +o pipefail
-        set -e
-        curl -fL --retry 3 "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi" -o /tmp/ublock.xpi
-        unzip -q -o /tmp/ublock.xpi -d app/src/main/assets/extensions/ublock/ || true
-        rm -rf app/src/main/assets/extensions/ublock/META-INF
-        if [ -d "app/src/main/assets/extensions/ublock/_locales" ]; then
-          find app/src/main/assets/extensions/ublock/_locales -mindepth 1 -maxdepth 1 -type d ! -name 'es*' ! -name 'en*' -exec rm -rf {} + || true
-        fi
-        find app/src/main/assets/extensions/ublock -type f \( -name "*.map" -o -name "*.md" -o -name "LICENSE*" -o -name "*.txt.gz" \) -delete || true
-
-        curl -fL --retry 3 "https://addons.mozilla.org/firefox/downloads/latest/violentmonkey/latest.xpi" -o /tmp/violentmonkey.xpi
-        unzip -q -o /tmp/violentmonkey.xpi -d app/src/main/assets/extensions/violentmonkey/ || true
-        rm -rf app/src/main/assets/extensions/violentmonkey/META-INF
-        if [ -d "app/src/main/assets/extensions/violentmonkey/_locales" ]; then
-          find app/src/main/assets/extensions/violentmonkey/_locales -mindepth 1 -maxdepth 1 -type d ! -name 'es*' ! -name 'en*' -exec rm -rf {} + || true
-        fi
-        find app/src/main/assets/extensions/violentmonkey -type f \( -name "*.map" -o -name "*.md" -o -name "LICENSE*" \) -delete || true
-
-        python3 - <<'PYEOF'
-        import json, os, re
-
-        base = 'app/src/main/assets/extensions/ublock'
-
-        # 1) Desactivar listas pesadas no publicitarias para ahorrar RAM en Google TV / Onn TV (conservando intactos todos los filtros de anuncios y popups).
-        path = os.path.join(base, 'assets', 'assets.json')
-        try:
-            with open(path, encoding='utf-8') as f:
-                data = json.load(f)
-            for key in ('urlhaus-1',):
-                if isinstance(data.get(key), dict):
-                    data[key]['off'] = True
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
-            print('uBO: URLhaus desactivada por defecto')
-        except Exception as e:
-            print('uBO: assets.json sin cambios:', e)
-
-        # 2) A甯絘dir reglas de aceleraci璐竛 directa para reproductores (PrimeLoad, VOE, Filemoon, StreamTape, Doramasflix, DramaChino)
-        qf_path = os.path.join(base, 'assets', 'ublock', 'quick-fixes.txt')
-        extra_rules = """
-        ! Aceleracion de reproductores en Bat TV
-        @@||doramasflix.io^$ghide
-        @@||dramachino.com^$ghide
-        @@||voe.sx^$ghide
-        @@||filemoon.sx^$ghide
-        @@||filemoon.to^$ghide
-        @@||streamtape.com^$ghide
-        @@||streamtape.to^$ghide
-        @@||primeload.*^$ghide
-        """
-        try:
-            if os.path.exists(qf_path):
-                with open(qf_path, 'a', encoding='utf-8') as f:
-                    f.write('\n' + extra_rules.strip() + '\n')
-                print('uBO: Reglas de aceleraci璐竛 de reproductores inyectadas')
-        except Exception as e:
-            print('uBO: quick-fixes.txt sin cambios:', e)
-
-        # 3) Desactivar cnameUncloakEnabled con regex compatible y mantener suspendUntilListsAreLoaded activo para carga limpia y completa.
-        path = os.path.join(base, 'js', 'background.js')
-        try:
-            with open(path, encoding='utf-8') as f:
-                src = f.read()
-            src = re.sub(r'cnameUncloakEnabled:\s*(true|!0)', 'cnameUncloakEnabled: false', src)
-            src = re.sub(r'selfieDelayInSeconds:\s*\d+', 'selfieDelayInSeconds: 15', src)
-            src = re.sub(r'autoUpdateDelayAfterLaunch:\s*\d+', 'autoUpdateDelayAfterLaunch: 1800', src)
-            src = re.sub(r'autoUpdateAssetFetchPeriod:\s*\d+', 'autoUpdateAssetFetchPeriod: 30', src)
-            src = re.sub(r'autoUpdatePeriod:\s*\d+', 'autoUpdatePeriod: 3', src)
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(src)
-            print('uBO: background.js optimizado')
-        except Exception as e:
-            print('uBO: background.js sin cambios:', e)
-        PYEOF
-    - name: 9. Compilar Battv.2 para ARM32 y ARM64
-      shell: bash
-      run: |
-        set -euo pipefail
-
-        GECKO_BASE="https://maven.mozilla.org/maven2/org/mozilla/geckoview"
-        for artifact in geckoview-armeabi-v7a geckoview-arm64-v8a; do
-          pom_url="${GECKO_BASE}/${artifact}/${GECKO_VERSION}/${artifact}-${GECKO_VERSION}.pom"
-          echo "Comprobando ${artifact}:${GECKO_VERSION}"
-          if ! curl --fail --silent --show-error --location "$pom_url" -o "/tmp/${artifact}.pom"; then
-            echo "::error::Mozilla Maven no publico ${artifact}:${GECKO_VERSION}. No se cambiara silenciosamente a una version antigua."
-            exit 1
-          fi
-        done
-
-        # El build usa unicamente las configuraciones Gradle que estan versionadas en GitHub.
-        # No se crean ni se sobrescriben settings.gradle, build.gradle, app/build.gradle o el manifiesto.
-        gradle --version
-        gradle --no-daemon --stacktrace --console=plain \
-          -PbuildNum="${GITHUB_RUN_NUMBER:-1}" \
-          clean assembleArm32Release assembleArm64Release
-
-        ARM32_RAW="$(find app/build/outputs/apk/arm32/release -type f -name '*.apk' -print -quit)"
-        ARM64_RAW="$(find app/build/outputs/apk/arm64/release -type f -name '*.apk' -print -quit)"
-        if [ -z "$ARM32_RAW" ] || [ -z "$ARM64_RAW" ]; then
-          echo "::error::No se generaron los dos APK esperados (ARM32 y ARM64)."
-          find app/build/outputs/apk -type f -name '*.apk' -print || true
-          exit 1
-        fi
-
-        AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print | sort -V | tail -n 1)"
-        if [ -z "$AAPT" ] || [ ! -x "$AAPT" ]; then
-          echo "::error::No se encontro aapt para verificar el APK."
-          exit 1
-        fi
-
-        verify_apk() {
-          local apk="$1"
-          local expected_abi="$2"
-          local forbidden_abi="$3"
-          local listing
-          local badging
-
-          badging="$("$AAPT" dump badging "$apk")"
-          if ! printf '%s\n' "$badging" | grep -F "package: name='com.battv.browser.v2'" >/dev/null; then
-            echo "::error::El APK no contiene applicationId com.battv.browser.v2: $apk"
-            printf '%s\n' "$badging" | head -n 5
-            return 1
-          fi
-
-          listing="$(unzip -Z1 "$apk")"
-          if ! printf '%s\n' "$listing" | grep -E "^lib/${expected_abi}/[^/]+\.so$" >/dev/null; then
-            echo "::error::El APK no contiene bibliotecas nativas para ${expected_abi}: $apk"
-            return 1
-          fi
-          if printf '%s\n' "$listing" | grep -E "^lib/${forbidden_abi}/" >/dev/null; then
-            echo "::error::El APK incluye bibliotecas de la arquitectura que no le corresponde: ${forbidden_abi}"
-            return 1
-          fi
-        }
-
-        verify_apk "$ARM32_RAW" 'armeabi-v7a' 'arm64-v8a'
-        verify_apk "$ARM64_RAW" 'arm64-v8a' 'armeabi-v7a'
-
-        BUILD_NUM="${GITHUB_RUN_NUMBER:-1}"
-        VERSION_NAME="2.0.${BUILD_NUM}"
-        ARM32_NAME="Battv.2-${VERSION_NAME}-GeckoView-${GECKO_VERSION}-armeabi-v7a.apk"
-        ARM64_NAME="Battv.2-${VERSION_NAME}-GeckoView-${GECKO_VERSION}-arm64-v8a.apk"
-        cp "$ARM32_RAW" "$ARM32_NAME"
-        cp "$ARM64_RAW" "$ARM64_NAME"
-
-        cat > build-info.txt <<EOF
-        Aplicacion: Battv.2
-        Application ID: com.battv.browser.v2
-        Namespace: com.tvbrowser.gecko
-        Version: ${VERSION_NAME}
-        GeckoView: ${GECKO_VERSION}
-        Android Gradle Plugin: 8.13.2
-        Kotlin Gradle Plugin: 2.4.21
-        R8: 9.1.29
-        Gradle: 8.14.3
-        APK ARM32: ${ARM32_NAME}
-        APK ARM64: ${ARM64_NAME}
-        EOF
-        sha256sum "$ARM32_NAME" "$ARM64_NAME" > SHA256SUMS.txt
-
-        {
-          echo "## Battv.2 compilado y verificado"
-          echo ""
-          echo "- Application ID: com.battv.browser.v2"
-          echo "- GeckoView: ${GECKO_VERSION}"
-          echo "- APK ARM32: ${ARM32_NAME}"
-          echo "- APK ARM64: ${ARM64_NAME}"
-          echo "- Se verifico el paquete y la arquitectura nativa de cada APK."
-        } >> "$GITHUB_STEP_SUMMARY"
-
-        ls -lh "$ARM32_NAME" "$ARM64_NAME" SHA256SUMS.txt build-info.txt
-    - name: 10. Publicar los dos APK en GitHub Releases
-      shell: bash
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        set -euo pipefail
-        TAG_NAME="battv2-latest"
-        ASSETS=(
-          "Battv.2-2.0.${GITHUB_RUN_NUMBER}-GeckoView-${GECKO_VERSION}-armeabi-v7a.apk"
-          "Battv.2-2.0.${GITHUB_RUN_NUMBER}-GeckoView-${GECKO_VERSION}-arm64-v8a.apk"
-          "SHA256SUMS.txt"
-          "build-info.txt"
-        )
-
-        if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-          gh release upload "$TAG_NAME" "${ASSETS[@]}" --clobber
-        else
-          gh release create "$TAG_NAME" "${ASSETS[@]}" \
-            --title "Battv.2 - GeckoView ${GECKO_VERSION}" \
-            --notes "Compilacion de Battv.2. Incluye instaladores separados para ARM de 32 bits (armeabi-v7a) y ARM de 64 bits (arm64-v8a)."
-        fi
-
-        REL_PAGE="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG_NAME}"
-        echo "Release: ${REL_PAGE}" >> "$GITHUB_STEP_SUMMARY"
-        echo "APK ARM32 y ARM64 publicados en ${REL_PAGE}"
-    - name: 11. Subir APK y verificaciones a Artifacts (7 días)
-      uses: actions/upload-artifact@v4
-      with:
-        name: Battv.2-APK-GeckoView
-        retention-days: '7'
-        if-no-files-found: error
-        path: |-
-          android-geckoview/Battv.2-2.0.*-GeckoView-*.apk
-          android-geckoview/SHA256SUMS.txt
-          android-geckoview/build-info.txt
+      - name: Subir APK generado
+        uses: actions/upload-artifact@v4
+        with:
+          name: Battv.2-APK
+          path: android-geckoview/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
