@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    android:installLocation="auto">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -12,15 +13,18 @@
         android:required="false" />
 
     <application
-        android:allowBackup="true"
-        android:label="Bat TV"
+        android:allowBackup="false"
+        android:extractNativeLibs="true"
+        android:hardwareAccelerated="true"
+        android:label="Battv.2"
+        android:largeHeap="false"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
-        android:hardwareAccelerated="true"
         android:theme="@style/Theme.AppCompat.NoActionBar">
 
+        <!-- La Activity está declarada en el paquete Kotlin com.tvbrowser.gecko. -->
         <activity
-            android:name=".MainActivity"
+            android:name="com.tvbrowser.gecko.MainActivity"
             android:exported="true"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:screenOrientation="landscape">
@@ -31,5 +35,4 @@
             </intent-filter>
         </activity>
     </application>
-
 </manifest>
