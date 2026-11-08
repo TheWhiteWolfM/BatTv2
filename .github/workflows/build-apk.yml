@@ -36,35 +36,19 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Configurar Gradle
+      - name: Instalar Gradle 8.2
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.2"
 
-      - name: Buscar y preparar Gradle
-        shell: bash
+      - name: Verificar herramientas
         run: |
-          WRAPPER=$(find . -type f -name gradlew -not -path './.git/*' -print -quit)
-
-          if [ -z "$WRAPPER" ]; then
-            echo "ERROR: No se encontró el archivo gradlew en el repositorio."
-            echo "Es necesario agregar el Gradle Wrapper al proyecto."
-            exit 1
-          fi
-
-          echo "Gradle Wrapper encontrado en: $WRAPPER"
-          chmod +x "$WRAPPER"
+          java -version
+          gradle --version
 
       - name: Compilar APK Release
-        shell: bash
-        run: |
-          WRAPPER=$(find . -type f -name gradlew -not -path './.git/*' -print -quit)
-          WRAPPER_DIR=$(dirname "$WRAPPER")
-
-          if [ "$WRAPPER_DIR" = "." ]; then
-            ./gradlew -p android-geckoview assembleRelease --no-daemon --stacktrace
-          else
-            cd "$WRAPPER_DIR"
-            ./gradlew assembleRelease --no-daemon --stacktrace
-          fi
+        working-directory: android-geckoview
+        run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Subir APK generado
         uses: actions/upload-artifact@v4
