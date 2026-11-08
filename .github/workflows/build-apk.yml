@@ -1,4 +1,4 @@
-name: Build Bat TV Next (GeckoView mas reciente)
+name: Build Battv.2 (GeckoView)
 
 on:
   push:
@@ -25,7 +25,7 @@ env:
 
 jobs:
   build-apk:
-    name: Compilar Bat TV Next (GeckoView nuevo / armeabi-v7a / JDK 21)
+    name: Compilar Battv.2 (GeckoView / Android TV / JDK 21)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -76,7 +76,7 @@ jobs:
             '        maven { url "https://maven.mozilla.org/maven2/" }' \
             '    }' \
             '}' \
-            'rootProject.name = "BatTV"' \
+            'rootProject.name = "Battv.2"' \
             'include ":app"' > settings.gradle
           printf '%s\n' \
             'org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' \
@@ -154,7 +154,7 @@ jobs:
             '        android:hardwareAccelerated="true"' \
             '        android:icon="@drawable/ic_bat_logo"' \
             '        android:roundIcon="@drawable/ic_bat_logo"' \
-            '        android:label="Bat TV Next"' \
+            '        android:label="Battv.2"' \
             '        android:largeHeap="false"' \
             '        android:supportsRtl="true"' \
             '        android:usesCleartextTraffic="true"' \
@@ -165,7 +165,7 @@ jobs:
             '            android:banner="@drawable/tv_banner"' \
             '            android:icon="@drawable/ic_bat_logo"' \
             '            android:roundIcon="@drawable/ic_bat_logo"' \
-            '            android:label="Bat TV Next"' \
+            '            android:label="Battv.2"' \
             '            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"' \
             '            android:exported="true"' \
             '            android:hardwareAccelerated="true"' \
@@ -235,11 +235,11 @@ jobs:
               compileSdk 36
 
               defaultConfig {
-                  applicationId "com.battv.browser.next"
+                  applicationId "com.battv.browser.v2"
                   minSdk minSdkVer
                   targetSdk 34
                   versionCode 2000 + buildNum
-                  versionName "Next-" + geckoVer
+                  versionName "2.0-" + geckoVer
                   resConfigs "es"
                   ndk {
                       abiFilters "armeabi-v7a"
@@ -562,7 +562,7 @@ jobs:
             for LANG_MODE in default 1.9; do
               echo "--- Compilando con GeckoView $V (modo Kotlin: $LANG_MODE, minSdk $MIN_SDK) ---"
               cp /tmp/MainActivity.orig.kt "$MAIN_KT"
-              sed -i "s/Bat TV 20.32 Turbo 60FPS/Bat TV Next (Gecko ${V%%.*})/" "$MAIN_KT"
+              sed -i "s/Bat TV 20.32 Turbo 60FPS/Battv.2 (Gecko ${V%%.*})/" "$MAIN_KT"
               rm -rf app/build
               if "$GRADLE_BIN" assembleRelease --no-daemon --console=plain \
                    -PgeckoVer="$V" -PminSdkVer="$MIN_SDK" -PbuildNum="${GITHUB_RUN_NUMBER:-1}" -PkotlinLang="$LANG_MODE" \
@@ -583,7 +583,7 @@ jobs:
           echo "Compilado con GeckoView $GECKO_USED"
 
           RAW_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          APK_NAME="BatTV-Next-${GECKO_USED}-armeabi-v7a.apk"
+          APK_NAME="Battv.2-${GECKO_USED}-armeabi-v7a.apk"
           cp -f "$RAW_APK" "$APK_NAME"
           echo "APK copiado sin modificar su firma digital."
           {
@@ -592,21 +592,21 @@ jobs:
           } >> "$GITHUB_ENV"
           ls -lh "$APK_NAME"
 
-      - name: 8. Publicar APK en GitHub Releases (tag next-latest)
+      - name: 8. Publicar APK en GitHub Releases (tag battv2-latest)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +o pipefail
-          TAG_NAME="next-latest"
+          TAG_NAME="battv2-latest"
           gh release delete "$TAG_NAME" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG_NAME" "$APK_NAME" \
-            --title "Bat TV Next (GeckoView ${GECKO_USED})" \
-            --notes "APK de prueba con GeckoView ${GECKO_USED}. Se instala junto a Bat TV (paquete com.battv.browser.next). Para Chromecast con Google TV y onn 1080p." || true
+            --title "Battv.2 (GeckoView ${GECKO_USED})" \
+            --notes "APK de Battv.2 con GeckoView ${GECKO_USED}. Identificador Android: com.battv.browser.v2. Para dispositivos Android TV compatibles." || true
           DL_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG_NAME}/${APK_NAME}"
           REL_PAGE="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG_NAME}"
           {
-            echo "## Bat TV Next compilado"
+            echo "## Battv.2 compilado"
             echo ""
             echo "GeckoView usado: ${GECKO_USED}"
             echo ""
@@ -624,6 +624,6 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: BatTV-Next-APK
+          name: Battv.2-APK
           retention-days: 1
-          path: android-geckoview/BatTV-Next-*-armeabi-v7a.apk
+          path: android-geckoview/Battv.2-*-armeabi-v7a.apk
