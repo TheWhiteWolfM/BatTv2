@@ -150,7 +150,8 @@ class BatTvGeckoViewManager(
             override fun onOptionalPrompt(
                 extension: WebExtension,
                 permissions: Array<out String>,
-                origins: Array<out String>
+                origins: Array<out String>,
+                dataCollectionPermissions: Array<out String>
             ): GeckoResult<AllowOrDeny>? {
                 Log.i(TAG, "Auto-aprobando permisos para extensión: ${extension.id}")
                 return GeckoResult.allow()
