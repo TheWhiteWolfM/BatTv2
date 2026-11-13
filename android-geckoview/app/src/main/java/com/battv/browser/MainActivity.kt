@@ -140,6 +140,11 @@ class MainActivity : AppCompatActivity() {
   private var lastSeekPressUptime: Long = 0L
   private var cumulativeSeekDeltaSec: Double = 0.0
 
+  // Control del aviso automatico de pantalla completa para evitar bucles
+  private var fullscreenPromptDialog: AlertDialog? = null
+  private var fullscreenPromptDismissedForPage: Boolean = false
+  private var lastFullscreenExitUptimeMs: Long = 0L
+
   private var webScrollY: Double = 0.0
   private var currentCursorStepPx: Float = BASE_CURSOR_STEP_PX
   private var lastDpadMoveUptime: Long = 0L
@@ -226,6 +231,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   override fun onDestroy() {
+    dismissFullscreenPromptDialog()
     mainHandler.removeCallbacksAndMessages(null)
     if (::geckoManager.isInitialized) {
       geckoManager.closeSessionCleanly()
@@ -279,6 +285,7 @@ class MainActivity : AppCompatActivity() {
           renderHomeScreenContent()
           Toast.makeText(this@MainActivity, "Favoritos actualizados", Toast.LENGTH_SHORT).show()
         } else {
+          fullscreenPromptDismissedForPage = false
           geckoSession?.stop()
           geckoSession?.reload()
           activateCursorMode(showPointerNow = false)
@@ -507,7 +514,56 @@ class MainActivity : AppCompatActivity() {
     setContentView(rootLayout)
   }
 
+  /**
+   * Muestra la opcion automatica "¿Quieres abrir en pantalla completa? (Aceptar / Cancelar)"
+   * cuando se detecta que un video real ha comenzado a reproducirse.
+   */
+  private fun promptAutoFullscreenIfEligible() {
+    if (isHomeScreenVisible || isFullScreenVideo || fullscreenPromptDismissedForPage) return
+    if (fullscreenPromptDialog?.isShowing == true) return
+    if (SystemClock.uptimeMillis() - lastFullscreenExitUptimeMs < 4000L) return
+
+    val dialog = AlertDialog.Builder(this)
+      .setTitle("\uD83C\uDFAC Reproducir en pantalla completa")
+      .setMessage("\u00BFQuieres abrir el v\u00EDdeo en pantalla completa ahora?")
+      .setCancelable(true)
+      .setPositiveButton("Aceptar") { d, _ ->
+        d.dismiss()
+        fullscreenPromptDialog = null
+        enterVideoFullscreenAutomatically()
+      }
+      .setNegativeButton("Cancelar") { d, _ ->
+        fullscreenPromptDismissedForPage = true
+        d.dismiss()
+        fullscreenPromptDialog = null
+      }
+      .setOnCancelListener {
+        fullscreenPromptDismissedForPage = true
+        fullscreenPromptDialog = null
+      }
+      .create()
+
+    fullscreenPromptDialog = dialog
+    dialog.show()
+    dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.requestFocus()
+  }
+
+  private fun dismissFullscreenPromptDialog() {
+    try {
+      if (fullscreenPromptDialog?.isShowing == true) {
+        fullscreenPromptDialog?.dismiss()
+      }
+    } catch (_: Exception) {}
+    fullscreenPromptDialog = null
+  }
+
+  private fun enterVideoFullscreenAutomatically() {
+    sendVideoCommandToWeb("ENTER_FULLSCREEN", 0.0)
+    applyFullScreenState(true)
+  }
+
   private fun showHomeScreen() {
+    dismissFullscreenPromptDialog()
     if (isFullScreenVideo) {
       exitFullScreenSafely()
     }
@@ -818,6 +874,11 @@ class MainActivity : AppCompatActivity() {
 
     items.add("\uD83C\uDFE0  Inicio (Pantalla de Favoritos)")
     actions.add { showHomeScreen() }
+
+    if (!isHomeScreenVisible && !isFullScreenVideo) {
+      items.add("\uD83C\uDFAC  Abrir v\u00EDdeo actual en pantalla completa")
+      actions.add { enterVideoFullscreenAutomatically() }
+    }
 
     if (!isHomeScreenVisible && canGoBackState) {
       items.add("\u25C4  P\u00E1gina anterior (Atr\u00E1s)")
@@ -1255,6 +1316,10 @@ class MainActivity : AppCompatActivity() {
           return GeckoResult.deny()
         }
 
+        if (geckoManager.isKnownAdOrPopupUri(uri)) {
+          return GeckoResult.deny()
+        }
+
         if (request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
           val currentHost = runCatching { Uri.parse(currentUrl).host?.lowercase()?.removePrefix("www.") }.getOrNull()
           val targetHost = parsed?.host?.lowercase()?.removePrefix("www.")
@@ -1264,6 +1329,17 @@ class MainActivity : AppCompatActivity() {
           return GeckoResult.deny()
         }
 
+        return GeckoResult.allow()
+      }
+
+      override fun onSubframeLoadRequest(
+        session: GeckoSession,
+        request: GeckoSession.NavigationDelegate.LoadRequest
+      ): GeckoResult<AllowOrDeny>? {
+        val uri = request.uri
+        if (geckoManager.isKnownAdOrPopupUri(uri)) {
+          return GeckoResult.deny()
+        }
         return GeckoResult.allow()
       }
 
@@ -1290,6 +1366,8 @@ class MainActivity : AppCompatActivity() {
           applyFullScreenState(false)
         }
         if (url != currentUrl) {
+          dismissFullscreenPromptDialog()
+          fullscreenPromptDismissedForPage = false
           webScrollY = 0.0
           latestExtractedHeading = ""
           hasActiveVodVideo = false
@@ -1390,7 +1468,10 @@ class MainActivity : AppCompatActivity() {
         activeMediaSession = mediaSession
         runOnUiThread {
           vodIsPlaying = true
-          hasActiveVodVideo = true
+          if (vodDurationSec >= 90.0) {
+            hasActiveVodVideo = true
+            promptAutoFullscreenIfEligible()
+          }
         }
       }
 
@@ -1408,9 +1489,12 @@ class MainActivity : AppCompatActivity() {
         state: MediaSession.PositionState
       ) {
         runOnUiThread {
-          if (state.duration > 5.0) {
+          if (state.duration >= 90.0) {
             hasActiveVodVideo = true
             vodDurationSec = state.duration
+            if (vodIsPlaying && state.position >= 0.4) {
+              promptAutoFullscreenIfEligible()
+            }
           }
           if (!isUserSeekingVod && state.position >= 0.0) {
             vodCurrentTimeSec = state.position
@@ -1452,6 +1536,7 @@ class MainActivity : AppCompatActivity() {
     isFullScreenVideo = fullScreen
 
     if (fullScreen) {
+      dismissFullscreenPromptDialog()
       if (isEditingWebInput || isEditingUrlText) {
         closeNativeWebInputBridge(submit = false)
       }
@@ -1467,6 +1552,7 @@ class MainActivity : AppCompatActivity() {
       geckoView.requestLayout()
       geckoView.requestFocus()
     } else {
+      lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()
       mainHandler.removeCallbacks(hideVideoSeekRunnable)
       isUserSeekingVod = false
       consecutiveSeekPresses = 0
@@ -1488,6 +1574,8 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun exitFullScreenSafely() {
+    fullscreenPromptDismissedForPage = true
+    lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()
     try {
       geckoSession?.exitFullScreen()
     } catch (_: Exception) {}
@@ -1547,6 +1635,16 @@ class MainActivity : AppCompatActivity() {
                   }
                 }
               }
+              "VIDEO_PLAY_STARTED_PROMPT_FS" -> {
+                val dur = json.optDouble("duration", 0.0)
+                runOnUiThread {
+                  if (dur >= 90.0 || dur == 0.0) {
+                    hasActiveVodVideo = dur >= 90.0
+                    if (dur > 0.0) vodDurationSec = dur
+                    promptAutoFullscreenIfEligible()
+                  }
+                }
+              }
               "VIDEO_STATE" -> {
                 val hasVod = json.optBoolean("hasVod", false)
                 val playing = json.optBoolean("playing", false)
@@ -1554,7 +1652,7 @@ class MainActivity : AppCompatActivity() {
                 val dur = json.optDouble("duration", 0.0)
                 runOnUiThread {
                   val startedPlayingNow = !vodIsPlaying && playing
-                  hasActiveVodVideo = hasVod && dur >= 15.0
+                  hasActiveVodVideo = hasVod && dur >= 90.0
                   vodIsPlaying = playing
                   if (dur > 0.0) {
                     vodDurationSec = dur
@@ -1830,6 +1928,8 @@ class MainActivity : AppCompatActivity() {
 
   private fun loadUrlOrSearch(input: String) {
     val finalUri = geckoManager.resolveInputToUrl(input)
+    dismissFullscreenPromptDialog()
+    fullscreenPromptDismissedForPage = false
     isHomeScreenVisible = false
     isHomeToolbarFocused = false
     homeOverlayLayout.visibility = View.GONE
@@ -2350,6 +2450,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun exitBrowserCleanly() {
+    dismissFullscreenPromptDialog()
     if (::geckoManager.isInitialized) {
       geckoManager.closeSessionCleanly()
     }
