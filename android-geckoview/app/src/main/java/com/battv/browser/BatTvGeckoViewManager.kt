@@ -256,7 +256,6 @@ class BatTvGeckoViewManager(
                 { extension ->
                     if (extension != null) {
                         installedExtensions[extension.id] = extension
-                        attachExtensionTabDelegate(extension)
 
                         if (extension.id == VIOLENTMONKEY_ID) {
                             attachBridgeToExtension(extension)
@@ -270,7 +269,6 @@ class BatTvGeckoViewManager(
                             { enabledExt ->
                                 if (enabledExt != null) {
                                     installedExtensions[enabledExt.id] = enabledExt
-                                    attachExtensionTabDelegate(enabledExt)
                                     if (enabledExt.id == VIOLENTMONKEY_ID) {
                                         attachBridgeToExtension(enabledExt)
                                     }
@@ -287,21 +285,6 @@ class BatTvGeckoViewManager(
                     Log.e(TAG, "Error al cargar extension $extId desde $assetUri", err)
                 }
             )
-        }
-    }
-
-    private fun attachExtensionTabDelegate(extension: WebExtension) {
-        extension.tabDelegate = object : WebExtension.TabDelegate {
-            override fun onNewTab(
-                source: WebExtension,
-                createDetails: WebExtension.CreateTabDetails
-            ): GeckoResult<GeckoSession>? {
-                val targetUri = createDetails.uri
-                if (!targetUri.isNullOrBlank() && ::session.isInitialized) {
-                    session.loadUri(targetUri)
-                }
-                return GeckoResult.fromValue(null)
-            }
         }
     }
 
