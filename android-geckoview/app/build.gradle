@@ -20,6 +20,13 @@ android {
         resConfigs "es"
     }
 
+    // Crítico: evita que AAPT2 elimine las carpetas _locales de uBlock Origin,
+    // Pop-ups Blocker y Violentmonkey dentro de assets/extensions/
+    aaptOptions {
+        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        noCompress 'xpi', 'json', 'js', 'txt', 'dat', 'html', 'css', 'wasm'
+    }
+
     buildTypes {
         release {
             minifyEnabled false
