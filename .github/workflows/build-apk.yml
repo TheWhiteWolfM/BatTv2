@@ -38,6 +38,7 @@ jobs:
       - name: Preparar las 3 extensiones oficiales (Pop-ups Blocker, uBlock Origin, Violentmonkey)
         run: |
           python3 - << 'EOF'
+          import glob
           import json
           import os
           import shutil
@@ -111,7 +112,7 @@ jobs:
               with open(manifest_path, "w", encoding="utf-8") as mf:
                   json.dump(manifest, mf, indent=2, ensure_ascii=False)
 
-          # Preconfigurar Pop-ups Blocker (strict) activo desde el primer inicio
+          # 1. Preconfigurar Pop-ups Blocker (strict) en modo bloqueo inmediato silencioso
           pb_dir = os.path.join(EXT_BASE, "popup_blocker")
           pb_manifest_path = os.path.join(pb_dir, "manifest.json")
           with open(pb_manifest_path, "r", encoding="utf-8") as mf:
@@ -121,16 +122,14 @@ jobs:
               pbf.write("""(function () {
             try {
               if (typeof browser !== "undefined" && browser.storage && browser.storage.local) {
-                browser.storage.local.get("battv_pb_ready").then(function (res) {
-                  if (!res || !res.battv_pb_ready) {
-                    browser.storage.local.set({
-                      battv_pb_ready: true,
-                      enabled: true,
-                      immediate: true,
-                      aggressive: true,
-                      badge: false
-                    });
-                  }
+                browser.storage.local.set({
+                  battv_pb_ready: true,
+                  enabled: true,
+                  immediate: true,
+                  aggressive: true,
+                  badge: false,
+                  "popup-hosts": [],
+                  "block-page-redirection": true
                 });
               }
             } catch (_) {}
@@ -144,7 +143,7 @@ jobs:
                       html = pf.read()
                   tag = '<script src="/battv_pb_init.js"></script>'
                   if tag not in html:
-                      html = html.replace("</body>", tag + "\n</body>") if "</body>" in html else (html + "\n" + tag)
+                      html = html.replace("<script", tag + "\n<script", 1) if "<script" in html else (tag + "\n" + html)
                       with open(pb_page_path, "w", encoding="utf-8") as pf:
                           pf.write(html)
           else:
@@ -155,14 +154,82 @@ jobs:
           with open(pb_manifest_path, "w", encoding="utf-8") as mf:
               json.dump(pb_manifest, mf, indent=2, ensure_ascii=False)
 
-          # Integrar «Saltarse Todos los Enlaces Acortados» y el puente de TV en Violentmonkey
+          # 2. Reforzar las listas preinstaladas de uBlock Origin para que bloqueen desde el primer inicio
+          #    reproductores publicitarios flotantes (Vidoomy/Viwom, Aniview, Adsterra, Monetag, Exoclick)
+          ub_dir = os.path.join(EXT_BASE, "ublock_origin")
+          extra_ublock_rules = """
+          ! Filtros integrados Battv.2 para sitios de streaming (DramaChino, Doramasflix, JKAnime, etc.)
+          ||vidoomy.com^$all
+          ||viwom.com^$all
+          ||wortise.com^$all
+          ||aniview.com^$all
+          ||primis.tech^$all
+          ||adinplay.com^$all
+          ||brid.tv^$all
+          ||exoclick.com^$all
+          ||magsrv.com^$all
+          ||realsrv.com^$all
+          ||adsterra.com^$all
+          ||monetag.com^$all
+          ||acscdn.com^$all
+          ||onclickads.net^$all
+          ||popads.net^$all
+          ||popcash.net^$all
+          ||propellerads.com^$all
+          ||hilltopads.net^$all
+          ||galaksion.com^$all
+          ||clickadu.com^$all
+          ||juicyads.com^$all
+          ||bidgear.com^$all
+          ||optad360.io^$all
+          ||teads.tv^$all
+          ||tsyndicate.com^$all
+          ||trafficjunky.net^$all
+          ||rollerads.com^$all
+          ||evadav.com^$all
+          ||richads.com^$all
+          ||admaven.com^$all
+          ||adcash.com^$all
+          ||1xbet.com^$all
+          ||bet365.com^$all
+          *##div[id*="vidoomy"]
+          *##div[class*="vidoomy"]
+          *##div[id*="viwom"]
+          *##div[class*="viwom"]
+          *##div[id*="aniview"]
+          *##div[class*="aniview"]
+          *##iframe[src*="vidoomy"]
+          *##iframe[src*="viwom"]
+          *##iframe[src*="exoclick"]
+          """
+          ub_filter_files = glob.glob(os.path.join(ub_dir, "assets", "ublock", "*.txt"))
+          for ff in ub_filter_files:
+              if "filters" in os.path.basename(ff) or "badware" in os.path.basename(ff) or "quick-fixes" in os.path.basename(ff):
+                  with open(ff, "a", encoding="utf-8") as ubf:
+                      ubf.write("\n" + extra_ublock_rules.strip() + "\n")
+
+          # Activar también las listas en español (spa-0, spa-1) por defecto en assets.json de uBlock Origin
+          ub_assets_json = os.path.join(ub_dir, "assets", "assets.json")
+          if os.path.exists(ub_assets_json):
+              try:
+                  with open(ub_assets_json, "r", encoding="utf-8") as ajf:
+                      assets_data = json.load(ajf)
+                  for key in ["spa-0", "spa-1"]:
+                      if key in assets_data and isinstance(assets_data[key], dict):
+                          assets_data[key]["off"] = False
+                  with open(ub_assets_json, "w", encoding="utf-8") as ajf:
+                      json.dump(assets_data, ajf, indent=2, ensure_ascii=False)
+              except Exception as e:
+                  print("Aviso en assets.json:", e)
+
+          # 3. Integrar «Saltarse Todos los Enlaces Acortados» y el puente de TV en Violentmonkey
           vm_dir = os.path.join(EXT_BASE, "violentmonkey")
           vm_manifest_path = os.path.join(vm_dir, "manifest.json")
 
           shortlink_userscript = r'''// ==UserScript==
           // @name         Saltarse Todos los Enlaces Acortados
           // @namespace    battv.shortlinks.bypass
-          // @version      2.1.0
+          // @version      2.2.0
           // @description  Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.
           // @author       BatTV
           // @run-at       document-start
@@ -279,7 +346,7 @@ jobs:
 
           preload_bg_js = r'''(function () {
             "use strict";
-            const SEED_KEY = "battv_shortlink_script_seeded_v2";
+            const SEED_KEY = "battv_shortlink_script_seeded_v3";
             const SCRIPT_CODE = `''' + shortlink_userscript.strip().replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$") + r'''`;
 
             async function seedShortlinkScript() {
@@ -299,7 +366,7 @@ jobs:
                   meta: {
                     name: "Saltarse Todos los Enlaces Acortados",
                     namespace: "battv.shortlinks.bypass",
-                    version: "2.1.0",
+                    version: "2.2.0",
                     description: "Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.",
                     author: "BatTV",
                     runAt: "document-start",
@@ -338,6 +405,20 @@ jobs:
                 payload["val:" + scriptId] = {};
 
                 await browser.storage.local.set(payload);
+
+                setTimeout(function () {
+                  try {
+                    browser.runtime.sendMessage({
+                      cmd: "ParseScript",
+                      data: {
+                        code: SCRIPT_CODE,
+                        url: "https://greasyfork.org/scripts/431691/code/bypass.user.js",
+                        from: "battv",
+                        config: { enabled: 1, shouldUpdate: 0 }
+                      }
+                    }).catch(function () {});
+                  } catch (_) {}
+                }, 1500);
               } catch (e) {
                 console.error("Error al inicializar script en Violentmonkey:", e);
               }
@@ -359,6 +440,37 @@ jobs:
             let port = null;
             let activeInputEl = null;
             let inputCounter = 1;
+            let promptedVideosSet = new WeakSet();
+            let lastFullscreenPromptMs = 0;
+
+            // 1. Inyectar bloqueo de window.open en el Main World de la pagina para impedir popups y tab-unders
+            try {
+              const mainWorldScript = document.createElement("script");
+              mainWorldScript.textContent = `(function(){
+                try {
+                  const dummyWin = {
+                    closed: false,
+                    focus: function(){},
+                    blur: function(){},
+                    close: function(){},
+                    postMessage: function(){},
+                    location: { href: "about:blank", assign: function(){}, replace: function(){} }
+                  };
+                  Object.defineProperty(window, "open", {
+                    value: function(url) {
+                      if (url && typeof url === "string" && url.startsWith(location.origin)) {
+                        location.href = url;
+                      }
+                      return dummyWin;
+                    },
+                    writable: false,
+                    configurable: false
+                  });
+                } catch(_) {}
+              })();`;
+              (document.head || document.documentElement).appendChild(mainWorldScript);
+              mainWorldScript.remove();
+            } catch (_) {}
 
             function connectBridge() {
               try {
@@ -379,6 +491,64 @@ jobs:
               } catch (_) {}
             }
 
+            // 2. Limpiar anuncios de video flotantes (Vidoomy/Viwom/Outstream) y carteles falsos ("Atencion / Haz clic en Mas")
+            function purgeFloatingAdOverlays() {
+              try {
+                const adSelectors = [
+                  "[id*='vidoomy' i]", "[class*='vidoomy' i]",
+                  "[id*='viwom' i]", "[class*='viwom' i]",
+                  "[id*='aniview' i]", "[class*='aniview' i]",
+                  "[id*='primis' i]", "[class*='primis' i]",
+                  "[id*='adinplay' i]", "[class*='adinplay' i]",
+                  "iframe[src*='vidoomy' i]", "iframe[src*='viwom' i]",
+                  "iframe[src*='exoclick' i]", "iframe[src*='adsterra' i]",
+                  "iframe[src*='doubleclick' i]", "iframe[src*='googlesyndication' i]"
+                ];
+                const badNodes = document.querySelectorAll(adSelectors.join(","));
+                for (let i = 0; i < badNodes.length; i++) {
+                  badNodes[i].remove();
+                }
+
+                // Eliminar reproductores de anuncios flotantes en las esquinas y notificaciones falsas ("Atencion")
+                const fixedEls = document.querySelectorAll("div, section, aside, ins");
+                const vw = window.innerWidth || 1280;
+                const vh = window.innerHeight || 720;
+                for (let j = 0; j < fixedEls.length; j++) {
+                  const el = fixedEls[j];
+                  if (el.id === "__battv_fullscreen_css") continue;
+                  const style = window.getComputedStyle(el);
+                  if (style.position === "fixed" || style.position === "sticky") {
+                    const z = parseInt(style.zIndex || "0", 10);
+                    const rect = el.getBoundingClientRect();
+                    const txt = (el.innerText || "").trim();
+
+                    // Cartel falso "Atencion - Haz clic en Mas para continuar"
+                    if (txt.includes("Haz clic en") && (txt.includes("continuar") || txt.includes("Atenci"))) {
+                      el.remove();
+                      continue;
+                    }
+
+                    // Video publicitario flotante pequeño en esquina (Outstream ad)
+                    if (rect.width > 80 && rect.width < vw * 0.58 && rect.height > 60 && rect.height < vh * 0.65 && z >= 99) {
+                      const hasShortAdVideo = el.querySelector("video");
+                      if (hasShortAdVideo && (!Number.isFinite(hasShortAdVideo.duration) || hasShortAdVideo.duration < 90)) {
+                        hasShortAdVideo.pause();
+                        hasShortAdVideo.src = "";
+                        el.remove();
+                        continue;
+                      }
+                    }
+
+                    // Capas invisibles de clickjacking sobre la pagina
+                    if (z > 900 && parseFloat(style.opacity || "1") < 0.12 && rect.width > vw * 0.4) {
+                      el.remove();
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+
+            // 3. Estilos de pantalla completa sin bordes ni espacios vacios
             function injectFullscreenFixStyles() {
               try {
                 const styleId = "__battv_fullscreen_css";
@@ -386,7 +556,9 @@ jobs:
                 const style = document.createElement("style");
                 style.id = styleId;
                 style.textContent = `
-                  :fullscreen, :-moz-full-screen {
+                  :fullscreen, :-moz-full-screen, .__battv_forced_fullscreen {
+                    position: fixed !important;
+                    inset: 0 !important;
                     width: 100vw !important;
                     height: 100vh !important;
                     max-width: 100vw !important;
@@ -399,16 +571,19 @@ jobs:
                     left: 0 !important;
                     right: 0 !important;
                     bottom: 0 !important;
+                    z-index: 2147483647 !important;
                     background: #000 !important;
                     box-sizing: border-box !important;
                   }
                   :fullscreen video, :-moz-full-screen video,
-                  video:fullscreen, video:-moz-full-screen {
+                  video:fullscreen, video:-moz-full-screen,
+                  video.__battv_forced_fullscreen, .__battv_forced_fullscreen video {
                     width: 100% !important;
                     height: 100% !important;
                     max-width: 100% !important;
                     max-height: 100% !important;
                     object-fit: contain !important;
+                    background: #000 !important;
                   }
                 `;
                 (document.head || document.documentElement).appendChild(style);
@@ -443,6 +618,7 @@ jobs:
             document.addEventListener("fullscreenchange", onFullscreenChanged, true);
             document.addEventListener("mozfullscreenchange", onFullscreenChanged, true);
 
+            // 4. Gestion de formularios para control remoto
             function isEditableTextInput(el) {
               if (!el || el.disabled || el.readOnly) return false;
               const tag = (el.tagName || "").toUpperCase();
@@ -494,6 +670,7 @@ jobs:
 
             document.addEventListener("click", function (e) {
               enableIframeFullscreenAttrs();
+              purgeFloatingAdOverlays();
               const target = e.target ? e.target.closest("input, textarea, [contenteditable='true']") : null;
               if (target && isEditableTextInput(target)) {
                 notifyInputFocus(target);
@@ -536,31 +713,86 @@ jobs:
               } catch (_) {}
             }
 
+            // 5. Deteccion de video legitimo (excluyendo anuncios) y solicitud de pantalla completa
+            function isRealContentVideo(v) {
+              if (!v) return false;
+              const rect = v.getBoundingClientRect();
+              if (rect.width < 200 || rect.height < 115) return false;
+              const dur = v.duration;
+              // Excluir clips publicitarios cortos (< 90 segundos)
+              if (Number.isFinite(dur) && dur > 0 && dur < 90) return false;
+              return (Number.isFinite(dur) && dur >= 90) || (!Number.isFinite(dur) && v.readyState >= 2);
+            }
+
             function findActiveVideo() {
-              const videos = Array.from(document.querySelectorAll("video"));
+              const videos = Array.from(document.querySelectorAll("video")).filter(isRealContentVideo);
               if (videos.length === 0) return null;
               videos.sort(function (a, b) {
-                const durA = Number.isFinite(a.duration) ? a.duration : 0;
-                const durB = Number.isFinite(b.duration) ? b.duration : 0;
+                const durA = Number.isFinite(a.duration) ? a.duration : 3600;
+                const durB = Number.isFinite(b.duration) ? b.duration : 3600;
                 return durB - durA;
               });
               return videos[0];
             }
 
-            setInterval(function () {
+            function requestEnterFullscreenOnActiveVideo() {
               try {
                 const v = findActiveVideo();
-                if (v && Number.isFinite(v.duration) && v.duration > 5) {
+                if (!v) return;
+                injectFullscreenFixStyles();
+                const container = v.closest(".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, #player, .player") || v;
+                const reqFn = container.requestFullscreen || container.mozRequestFullScreen || container.webkitRequestFullscreen ||
+                              v.requestFullscreen || v.mozRequestFullScreen || v.webkitRequestFullscreen;
+                if (reqFn) {
+                  const p = reqFn.call(container);
+                  if (p && typeof p.catch === "function") {
+                    p.catch(function () {
+                      try {
+                        (v.requestFullscreen || v.mozRequestFullScreen).call(v);
+                      } catch (_) {
+                        v.classList.add("__battv_forced_fullscreen");
+                      }
+                    });
+                  }
+                } else {
+                  v.classList.add("__battv_forced_fullscreen");
+                }
+                setTimeout(function () {
+                  try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+                }, 150);
+              } catch (_) {}
+            }
+
+            setInterval(function () {
+              try {
+                purgeFloatingAdOverlays();
+                const v = findActiveVideo();
+                if (v) {
+                  const isPlaying = !v.paused && !v.ended && v.readyState >= 2;
+                  const dur = Number.isFinite(v.duration) ? v.duration : 0;
                   postToNative({
                     type: "VIDEO_STATE",
-                    hasVod: true,
-                    playing: !v.paused && !v.ended,
+                    hasVod: dur >= 90,
+                    playing: isPlaying,
                     currentTime: v.currentTime || 0,
-                    duration: v.duration || 0
+                    duration: dur
                   });
+
+                  // Si el video real acaba de empezar a reproducirse y no esta en pantalla completa,
+                  // avisar a MainActivity para mostrar el dialogo "¿Quieres abrir en pantalla completa? Aceptar / Cancelar"
+                  const inDomFullscreen = !!(document.fullscreenElement || document.mozFullScreenElement);
+                  const now = Date.now();
+                  if (isPlaying && v.currentTime >= 0.4 && !inDomFullscreen && !promptedVideosSet.has(v) && (now - lastFullscreenPromptMs > 4000)) {
+                    promptedVideosSet.add(v);
+                    lastFullscreenPromptMs = now;
+                    postToNative({
+                      type: "VIDEO_PLAY_STARTED_PROMPT_FS",
+                      duration: dur
+                    });
+                  }
                 }
               } catch (_) {}
-            }, 900);
+            }, 850);
 
             if (isTopFrame) {
               let lastReportedScroll = -1;
@@ -622,8 +854,16 @@ jobs:
                   notifyInputFocus(nextEl);
                 }
               } else if (msg.type === "VIDEO_COMMAND") {
+                if (msg.action === "ENTER_FULLSCREEN") {
+                  requestEnterFullscreenOnActiveVideo();
+                  return;
+                }
                 if (msg.action === "EXIT_FULLSCREEN") {
                   try {
+                    const forced = document.querySelectorAll(".__battv_forced_fullscreen");
+                    for (let i = 0; i < forced.length; i++) {
+                      forced[i].classList.remove("__battv_forced_fullscreen");
+                    }
                     if (document.fullscreenElement && document.exitFullscreen) {
                       document.exitFullscreen().catch(function () {});
                     } else if (document.mozFullScreenElement && document.mozCancelFullScreen) {
@@ -652,10 +892,12 @@ jobs:
               document.addEventListener("DOMContentLoaded", function () {
                 injectFullscreenFixStyles();
                 enableIframeFullscreenAttrs();
+                purgeFloatingAdOverlays();
               });
             } else {
               injectFullscreenFixStyles();
               enableIframeFullscreenAttrs();
+              purgeFloatingAdOverlays();
             }
 
             try {
@@ -732,10 +974,10 @@ jobs:
         working-directory: android-geckoview
         run: gradle assembleRelease --no-daemon --no-build-cache --stacktrace
 
-      - name: Verificar APK generado y mostrar tamano final
+      - name: Verificar APK generado y comprobar que _locales está empaquetado
         run: |
           ls -lh android-geckoview/app/build/outputs/apk/release/*.apk
-          du -h android-geckoview/app/build/outputs/apk/release/*.apk
+          unzip -l android-geckoview/app/build/outputs/apk/release/*.apk | grep "_locales" | head -n 15
 
       - name: Subir APK generado
         uses: actions/upload-artifact@v4
