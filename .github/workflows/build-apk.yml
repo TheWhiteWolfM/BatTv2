@@ -1,4 +1,3 @@
-
 name: Compilar Battv.2
 
 on:
@@ -36,6 +35,628 @@ jobs:
         with:
           packages: 'platform-tools'
 
+      - name: Preparar las 3 extensiones oficiales (Pop-ups Blocker, uBlock Origin, Violentmonkey)
+        run: |
+          python3 - << 'EOF'
+          import json
+          import os
+          import shutil
+          import urllib.request
+          import zipfile
+
+          EXT_BASE = "android-geckoview/app/src/main/assets/extensions"
+          if os.path.exists(EXT_BASE):
+              shutil.rmtree(EXT_BASE)
+          os.makedirs(EXT_BASE, exist_ok=True)
+
+          EXTENSIONS = [
+              {
+                  "folder": "popup_blocker",
+                  "id": "{54e2eb33-18eb-46ad-a4e4-1329c29f6e17}",
+                  "url": "https://addons.mozilla.org/firefox/downloads/latest/popup-blocker/latest.xpi"
+              },
+              {
+                  "folder": "ublock_origin",
+                  "id": "uBlock0@raymondhill.net",
+                  "url": "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+              },
+              {
+                  "folder": "violentmonkey",
+                  "id": "{aecec67f-0d10-4fa7-b7c7-609a2db280cf}",
+                  "url": "https://addons.mozilla.org/firefox/downloads/latest/violentmonkey/latest.xpi"
+              }
+          ]
+
+          KEEP_LOCALES = {"en", "en_US", "en_GB", "es", "es_ES", "es_419"}
+
+          for ext in EXTENSIONS:
+              dest_dir = os.path.join(EXT_BASE, ext["folder"])
+              os.makedirs(dest_dir, exist_ok=True)
+              xpi_path = os.path.join(EXT_BASE, ext["folder"] + ".xpi")
+              print(f"Descargando {ext['folder']} desde {ext['url']}...")
+              req = urllib.request.Request(
+                  ext["url"],
+                  headers={"User-Agent": "Mozilla/5.0 (Android 14; Mobile; rv:130.0) Gecko/130.0 Firefox/130.0"}
+              )
+              with urllib.request.urlopen(req, timeout=60) as resp, open(xpi_path, "wb") as out_f:
+                  shutil.copyfileobj(resp, out_f)
+
+              with zipfile.ZipFile(xpi_path, "r") as zf:
+                  zf.extractall(dest_dir)
+              os.remove(xpi_path)
+
+              # Eliminar firmas META-INF para carga limpia mediante ensureBuiltIn en GeckoView
+              meta_inf = os.path.join(dest_dir, "META-INF")
+              if os.path.exists(meta_inf):
+                  shutil.rmtree(meta_inf)
+
+              # Reducir peso eliminando idiomas no utilizados en _locales sin afectar funciones
+              locales_dir = os.path.join(dest_dir, "_locales")
+              if os.path.isdir(locales_dir):
+                  for loc in os.listdir(locales_dir):
+                      loc_path = os.path.join(locales_dir, loc)
+                      if os.path.isdir(loc_path) and loc not in KEEP_LOCALES:
+                          shutil.rmtree(loc_path)
+
+              manifest_path = os.path.join(dest_dir, "manifest.json")
+              with open(manifest_path, "r", encoding="utf-8") as mf:
+                  manifest = json.load(mf)
+
+              bss = manifest.setdefault("browser_specific_settings", {})
+              gecko = bss.setdefault("gecko", {})
+              gecko["id"] = ext["id"]
+              gecko.pop("update_url", None)
+              if "applications" in manifest and "gecko" in manifest["applications"]:
+                  manifest["applications"]["gecko"]["id"] = ext["id"]
+                  manifest["applications"]["gecko"].pop("update_url", None)
+
+              with open(manifest_path, "w", encoding="utf-8") as mf:
+                  json.dump(manifest, mf, indent=2, ensure_ascii=False)
+
+          # Integrar el script «Saltarse Todos los Enlaces Acortados» y el puente de TV en Violentmonkey
+          vm_dir = os.path.join(EXT_BASE, "violentmonkey")
+          vm_manifest_path = os.path.join(vm_dir, "manifest.json")
+
+          shortlink_userscript = r'''// ==UserScript==
+          // @name         Saltarse Todos los Enlaces Acortados
+          // @namespace    battv.shortlinks.bypass
+          // @version      2.1.0
+          // @description  Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.
+          // @author       BatTV
+          // @run-at       document-start
+          // @match        *://*/*
+          // @grant        none
+          // ==/UserScript==
+
+          (function () {
+            "use strict";
+            if (window.__battvShortlinkBypassActive) return;
+            window.__battvShortlinkBypassActive = true;
+
+            const SHORTENER_HOSTS = [
+              "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
+              "shrtfly.com", "shrinke.me", "shrinkme.io", "linkvertise.com",
+              "adfoc.us", "bc.vc", "shorte.st", "gestyy.com", "destyy.com",
+              "corneey.com", "clk.sh", "clk.asia", "oko.sh", "za.gl",
+              "cuty.io", "cety.app", "gplinks.co", "droplink.co", "tnshort.net",
+              "rekonise.com", "sub2unlock.com", "boost.ink", "mboost.me",
+              "embedshortener.co", "short-jambo.com", "uii.io", "mitly.us"
+            ];
+
+            function tryDecodeBase64Url(str) {
+              try {
+                const clean = decodeURIComponent(str).trim().replace(/-/g, "+").replace(/_/g, "/");
+                const decoded = atob(clean).trim();
+                if (/^https?:\/\/[^\s"']+$/i.test(decoded)) return decoded;
+              } catch (_) {}
+              return null;
+            }
+
+            function checkDirectRedirectParams() {
+              try {
+                const loc = window.location;
+                const host = loc.hostname.toLowerCase();
+
+                // Soporte para embedshortener.co/e/<jwt>
+                if (host.includes("embedshortener.co") && loc.pathname.startsWith("/e/")) {
+                  const parts = loc.pathname.slice(3).split(".");
+                  if (parts.length > 1) {
+                    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+                    if (payload && payload.link) {
+                      const target = tryDecodeBase64Url(payload.link);
+                      if (target) {
+                        loc.replace(target);
+                        return true;
+                      }
+                    }
+                  }
+                }
+
+                const isKnownShortener = SHORTENER_HOSTS.some(function (d) {
+                  return host === d || host.endsWith("." + d);
+                });
+                if (!isKnownShortener) return false;
+
+                const params = new URLSearchParams(loc.search);
+                const candidateKeys = ["url", "dest", "destination", "go", "link", "target", "out", "redirect", "r", "u"];
+                for (let i = 0; i < candidateKeys.length; i++) {
+                  const val = params.get(candidateKeys[i]);
+                  if (!val) continue;
+                  if (/^https?:\/\//i.test(val)) {
+                    loc.replace(val);
+                    return true;
+                  }
+                  const b64 = tryDecodeBase64Url(val);
+                  if (b64) {
+                    loc.replace(b64);
+                    return true;
+                  }
+                }
+              } catch (_) {}
+              return false;
+            }
+
+            if (checkDirectRedirectParams()) return;
+
+            function accelerateAndClickShortener() {
+              try {
+                const host = window.location.hostname.toLowerCase();
+                const isKnownShortener = SHORTENER_HOSTS.some(function (d) {
+                  return host === d || host.endsWith("." + d);
+                });
+                if (!isKnownShortener) return;
+
+                const selectors = [
+                  "a#btn-main.btn", "button#btn-main", "#invisibleCaptchaShortlink",
+                  "a.get-link", "button.get-link", "#yuidea-btn", "#btn6",
+                  "a[href*='https://'][class*='btn']", "form#go-link button[type='submit']"
+                ];
+                for (let i = 0; i < selectors.length; i++) {
+                  const el = document.querySelector(selectors[i]);
+                  if (el && !el.disabled) {
+                    const href = el.getAttribute("href");
+                    if (href && /^https?:\/\//i.test(href) && !href.includes(host)) {
+                      window.location.replace(href);
+                      return;
+                    }
+                    el.click();
+                  }
+                }
+              } catch (_) {}
+            }
+
+            document.addEventListener("DOMContentLoaded", function () {
+              accelerateAndClickShortener();
+              setTimeout(accelerateAndClickShortener, 1200);
+              setTimeout(accelerateAndClickShortener, 2800);
+            });
+          })();
+          '''
+
+          with open(os.path.join(vm_dir, "saltarse_enlaces_acortados.user.js"), "w", encoding="utf-8") as sf:
+              sf.write(shortlink_userscript.strip() + "\n")
+
+          preload_bg_js = r'''(function () {
+            "use strict";
+            const SEED_KEY = "battv_shortlink_script_seeded_v2";
+            const SCRIPT_CODE = `''' + shortlink_userscript.strip().replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$") + r'''`;
+
+            async function seedShortlinkScript() {
+              try {
+                if (typeof browser === "undefined" || !browser.storage || !browser.storage.local) return;
+                const data = await browser.storage.local.get([SEED_KEY, "Ids"]);
+                if (data && data[SEED_KEY]) return;
+
+                const now = Date.now();
+                const ids = Array.isArray(data.Ids) ? data.Ids : [];
+                const scriptId = 1;
+                if (!ids.includes(scriptId)) {
+                  ids.push(scriptId);
+                }
+
+                const scriptObj = {
+                  meta: {
+                    name: "Saltarse Todos los Enlaces Acortados",
+                    namespace: "battv.shortlinks.bypass",
+                    version: "2.1.0",
+                    description: "Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.",
+                    author: "BatTV",
+                    runAt: "document-start",
+                    match: ["*://*/*"],
+                    include: [],
+                    exclude: [],
+                    excludeMatch: [],
+                    grant: ["none"],
+                    resources: {}
+                  },
+                  custom: {
+                    origInclude: true,
+                    origExclude: true,
+                    origMatch: true,
+                    origExcludeMatch: true
+                  },
+                  props: {
+                    id: scriptId,
+                    position: 1,
+                    lastModified: now,
+                    lastUpdated: now,
+                    uri: "battv.shortlinks.bypass/Saltarse_Todos_los_Enlaces_Acortados"
+                  },
+                  config: {
+                    enabled: 1,
+                    shouldUpdate: 0,
+                    notifyUpdates: 0
+                  }
+                };
+
+                const payload = {};
+                payload[SEED_KEY] = true;
+                payload["Ids"] = ids;
+                payload["script:" + scriptId] = scriptObj;
+                payload["code:" + scriptId] = SCRIPT_CODE;
+                payload["val:" + scriptId] = {};
+
+                await browser.storage.local.set(payload);
+              } catch (e) {
+                console.error("Error al inicializar script en Violentmonkey:", e);
+              }
+            }
+
+            seedShortlinkScript();
+          })();
+          '''
+
+          with open(os.path.join(vm_dir, "preload_shortlinks.js"), "w", encoding="utf-8") as pf:
+              pf.write(preload_bg_js.strip() + "\n")
+
+          battv_tv_helper_js = r'''(function () {
+            "use strict";
+            if (window.__battvTvHelperLoaded) return;
+            window.__battvTvHelperLoaded = true;
+
+            const isTopFrame = (window === window.top);
+            let port = null;
+            let activeInputEl = null;
+            let inputCounter = 1;
+
+            function connectBridge() {
+              try {
+                if (typeof browser !== "undefined" && browser.runtime && browser.runtime.connectNative) {
+                  port = browser.runtime.connectNative("battv_bridge");
+                  port.onMessage.addListener(handleNativeMessage);
+                  port.onDisconnect.addListener(function () {
+                    port = null;
+                  });
+                }
+              } catch (_) {}
+            }
+
+            function postToNative(obj) {
+              try {
+                if (!port) connectBridge();
+                if (port) port.postMessage(obj);
+              } catch (_) {}
+            }
+
+            // 1. Asegurar soporte de pantalla completa real en iframes y reproductores sin espacios vacios
+            function injectFullscreenFixStyles() {
+              try {
+                const styleId = "__battv_fullscreen_css";
+                if (document.getElementById(styleId)) return;
+                const style = document.createElement("style");
+                style.id = styleId;
+                style.textContent = `
+                  :fullscreen, :-moz-full-screen {
+                    width: 100vw !important;
+                    height: 100vh !important;
+                    max-width: 100vw !important;
+                    max-height: 100vh !important;
+                    min-width: 100vw !important;
+                    min-height: 100vh !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    top: 0 !important;
+                    left: 0 !important;
+                    right: 0 !important;
+                    bottom: 0 !important;
+                    background: #000 !important;
+                    box-sizing: border-box !important;
+                  }
+                  :fullscreen video, :-moz-full-screen video,
+                  video:fullscreen, video:-moz-full-screen {
+                    width: 100% !important;
+                    height: 100% !important;
+                    max-width: 100% !important;
+                    max-height: 100% !important;
+                    object-fit: contain !important;
+                  }
+                `;
+                (document.head || document.documentElement).appendChild(style);
+              } catch (_) {}
+            }
+
+            function enableIframeFullscreenAttrs() {
+              try {
+                const iframes = document.querySelectorAll("iframe");
+                for (let i = 0; i < iframes.length; i++) {
+                  const f = iframes[i];
+                  if (!f.hasAttribute("allowfullscreen")) f.setAttribute("allowfullscreen", "true");
+                  if (!f.hasAttribute("webkitallowfullscreen")) f.setAttribute("webkitallowfullscreen", "true");
+                  if (!f.hasAttribute("mozallowfullscreen")) f.setAttribute("mozallowfullscreen", "true");
+                  const allow = f.getAttribute("allow") || "";
+                  if (!allow.includes("fullscreen")) {
+                    f.setAttribute("allow", (allow ? allow + "; " : "") + "fullscreen; autoplay; encrypted-media; picture-in-picture");
+                  }
+                }
+              } catch (_) {}
+            }
+
+            function onFullscreenChanged() {
+              setTimeout(function () {
+                try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+              }, 80);
+              setTimeout(function () {
+                try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+              }, 240);
+            }
+
+            document.addEventListener("fullscreenchange", onFullscreenChanged, true);
+            document.addEventListener("mozfullscreenchange", onFullscreenChanged, true);
+
+            // 2. Gestion de formularios y navegacion entre campos para control remoto
+            function isEditableTextInput(el) {
+              if (!el || el.disabled || el.readOnly) return false;
+              const tag = (el.tagName || "").toUpperCase();
+              if (tag === "TEXTAREA") return true;
+              if (tag === "INPUT") {
+                const type = (el.type || "text").toLowerCase();
+                return ["text", "search", "email", "url", "tel", "password", "number"].includes(type);
+              }
+              return el.isContentEditable === true;
+            }
+
+            function getAllEditableInputs() {
+              const list = Array.from(document.querySelectorAll("input, textarea, [contenteditable='true']"));
+              return list.filter(function (el) {
+                if (!isEditableTextInput(el)) return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 10 && rect.height > 10;
+              });
+            }
+
+            function ensureInputId(el) {
+              if (!el.dataset.battvInputId) {
+                el.dataset.battvInputId = "battv_inp_" + (inputCounter++);
+              }
+              return el.dataset.battvInputId;
+            }
+
+            function findInputById(id) {
+              if (!id) return activeInputEl;
+              const found = document.querySelector('[data-battv-input-id="' + id + '"]');
+              return found || activeInputEl;
+            }
+
+            function notifyInputFocus(el) {
+              if (!isEditableTextInput(el)) return;
+              activeInputEl = el;
+              const id = ensureInputId(el);
+              const allInputs = getAllEditableInputs();
+              const val = el.isContentEditable ? (el.textContent || "") : (el.value || "");
+              const placeholder = el.getAttribute("placeholder") || el.getAttribute("aria-label") || el.name || "";
+              postToNative({
+                type: "WEB_INPUT_FOCUS",
+                inputId: id,
+                value: val,
+                placeholder: placeholder,
+                isMultiField: allInputs.length > 1
+              });
+            }
+
+            document.addEventListener("click", function (e) {
+              const target = e.target ? e.target.closest("input, textarea, [contenteditable='true']") : null;
+              if (target && isEditableTextInput(target)) {
+                notifyInputFocus(target);
+              }
+            }, true);
+
+            function setElementValue(el, value, submit) {
+              if (!el) return;
+              try {
+                el.focus();
+                if (el.isContentEditable) {
+                  el.textContent = value;
+                } else {
+                  const proto = el.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+                  const setter = Object.getOwnPropertyDescriptor(proto, "value");
+                  if (setter && setter.set) {
+                    setter.set.call(el, value);
+                  } else {
+                    el.value = value;
+                  }
+                }
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                el.dispatchEvent(new Event("change", { bubbles: true }));
+
+                if (submit) {
+                  const enterDown = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true });
+                  const enterPress = new KeyboardEvent("keypress", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true });
+                  const enterUp = new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true });
+                  el.dispatchEvent(enterDown);
+                  el.dispatchEvent(enterPress);
+                  el.dispatchEvent(enterUp);
+                  if (el.form) {
+                    if (typeof el.form.requestSubmit === "function") {
+                      el.form.requestSubmit();
+                    } else {
+                      el.form.submit();
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+
+            // 3. Control e indicadores de video HTML5
+            function findActiveVideo() {
+              const videos = Array.from(document.querySelectorAll("video"));
+              if (videos.length === 0) return null;
+              videos.sort(function (a, b) {
+                const durA = Number.isFinite(a.duration) ? a.duration : 0;
+                const durB = Number.isFinite(b.duration) ? b.duration : 0;
+                return durB - durA;
+              });
+              return videos[0];
+            }
+
+            setInterval(function () {
+              try {
+                const v = findActiveVideo();
+                if (v && Number.isFinite(v.duration) && v.duration > 5) {
+                  postToNative({
+                    type: "VIDEO_STATE",
+                    hasVod: true,
+                    playing: !v.paused && !v.ended,
+                    currentTime: v.currentTime || 0,
+                    duration: v.duration || 0
+                  });
+                }
+              } catch (_) {}
+            }, 900);
+
+            // 4. Seguimiento de scroll y extraccion de titulo de serie / temporada / episodio para el Historial
+            if (isTopFrame) {
+              let lastReportedScroll = -1;
+              window.addEventListener("scroll", function () {
+                const st = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+                if (Math.abs(st - lastReportedScroll) > 6) {
+                  lastReportedScroll = st;
+                  postToNative({ type: "PAGE_SCROLL_STATE", scrollTop: st });
+                }
+              }, { passive: true });
+
+              function extractMediaMetadata() {
+                try {
+                  const h1 = document.querySelector("h1, .Title, .entry-title, .episodiotitle, .anime-title");
+                  const ogTitle = document.querySelector("meta[property='og:title']");
+                  const raw = (h1 ? h1.textContent : (ogTitle ? ogTitle.content : document.title)) || document.title || "";
+                  const clean = raw.replace(/\s+/g, " ").trim();
+                  if (clean) {
+                    postToNative({
+                      type: "PAGE_MEDIA_METADATA",
+                      rawHeading: clean,
+                      pageTitle: document.title || "",
+                      url: window.location.href
+                    });
+                  }
+                } catch (_) {}
+              }
+
+              window.addEventListener("DOMContentLoaded", extractMediaMetadata);
+              window.addEventListener("load", extractMediaMetadata);
+            }
+
+            function handleNativeMessage(msg) {
+              if (!msg || !msg.type) return;
+              if (msg.type === "WEB_INPUT_UPDATE") {
+                const el = findInputById(msg.inputId);
+                setElementValue(el, msg.value || "", msg.submit === true);
+              } else if (msg.type === "WEB_INPUT_COMMIT_ONLY") {
+                const el = findInputById(msg.inputId);
+                if (el) el.blur();
+              } else if (msg.type === "REQUEST_ACTIVE_WEB_INPUT") {
+                const active = document.activeElement;
+                if (active && isEditableTextInput(active)) {
+                  notifyInputFocus(active);
+                } else {
+                  const all = getAllEditableInputs();
+                  if (all.length > 0) notifyInputFocus(all[0]);
+                }
+              } else if (msg.type === "WEB_FORM_NAVIGATE") {
+                const all = getAllEditableInputs();
+                if (all.length === 0) return;
+                const current = findInputById(msg.inputId);
+                let idx = all.indexOf(current);
+                if (idx === -1) idx = 0;
+                const nextIdx = (idx + (msg.direction || 1) + all.length) % all.length;
+                const nextEl = all[nextIdx];
+                if (nextEl) {
+                  nextEl.focus();
+                  notifyInputFocus(nextEl);
+                }
+              } else if (msg.type === "VIDEO_COMMAND") {
+                const v = findActiveVideo();
+                if (!v) return;
+                if (msg.action === "SEEK_TO" && typeof msg.time === "number") {
+                  v.currentTime = Math.max(0, Math.min(v.duration || msg.time, msg.time));
+                } else if (msg.action === "TOGGLE_PLAY") {
+                  if (v.paused) v.play().catch(function () {});
+                  else v.pause();
+                }
+              }
+            }
+
+            connectBridge();
+            if (document.readyState === "loading") {
+              document.addEventListener("DOMContentLoaded", function () {
+                injectFullscreenFixStyles();
+                enableIframeFullscreenAttrs();
+              });
+            } else {
+              injectFullscreenFixStyles();
+              enableIframeFullscreenAttrs();
+            }
+            setInterval(enableIframeFullscreenAttrs, 2500);
+          })();
+          '''
+
+          with open(os.path.join(vm_dir, "battv_tv_helper.js"), "w", encoding="utf-8") as hf:
+              hf.write(battv_tv_helper_js.strip() + "\n")
+
+          with open(vm_manifest_path, "r", encoding="utf-8") as mf:
+              vm_manifest = json.load(mf)
+
+          perms = vm_manifest.setdefault("permissions", [])
+          for p in ["<all_urls>", "storage", "nativeMessaging", "geckoViewAddons"]:
+              if p not in perms:
+                  perms.append(p)
+
+          bg = vm_manifest.setdefault("background", {})
+          if "page" in bg:
+              bg_page_path = os.path.join(vm_dir, bg["page"].lstrip("/"))
+              if os.path.exists(bg_page_path):
+                  with open(bg_page_path, "r", encoding="utf-8") as bf:
+                      html = bf.read()
+                  script_tag = '<script src="/preload_shortlinks.js"></script>'
+                  if script_tag not in html:
+                      if "</body>" in html:
+                          html = html.replace("</body>", script_tag + "\n</body>")
+                      else:
+                          html += "\n" + script_tag
+                      with open(bg_page_path, "w", encoding="utf-8") as bf:
+                          bf.write(html)
+          else:
+              bg_scripts = bg.setdefault("scripts", [])
+              if "preload_shortlinks.js" not in bg_scripts:
+                  bg_scripts.append("preload_shortlinks.js")
+
+          cs_list = vm_manifest.setdefault("content_scripts", [])
+          cs_list.append({
+              "matches": ["<all_urls>"],
+              "js": ["saltarse_enlaces_acortados.user.js", "battv_tv_helper.js"],
+              "run_at": "document_start",
+              "all_frames": True,
+              "match_about_blank": True
+          })
+
+          with open(vm_manifest_path, "w", encoding="utf-8") as mf:
+              json.dump(vm_manifest, mf, indent=2, ensure_ascii=False)
+
+          installed_folders = sorted(os.listdir(EXT_BASE))
+          print("Extensiones preparadas en assets/extensions:", installed_folders)
+          assert installed_folders == ["popup_blocker", "ublock_origin", "violentmonkey"], \
+              f"Error: se encontraron carpetas distintas a las 3 permitidas: {installed_folders}"
+          EOF
+
       - name: Instalar Gradle 8.5
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -50,6 +671,11 @@ jobs:
       - name: Compilar APK Release
         working-directory: android-geckoview
         run: gradle assembleRelease --no-daemon --no-build-cache --stacktrace
+
+      - name: Verificar APK generado y mostrar tamano final
+        run: |
+          ls -lh android-geckoview/app/build/outputs/apk/release/*.apk
+          du -h android-geckoview/app/build/outputs/apk/release/*.apk
 
       - name: Subir APK generado
         uses: actions/upload-artifact@v4
