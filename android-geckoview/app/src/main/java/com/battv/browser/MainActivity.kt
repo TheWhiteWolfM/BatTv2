@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity() {
   private lateinit var topBarLayout: LinearLayout
 
   // Exactamente 6 elementos en la barra superior y en este orden:
-  // 1. Menú, 2. Recargar, 3. Campo URL/Búsqueda, 4. Favoritos, 5. Historial, 6. Botón X
+  // 1. Menu, 2. Recargar, 3. Campo URL/Busqueda, 4. Favoritos, 5. Historial, 6. Boton X
   private lateinit var btnMenu: Button
   private lateinit var btnReload: Button
   private lateinit var urlEditText: EditText
@@ -227,9 +227,9 @@ class MainActivity : AppCompatActivity() {
 
   override fun onDestroy() {
     mainHandler.removeCallbacksAndMessages(null)
-    try {
-      geckoSession?.close()
-    } catch (_: Exception) {}
+    if (::geckoManager.isInitialized) {
+      geckoManager.closeSessionCleanly()
+    }
     super.onDestroy()
   }
 
@@ -264,13 +264,13 @@ class MainActivity : AppCompatActivity() {
       )
     }
 
-    // 1. Menú
-    btnMenu = createTvButton("☰ Menú", dp(80), isAccent = true).apply {
+    // 1. Menu
+    btnMenu = createTvButton("\u2630 Men\u00FA", dp(80), isAccent = true).apply {
       setOnClickListener { showMainMenuDialog() }
     }
 
-    // 2. Recargar página
-    btnReload = createTvButton("⟳", dp(44)).apply {
+    // 2. Recargar pagina
+    btnReload = createTvButton("\u27F3", dp(44)).apply {
       layoutParams = LinearLayout.LayoutParams(dp(44), dp(38)).apply {
         marginStart = dp(6)
       }
@@ -286,7 +286,7 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    // 3. Campo para escribir direcciones web o realizar búsquedas
+    // 3. Campo para escribir direcciones web o realizar busquedas
     urlEditText = object : EditText(this) {
       override fun onKeyPreIme(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && event != null) {
@@ -302,7 +302,7 @@ class MainActivity : AppCompatActivity() {
         return super.onKeyPreIme(keyCode, event)
       }
     }.apply {
-      hint = "Escribir dirección web o realizar búsqueda (Pulsa OK)..."
+      hint = "Escribir direcci\u00F3n web o realizar b\u00FAsqueda (Pulsa OK)..."
       setHintTextColor(Color.parseColor("#A5B4FC"))
       setTextColor(Color.parseColor("#F8FAFC"))
       setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
@@ -372,20 +372,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     // 4. Favoritos
-    btnBookmarks = createTvButton("⭐", dp(44)).apply {
+    btnBookmarks = createTvButton("\u2B50", dp(44)).apply {
       setOnClickListener { showBookmarksDialog() }
     }
 
     // 5. Historial
-    btnHistory = createTvButton("🕒", dp(44)).apply {
+    btnHistory = createTvButton("\uD83D\uDD52", dp(44)).apply {
       layoutParams = LinearLayout.LayoutParams(dp(44), dp(38)).apply {
         marginStart = dp(6)
       }
       setOnClickListener { showHistoryDialog() }
     }
 
-    // 6. Botón X para cerrar o salir del navegador
-    btnCloseApp = createTvButton("✖", dp(44), isDanger = true).apply {
+    // 6. Boton X para cerrar o salir del navegador
+    btnCloseApp = createTvButton("\u2716", dp(44), isDanger = true).apply {
       layoutParams = LinearLayout.LayoutParams(dp(44), dp(38)).apply {
         marginStart = dp(6)
       }
@@ -525,7 +525,7 @@ class MainActivity : AppCompatActivity() {
 
     suppressWebInputWatcher = true
     urlEditText.setText("")
-    urlEditText.hint = "Escribir dirección web o realizar búsqueda (Pulsa OK)..."
+    urlEditText.hint = "Escribir direcci\u00F3n web o realizar b\u00FAsqueda (Pulsa OK)..."
     suppressWebInputWatcher = false
 
     renderHomeScreenContent()
@@ -557,7 +557,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     val appTitleView = TextView(this).apply {
-      text = "Battv.2 • Favoritos"
+      text = "Battv.2 \u2022 Favoritos"
       setTextColor(Color.WHITE)
       setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
       setTypeface(typeface, Typeface.BOLD)
@@ -565,7 +565,7 @@ class MainActivity : AppCompatActivity() {
 
     val modeSubtitleView = TextView(this).apply {
       val modeText = if (isDesktopMode) "Modo PC (Escritorio)" else "Modo TV (Control remoto)"
-      text = "$modeText  •  Pop-ups Blocker, uBlock Origin y Violentmonkey activos"
+      text = "$modeText  \u2022  Pop-ups Blocker, uBlock Origin y Violentmonkey activos"
       setTextColor(Color.parseColor("#A5B4FC"))
       setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
     }
@@ -573,7 +573,7 @@ class MainActivity : AppCompatActivity() {
     titleCol.addView(appTitleView)
     titleCol.addView(modeSubtitleView)
 
-    val btnAddFavHeader = createHomeActionButton("➕ Agregar favorito", isPrimary = true).apply {
+    val btnAddFavHeader = createHomeActionButton("\u2795 Agregar favorito", isPrimary = true).apply {
       setOnClickListener { showAddBookmarkDialog() }
     }
 
@@ -601,7 +601,7 @@ class MainActivity : AppCompatActivity() {
       }
 
       val emptyTitle = TextView(this).apply {
-        text = "Todavía no tienes páginas en Favoritos"
+        text = "Todav\u00EDa no tienes p\u00E1ginas en Favoritos"
         setTextColor(Color.WHITE)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
         setTypeface(typeface, Typeface.BOLD)
@@ -609,7 +609,7 @@ class MainActivity : AppCompatActivity() {
       }
 
       val emptyDesc = TextView(this).apply {
-        text = "Agrega tus sitios favoritos aquí para abrirlos directamente al iniciar Battv.2 o escribe una dirección en la barra superior."
+        text = "Agrega tus sitios favoritos aqu\u00ED para abrirlos directamente al iniciar Battv.2 o escribe una direcci\u00F3n en la barra superior."
         setTextColor(Color.parseColor("#94A3B8"))
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
         gravity = Gravity.CENTER
@@ -622,7 +622,7 @@ class MainActivity : AppCompatActivity() {
         }
       }
 
-      val btnAddFirstFavorite = createHomeActionButton("➕ Agregar primer favorito", isPrimary = true).apply {
+      val btnAddFirstFavorite = createHomeActionButton("\u2795 Agregar primer favorito", isPrimary = true).apply {
         setOnClickListener { showAddBookmarkDialog() }
       }
 
@@ -678,7 +678,7 @@ class MainActivity : AppCompatActivity() {
           isFocusable = true
           isFocusableInTouchMode = false
           gravity = Gravity.START or Gravity.CENTER_VERTICAL
-          text = "⭐  $favTitle\n      $favUrl"
+          text = "\u2B50  $favTitle\n      $favUrl"
           setTextColor(Color.WHITE)
           setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
           maxLines = 2
@@ -701,7 +701,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val deleteBtn = Button(this).apply {
-          text = "🗑️"
+          text = "\uD83D\uDDD1\uFE0F"
           isAllCaps = false
           isFocusable = true
           isFocusableInTouchMode = false
@@ -781,12 +781,12 @@ class MainActivity : AppCompatActivity() {
 
   private fun showFirstLaunchModeDialog() {
     val options = arrayOf(
-      "📺  Modo TV — Interfaz y navegación optimizadas para Android TV y control remoto",
-      "🖥️  Modo PC — Comportamiento y User-Agent de escritorio para versiones completas"
+      "\uD83D\uDCFA  Modo TV \u2014 Interfaz y navegaci\u00F3n optimizadas para Android TV y control remoto",
+      "\uD83D\uDDA5\uFE0F  Modo PC \u2014 Comportamiento y User-Agent de escritorio para versiones completas"
     )
 
     AlertDialog.Builder(this)
-      .setTitle("Selecciona el modo de navegación de Battv.2")
+      .setTitle("Selecciona el modo de navegaci\u00F3n de Battv.2")
       .setCancelable(false)
       .setItems(options) { d, which ->
         val chooseDesktop = (which == 1)
@@ -808,7 +808,7 @@ class MainActivity : AppCompatActivity() {
     if (isHomeScreenVisible) {
       renderHomeScreenContent()
     }
-    val modeName = if (isDesktopMode) "🖥️ Modo PC activado" else "📺 Modo TV activado"
+    val modeName = if (isDesktopMode) "\uD83D\uDDA5\uFE0F Modo PC activado" else "\uD83D\uDCFA Modo TV activado"
     Toast.makeText(this, modeName, Toast.LENGTH_SHORT).show()
   }
 
@@ -816,40 +816,40 @@ class MainActivity : AppCompatActivity() {
     val items = mutableListOf<String>()
     val actions = mutableListOf<() -> Unit>()
 
-    items.add("🏠  Inicio (Pantalla de Favoritos)")
+    items.add("\uD83C\uDFE0  Inicio (Pantalla de Favoritos)")
     actions.add { showHomeScreen() }
 
     if (!isHomeScreenVisible && canGoBackState) {
-      items.add("◄  Página anterior (Atrás)")
+      items.add("\u25C4  P\u00E1gina anterior (Atr\u00E1s)")
       actions.add {
         geckoSession?.goBack()
         activateCursorMode(showPointerNow = false)
       }
     }
     if (!isHomeScreenVisible && canGoForwardState) {
-      items.add("►  Página siguiente (Adelante)")
+      items.add("\u25BA  P\u00E1gina siguiente (Adelante)")
       actions.add {
         geckoSession?.goForward()
         activateCursorMode(showPointerNow = false)
       }
     }
 
-    val currentModeLabel = if (isDesktopMode) "Modo PC 🖥️" else "Modo TV 📺"
-    val switchTargetLabel = if (isDesktopMode) "Cambiar a Modo TV 📺" else "Cambiar a Modo PC 🖥️"
-    items.add("🔄  $switchTargetLabel (Actual: $currentModeLabel)")
+    val currentModeLabel = if (isDesktopMode) "Modo PC \uD83D\uDDA5\uFE0F" else "Modo TV \uD83D\uDCFA"
+    val switchTargetLabel = if (isDesktopMode) "Cambiar a Modo TV \uD83D\uDCFA" else "Cambiar a Modo PC \uD83D\uDDA5\uFE0F"
+    items.add("\uD83D\uDD04  $switchTargetLabel (Actual: $currentModeLabel)")
     actions.add { setBrowserDisplayMode(!isDesktopMode) }
 
     if (!isHomeScreenVisible) {
-      items.add("⌨️  Escribir en campo de texto de la página actual")
+      items.add("\u2328\uFE0F  Escribir en campo de texto de la p\u00E1gina actual")
       actions.add { requestActiveWebInputFromPage() }
 
-      items.add("◄ Ant  Ir al campo anterior del formulario")
+      items.add("\u25C4 Ant  Ir al campo anterior del formulario")
       actions.add { navigateAdjacentWebFormField(-1) }
 
-      items.add("Sig ►  Ir al campo siguiente del formulario")
+      items.add("Sig \u25BA  Ir al campo siguiente del formulario")
       actions.add { navigateAdjacentWebFormField(1) }
 
-      items.add("⭐  Agregar página actual a Favoritos")
+      items.add("\u2B50  Agregar p\u00E1gina actual a Favoritos")
       actions.add {
         addBookmark(
           title = currentTitle.ifBlank { currentUrl },
@@ -858,28 +858,28 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    items.add("🧩  Extensiones activas (Pop-ups Blocker, uBlock Origin, Violentmonkey)")
+    items.add("\uD83E\uDDE9  Extensiones activas (Pop-ups Blocker, uBlock Origin, Violentmonkey)")
     actions.add { showExtensionsStatusDialog() }
 
-    items.add("🧹  Limpiar caché y archivos temporales")
+    items.add("\uD83E\uDDF9  Limpiar cach\u00E9 y archivos temporales")
     actions.add {
       geckoManager.clearSafeCaches { freedBytes ->
         val freedMb = String.format("%.1f", freedBytes / (1024.0 * 1024.0))
         runOnUiThread {
           Toast.makeText(
             this,
-            "🧹 Caché temporal liberada ($freedMb MB). Favoritos, historial y ajustes conservados.",
+            "\uD83E\uDDF9 Cach\u00E9 temporal liberada ($freedMb MB). Favoritos, historial y ajustes conservados.",
             Toast.LENGTH_LONG
           ).show()
         }
       }
     }
 
-    items.add("✖  Salir de Battv.2")
+    items.add("\u2716  Salir de Battv.2")
     actions.add { exitBrowserCleanly() }
 
     AlertDialog.Builder(this)
-      .setTitle("☰ Menú de Battv.2")
+      .setTitle("\u2630 Men\u00FA de Battv.2")
       .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
       .setNegativeButton("Cerrar") { d, _ -> d.dismiss() }
       .show()
@@ -891,13 +891,13 @@ class MainActivity : AppCompatActivity() {
     val vmLoaded = if (geckoManager.isExtensionLoaded(BatTvGeckoViewManager.VIOLENTMONKEY_ID)) "ACTIVO" else "CARGANDO"
 
     val extItems = arrayOf(
-      "1. Pop-ups Blocker (strict) — [$popupLoaded] (Abrir ajustes)",
-      "2. uBlock Origin — [$ublockLoaded] (Abrir panel de filtros)",
-      "3. Violentmonkey («Saltarse Todos los Enlaces Acortados») — [$vmLoaded] (Abrir panel)"
+      "1. Pop-ups Blocker (strict) \u2014 [$popupLoaded] (Abrir ajustes)",
+      "2. uBlock Origin \u2014 [$ublockLoaded] (Abrir panel de filtros)",
+      "3. Violentmonkey (\u00ABSaltarse Todos los Enlaces Acortados\u00BB) \u2014 [$vmLoaded] (Abrir panel)"
     )
 
     AlertDialog.Builder(this)
-      .setTitle("🧩 Extensiones integradas (3 de 3)")
+      .setTitle("\uD83E\uDDE9 Extensiones integradas (3 de 3)")
       .setItems(extItems) { _, which ->
         when (which) {
           0 -> openExtensionOptions(BatTvGeckoViewManager.POPUP_BLOCKER_ID, "data/options/index.html")
@@ -916,7 +916,7 @@ class MainActivity : AppCompatActivity() {
     } else {
       Toast.makeText(
         this,
-        "La extensión está activa y operando en segundo plano.",
+        "La extensi\u00F3n est\u00E1 activa y operando en segundo plano.",
         Toast.LENGTH_SHORT
       ).show()
     }
@@ -955,7 +955,7 @@ class MainActivity : AppCompatActivity() {
 
     arr.put(JSONObject().put("title", cleanTitle).put("url", resolvedUrl))
     saveBookmarksArray(arr)
-    Toast.makeText(this, "⭐ Agregado a Favoritos: $cleanTitle", Toast.LENGTH_SHORT).show()
+    Toast.makeText(this, "\u2B50 Agregado a Favoritos: $cleanTitle", Toast.LENGTH_SHORT).show()
   }
 
   private fun deleteBookmarkAt(index: Int) {
@@ -986,7 +986,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     val urlInput = EditText(this).apply {
-      hint = "Dirección web (ej. https://doramasflix.co)"
+      hint = "Direcci\u00F3n web (ej. https://doramasflix.co)"
       setText(prefillUrl)
       isSingleLine = true
       inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
@@ -996,7 +996,7 @@ class MainActivity : AppCompatActivity() {
     container.addView(urlInput)
 
     AlertDialog.Builder(this)
-      .setTitle("➕ Agregar a Favoritos")
+      .setTitle("\u2795 Agregar a Favoritos")
       .setView(container)
       .setPositiveButton("Guardar") { d, _ ->
         val rawUrl = urlInput.text?.toString()?.trim() ?: ""
@@ -1004,7 +1004,7 @@ class MainActivity : AppCompatActivity() {
         if (rawUrl.isNotEmpty()) {
           addBookmark(rawTitle.ifBlank { rawUrl }, rawUrl)
         } else {
-          Toast.makeText(this, "Escribe una dirección web válida", Toast.LENGTH_SHORT).show()
+          Toast.makeText(this, "Escribe una direcci\u00F3n web v\u00E1lida", Toast.LENGTH_SHORT).show()
         }
         d.dismiss()
       }
@@ -1018,20 +1018,20 @@ class MainActivity : AppCompatActivity() {
     val actions = mutableListOf<() -> Unit>()
 
     if (!isHomeScreenVisible && currentUrl.startsWith("http")) {
-      items.add("➕ Guardar página actual en Favoritos (${currentTitle.ifBlank { currentUrl }.take(38)})")
+      items.add("\u2795 Guardar p\u00E1gina actual en Favoritos (${currentTitle.ifBlank { currentUrl }.take(38)})")
       actions.add { addBookmark(currentTitle.ifBlank { currentUrl }, currentUrl) }
     }
 
-    items.add("➕ Agregar nuevo favorito manualmente...")
+    items.add("\u2795 Agregar nuevo favorito manualmente...")
     actions.add { showAddBookmarkDialog() }
 
     if (!isHomeScreenVisible) {
-      items.add("🏠 Ir a la pantalla de inicio de Favoritos")
+      items.add("\uD83C\uDFE0 Ir a la pantalla de inicio de Favoritos")
       actions.add { showHomeScreen() }
     }
 
     if (arr.length() > 0) {
-      items.add("🗑️ Eliminar un favorito...")
+      items.add("\uD83D\uDDD1\uFE0F Eliminar un favorito...")
       actions.add { showDeleteBookmarkDialog(arr) }
     }
 
@@ -1039,12 +1039,12 @@ class MainActivity : AppCompatActivity() {
       val obj = arr.optJSONObject(i) ?: continue
       val t = obj.optString("title", "Sitio")
       val u = obj.optString("url", "")
-      items.add("⭐ $t  —  $u")
+      items.add("\u2B50 $t  \u2014  $u")
       actions.add { loadUrlOrSearch(u) }
     }
 
     AlertDialog.Builder(this)
-      .setTitle("⭐ Favoritos de Battv.2")
+      .setTitle("\u2B50 Favoritos de Battv.2")
       .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
       .setNegativeButton("Cerrar") { d, _ -> d.dismiss() }
       .show()
@@ -1054,10 +1054,10 @@ class MainActivity : AppCompatActivity() {
     val delItems = mutableListOf<String>()
     for (i in 0 until arr.length()) {
       val obj = arr.optJSONObject(i) ?: continue
-      delItems.add("❌ Eliminar: ${obj.optString("title")} (${obj.optString("url")})")
+      delItems.add("\u274C Eliminar: ${obj.optString("title")} (${obj.optString("url")})")
     }
     AlertDialog.Builder(this)
-      .setTitle("🗑️ Selecciona el favorito a eliminar")
+      .setTitle("\uD83D\uDDD1\uFE0F Selecciona el favorito a eliminar")
       .setItems(delItems.toTypedArray()) { _, which -> deleteBookmarkAt(which) }
       .setNegativeButton("Cancelar") { d, _ -> d.dismiss() }
       .show()
@@ -1071,16 +1071,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     var cleaned = baseCandidate
-      .replace(Regex("(?i)\\s*[-|•–]\\s*(ver online|sub español|latino|gratis|hd|doramasflix|jkanime|dramachino|hdfull).*$"), "")
+      .replace(Regex("(?i)\\s*[-|\\u2022\\u2013]\\s*(ver online|sub espa\\u00F1ol|espa\\u00F1ol|latino|gratis|hd|doramasflix|jkanime|dramachino|hdfull).*$"), "")
       .replace(Regex("(?i)^ver\\s+"), "")
       .trim()
 
     val combinedSource = "$cleaned $rawTitle ${Uri.decode(url)}"
 
-    val seasonEpRegex1 = Regex("(?i)(?:temporada|temp\\.?|season|s)\\s*(\\d{1,2})\\s*[-•:/]?\\s*(?:episodio|ep\\.?|capitulo|cap\\.?)\\s*(\\d{1,4})")
+    val seasonEpRegex1 = Regex("(?i)(?:temporada|temp\\.?|season|s)\\s*(\\d{1,2})\\s*[-\\u2022:/]?\\s*(?:episodio|ep\\.?|capitulo|cap\\u00EDtulo|cap\\.?)\\s*(\\d{1,4})")
     val seasonEpRegex2 = Regex("(?i)\\b(\\d{1,2})x(\\d{1,4})\\b")
     val seasonEpRegex3 = Regex("(?i)\\bS(\\d{1,2})E(\\d{1,4})\\b")
-    val epOnlyRegex = Regex("(?i)(?:episodio|ep\\.?|capitulo|cap\\.?)\\s*(\\d{1,4})")
+    val epOnlyRegex = Regex("(?i)(?:episodio|ep\\.?|capitulo|cap\\u00EDtulo|cap\\.?)\\s*(\\d{1,4})")
 
     val m1 = seasonEpRegex1.find(combinedSource)
     val m2 = seasonEpRegex2.find(combinedSource)
@@ -1114,14 +1114,14 @@ class MainActivity : AppCompatActivity() {
         .replace(seasonEpRegex2, "")
         .replace(seasonEpRegex3, "")
         .replace(epOnlyRegex, "")
-        .replace(Regex("(?i)\\b(sub\\s*español|español|latino|online|hd)\\b"), "")
-        .trim(' ', '-', '•', ':', '|', '–')
+        .replace(Regex("(?i)\\b(sub\\s*espa\\u00F1ol|espa\\u00F1ol|latino|online|hd)\\b"), "")
+        .trim(' ', '-', '\u2022', ':', '|', '\u2013')
         .ifBlank { extractShortHost(url) }
 
       return if (!seasonNum.isNullOrBlank()) {
-        "${seriesName.take(42)} • Temp. $seasonNum - Ep. $episodeNum"
+        "${seriesName.take(42)} \u2022 Temp. $seasonNum - Ep. $episodeNum"
       } else {
-        "${seriesName.take(45)} • Episodio $episodeNum"
+        "${seriesName.take(45)} \u2022 Episodio $episodeNum"
       }
     }
 
@@ -1129,7 +1129,7 @@ class MainActivity : AppCompatActivity() {
       cleaned = extractShortHost(url)
     }
 
-    return if (cleaned.length > 56) "${cleaned.take(54)}…" else cleaned
+    return if (cleaned.length > 56) "${cleaned.take(54)}\u2026" else cleaned
   }
 
   private fun extractShortHost(url: String): String {
@@ -1171,16 +1171,16 @@ class MainActivity : AppCompatActivity() {
     val actions = mutableListOf<() -> Unit>()
 
     if (arr.length() == 0) {
-      items.add("Aún no hay páginas registradas en el historial")
+      items.add("A\u00FAn no hay p\u00E1ginas registradas en el historial")
       actions.add {}
     } else {
-      items.add("🗑️ Borrar todo el historial")
+      items.add("\uD83D\uDDD1\uFE0F Borrar todo el historial")
       actions.add {
         prefs.edit().remove(KEY_HISTORY).apply()
         Toast.makeText(this, "Historial borrado", Toast.LENGTH_SHORT).show()
       }
 
-      items.add("❌ Eliminar una entrada específica del historial...")
+      items.add("\u274C Eliminar una entrada espec\u00EDfica del historial...")
       actions.add { showDeleteHistoryItemDialog(arr) }
 
       for (i in 0 until arr.length()) {
@@ -1188,13 +1188,13 @@ class MainActivity : AppCompatActivity() {
         val u = obj.optString("url", "")
         val t = obj.optString("title", "").ifBlank { formatContentTitleForHistory("", u, "") }
         val host = extractShortHost(u)
-        items.add("🕒 $t  ($host)")
+        items.add("\uD83D\uDD52 $t  ($host)")
         actions.add { loadUrlOrSearch(u) }
       }
     }
 
     AlertDialog.Builder(this)
-      .setTitle("🕒 Historial de Navegación")
+      .setTitle("\uD83D\uDD52 Historial de Navegaci\u00F3n")
       .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
       .setNegativeButton("Cerrar") { d, _ -> d.dismiss() }
       .show()
@@ -1205,10 +1205,10 @@ class MainActivity : AppCompatActivity() {
     for (i in 0 until arr.length()) {
       val obj = arr.optJSONObject(i) ?: continue
       val t = obj.optString("title", obj.optString("url"))
-      delItems.add("❌ Borrar: $t")
+      delItems.add("\u274C Borrar: $t")
     }
     AlertDialog.Builder(this)
-      .setTitle("🗑️ Selecciona la entrada a borrar")
+      .setTitle("\uD83D\uDDD1\uFE0F Selecciona la entrada a borrar")
       .setItems(delItems.toTypedArray()) { _, which ->
         val newArr = JSONArray()
         for (i in 0 until arr.length()) {
@@ -1730,7 +1730,7 @@ class MainActivity : AppCompatActivity() {
       urlEditText.hint = if (!placeholderHint.isNullOrBlank()) {
         "Campo web: $placeholderHint"
       } else {
-        "Escribiendo en formulario de la página (Atrás conserva el texto)..."
+        "Escribiendo en formulario de la p\u00E1gina (Atr\u00E1s conserva el texto)..."
       }
       if (initialValue != null) {
         suppressWebInputWatcher = true
@@ -1740,7 +1740,7 @@ class MainActivity : AppCompatActivity() {
       }
     } else {
       urlEditText.imeOptions = EditorInfo.IME_ACTION_GO or EditorInfo.IME_FLAG_NO_EXTRACT_UI
-      urlEditText.hint = "Escribir dirección web o realizar búsqueda (Pulsa OK)..."
+      urlEditText.hint = "Escribir direcci\u00F3n web o realizar b\u00FAsqueda (Pulsa OK)..."
     }
 
     urlEditText.isFocusable = true
@@ -1778,7 +1778,7 @@ class MainActivity : AppCompatActivity() {
     isEditingWebInput = false
     isEditingUrlText = false
     urlEditText.imeOptions = EditorInfo.IME_ACTION_GO or EditorInfo.IME_FLAG_NO_EXTRACT_UI
-    urlEditText.hint = "Escribir dirección web o realizar búsqueda (Pulsa OK)..."
+    urlEditText.hint = "Escribir direcci\u00F3n web o realizar b\u00FAsqueda (Pulsa OK)..."
     suppressWebInputWatcher = true
     urlEditText.setText(if (isHomeScreenVisible) "" else currentUrl)
     suppressWebInputWatcher = false
@@ -1881,7 +1881,7 @@ class MainActivity : AppCompatActivity() {
     isHomeToolbarFocused = false
     isEditingUrlText = false
     isEditingWebInput = false
-    urlEditText.hint = "Escribir dirección web o realizar búsqueda (Pulsa OK)..."
+    urlEditText.hint = "Escribir direcci\u00F3n web o realizar b\u00FAsqueda (Pulsa OK)..."
     hideSoftKeyboardFromView(urlEditText)
     urlEditText.clearFocus()
     urlEditText.isCursorVisible = false
@@ -1924,7 +1924,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun formatOffsetDelta(deltaSec: Double): String {
-    val sign = if (deltaSec >= 0.0) "+" else "−"
+    val sign = if (deltaSec >= 0.0) "+" else "\u2212"
     val absSec = abs(deltaSec.toInt())
     val mins = absSec / 60
     val secs = absSec % 60
@@ -1979,7 +1979,7 @@ class MainActivity : AppCompatActivity() {
     val keyCode = event.keyCode
     val action = event.action
 
-    // 1. Manejo del botón Atrás (KEYCODE_BACK)
+    // 1. Manejo del boton Atras (KEYCODE_BACK)
     if (keyCode == KeyEvent.KEYCODE_BACK) {
       if (action == KeyEvent.ACTION_UP) {
         when {
@@ -2026,34 +2026,44 @@ class MainActivity : AppCompatActivity() {
 
     // 3. Si estamos editando texto en el campo superior
     if (isEditingUrlText) {
+      if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && action == KeyEvent.ACTION_DOWN) {
+        stopEditingUrlTextAndStayOnBar()
+        return true
+      }
       return super.dispatchKeyEvent(event)
     }
 
-    // 4. Navegación en la pantalla de Inicio (Favoritos)
+    // 4. Navegacion en la pantalla de Inicio (Favoritos)
     if (isHomeScreenVisible) {
       if (isHomeToolbarFocused) {
-        if (action == KeyEvent.ACTION_DOWN) {
-          when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> {
+        when (keyCode) {
+          KeyEvent.KEYCODE_DPAD_LEFT -> {
+            if (action == KeyEvent.ACTION_DOWN) {
               toolbarIndex = max(0, toolbarIndex - 1)
               updateToolbarSelectionVisuals()
-              return true
             }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+            return true
+          }
+          KeyEvent.KEYCODE_DPAD_RIGHT -> {
+            if (action == KeyEvent.ACTION_DOWN) {
               toolbarIndex = min(toolbarItems.size - 1, toolbarIndex + 1)
               updateToolbarSelectionVisuals()
-              return true
             }
-            KeyEvent.KEYCODE_DPAD_DOWN -> {
+            return true
+          }
+          KeyEvent.KEYCODE_DPAD_DOWN -> {
+            if (action == KeyEvent.ACTION_DOWN) {
               isHomeToolbarFocused = false
               updateToolbarSelectionVisuals()
               renderHomeScreenContent()
-              return true
             }
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+            return true
+          }
+          KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+            if (action == KeyEvent.ACTION_UP) {
               toolbarItems[toolbarIndex].performClick()
-              return true
             }
+            return true
           }
         }
         return true
@@ -2070,34 +2080,40 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    // 5. Navegación en la barra superior mientras se navega en una web
+    // 5. Navegacion en la barra superior mientras se navega en una web
     if (!isCursorModeActive) {
-      if (action == KeyEvent.ACTION_DOWN) {
-        when (keyCode) {
-          KeyEvent.KEYCODE_DPAD_LEFT -> {
+      when (keyCode) {
+        KeyEvent.KEYCODE_DPAD_LEFT -> {
+          if (action == KeyEvent.ACTION_DOWN) {
             toolbarIndex = max(0, toolbarIndex - 1)
             updateToolbarSelectionVisuals()
-            return true
           }
-          KeyEvent.KEYCODE_DPAD_RIGHT -> {
+          return true
+        }
+        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+          if (action == KeyEvent.ACTION_DOWN) {
             toolbarIndex = min(toolbarItems.size - 1, toolbarIndex + 1)
             updateToolbarSelectionVisuals()
-            return true
           }
-          KeyEvent.KEYCODE_DPAD_DOWN -> {
+          return true
+        }
+        KeyEvent.KEYCODE_DPAD_DOWN -> {
+          if (action == KeyEvent.ACTION_DOWN) {
             activateCursorMode(showPointerNow = true)
-            return true
           }
-          KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+          return true
+        }
+        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+          if (action == KeyEvent.ACTION_UP) {
             toolbarItems[toolbarIndex].performClick()
-            return true
           }
+          return true
         }
       }
       return true
     }
 
-    // 6. Modo cursor / reproducción de vídeo a pantalla completa
+    // 6. Modo cursor / reproduccion de video a pantalla completa
     if (isFullScreenVideo && hasActiveVodVideo && !cursorOverlay.isCursorCurrentlyVisible()) {
       when (keyCode) {
         KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -2107,12 +2123,12 @@ class MainActivity : AppCompatActivity() {
           return true
         }
         KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-          if (action == KeyEvent.ACTION_DOWN) {
+          if (action == KeyEvent.ACTION_UP) {
             sendVideoCommandToWeb("TOGGLE_PLAY")
             videoSeekOverlay.showSeekState(
               currentSec = vodCurrentTimeSec,
               totalSec = vodDurationSec,
-              deltaLabel = if (vodIsPlaying) "⏸ Pausa" else "▶ Reproduciendo",
+              deltaLabel = if (vodIsPlaying) "\u23F8 Pausa" else "\u25B6 Reproduciendo",
               isForward = true,
               isPlaying = !vodIsPlaying
             )
@@ -2327,17 +2343,16 @@ class MainActivity : AppCompatActivity() {
   private fun showExitConfirmationDialog() {
     AlertDialog.Builder(this)
       .setTitle("Salir de Battv.2")
-      .setMessage("¿Deseas cerrar el navegador?")
+      .setMessage("\u00BFDeseas cerrar el navegador?")
       .setPositiveButton("Salir") { _, _ -> exitBrowserCleanly() }
       .setNegativeButton("Cancelar") { d, _ -> d.dismiss() }
       .show()
   }
 
   private fun exitBrowserCleanly() {
-    try {
-      geckoSession?.stop()
-      geckoSession?.close()
-    } catch (_: Exception) {}
+    if (::geckoManager.isInitialized) {
+      geckoManager.closeSessionCleanly()
+    }
     finishAndRemoveTask()
   }
 
@@ -2441,7 +2456,7 @@ class MainActivity : AppCompatActivity() {
       canvas.drawRoundRect(cardRect, 22f, 22f, cardPaint)
       canvas.drawRoundRect(cardRect, 22f, 22f, borderPaint)
 
-      val arrow = if (forwardDir) "⏩" else "⏪"
+      val arrow = if (forwardDir) "\u23E9" else "\u23EA"
       val headline = "$arrow  $deltaText"
       canvas.drawText(headline, left + 34f, top + 52f, titlePaint)
 
