@@ -1,6 +1,0 @@
-{
-  "name": "VeloxTV Browser — Navegador Ligero para Google TV",
-  "description": "Navegador web ultra ligero y optimizado para Chromecast con Google TV 1080p y Onn TV, con uBlock Origin, Popup Blocker (strict) y Violentmonkey preinstalados para ver series, películas y directos sin cortes.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
