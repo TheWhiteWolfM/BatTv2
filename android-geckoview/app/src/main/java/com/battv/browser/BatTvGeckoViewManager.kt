@@ -11,20 +11,12 @@ import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebExtensionController
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
-/**
- * BatTvGeckoViewManager
- *
- * Gestor centralizado de Mozilla GeckoView para Battv.2 en Android TV.
- * Administra el ciclo de vida de GeckoRuntime, GeckoSession, el modo TV/PC,
- * la limpieza segura de caché y las 3 únicas extensiones requeridas:
- * 1. Pop-ups Blocker (strict)
- * 2. uBlock Origin
- * 3. Violentmonkey (con «Saltarse Todos los Enlaces Acortados»)
- */
 class BatTvGeckoViewManager(
     private val context: Context,
     private val geckoView: GeckoView
@@ -55,6 +47,7 @@ class BatTvGeckoViewManager(
             "OfflineCache",
             "thumbnails",
             "shader-cache",
+            "startupCache",
             "safebrowsing",
             "crashes",
             "minidumps",
@@ -65,7 +58,7 @@ class BatTvGeckoViewManager(
         @Volatile
         private var sharedRuntime: GeckoRuntime? = null
 
-        private val installedExtensions = mutableMapOf<String, WebExtension>()
+        private val installedExtensions = ConcurrentHashMap<String, WebExtension>()
     }
 
     lateinit var runtime: GeckoRuntime
@@ -140,10 +133,6 @@ class BatTvGeckoViewManager(
         }
     }
 
-    /**
-     * Configuración de bajo consumo de RAM/CPU y decodificación por hardware MediaCodec
-     * compatible con Chromecast con Google TV (HD y 4K) y ONN 4K (2021 y 2023).
-     */
     private fun writeOptimizedGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.filesDir, "battv_gecko_config.yaml")
@@ -211,6 +200,8 @@ class BatTvGeckoViewManager(
                   dom.security.https_only_mode: false
                   dom.disable_open_during_load: true
                   dom.webdriver.enabled: false
+                  xpinstall.signatures.required: false
+                  extensions.langpacks.signatures.required: false
             """.trimIndent()
             cfgFile.writeText(yamlContent)
             cfgFile
@@ -233,12 +224,6 @@ class BatTvGeckoViewManager(
         }
     }
 
-    /**
-     * Carga y habilita exclusivamente las tres extensiones especificadas:
-     * 1. Pop-ups Blocker (strict)
-     * 2. uBlock Origin
-     * 3. Violentmonkey
-     */
     private fun setupWebExtensions(controller: WebExtensionController) {
         controller.promptDelegate = object : WebExtensionController.PromptDelegate {
             override fun onOptionalPrompt(
@@ -256,12 +241,22 @@ class BatTvGeckoViewManager(
             Pair(VIOLENTMONKEY_URI, VIOLENTMONKEY_ID)
         )
 
+        val allowedIds = requiredExtensions.map { it.second }.toSet()
+
+        controller.list().accept({ existingList ->
+            existingList?.forEach { ext ->
+                if (!allowedIds.contains(ext.id)) {
+                    controller.uninstall(ext)
+                }
+            }
+        }, {})
+
         for ((assetUri, extId) in requiredExtensions) {
             controller.ensureBuiltIn(assetUri, extId).accept(
                 { extension ->
                     if (extension != null) {
                         installedExtensions[extension.id] = extension
-                        Log.i(TAG, "Extensión instalada: ${extension.id}")
+                        attachExtensionTabDelegate(extension)
 
                         if (extension.id == VIOLENTMONKEY_ID) {
                             attachBridgeToExtension(extension)
@@ -275,22 +270,38 @@ class BatTvGeckoViewManager(
                             { enabledExt ->
                                 if (enabledExt != null) {
                                     installedExtensions[enabledExt.id] = enabledExt
+                                    attachExtensionTabDelegate(enabledExt)
                                     if (enabledExt.id == VIOLENTMONKEY_ID) {
                                         attachBridgeToExtension(enabledExt)
                                     }
-                                    Log.i(TAG, "Extensión habilitada y activa: ${enabledExt.id}")
+                                    Log.i(TAG, "Extension activa: ${enabledExt.id}")
                                 }
                             },
                             { err ->
-                                Log.e(TAG, "Error al habilitar extensión ${extension.id}", err)
+                                Log.e(TAG, "Error al habilitar extension ${extension.id}", err)
                             }
                         )
                     }
                 },
                 { err ->
-                    Log.e(TAG, "Error al cargar extensión integrada $extId desde $assetUri", err)
+                    Log.e(TAG, "Error al cargar extension $extId desde $assetUri", err)
                 }
             )
+        }
+    }
+
+    private fun attachExtensionTabDelegate(extension: WebExtension) {
+        extension.tabDelegate = object : WebExtension.TabDelegate {
+            override fun onNewTab(
+                source: WebExtension,
+                createDetails: WebExtension.CreateTabDetails
+            ): GeckoResult<GeckoSession>? {
+                val targetUri = createDetails.uri
+                if (!targetUri.isNullOrBlank() && ::session.isInitialized) {
+                    session.loadUri(targetUri)
+                }
+                return GeckoResult.fromValue(null)
+            }
         }
     }
 
@@ -380,12 +391,16 @@ class BatTvGeckoViewManager(
         }
     }
 
-    /**
-     * Limpia únicamente la caché temporal de Android y las carpetas desechables de GeckoView,
-     * conservando intactos Favoritos, Historial, Configuraciones (SharedPreferences)
-     * y los datos persistentes de las extensiones (storage/).
-     */
     fun clearSafeCaches(onComplete: (Long) -> Unit) {
+        if (::runtime.isInitialized) {
+            try {
+                runtime.storageController.clearData(
+                    StorageController.ClearFlags.IMAGE_CACHE or
+                        StorageController.ClearFlags.NETWORK_CACHE
+                )
+            } catch (_: Exception) {}
+        }
+
         Thread {
             var freedBytes = 0L
             try {
