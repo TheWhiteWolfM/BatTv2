@@ -85,12 +85,10 @@ jobs:
                   zf.extractall(dest_dir)
               os.remove(xpi_path)
 
-              # Eliminar firmas META-INF para carga limpia mediante ensureBuiltIn en GeckoView
               meta_inf = os.path.join(dest_dir, "META-INF")
               if os.path.exists(meta_inf):
                   shutil.rmtree(meta_inf)
 
-              # Reducir peso eliminando idiomas no utilizados en _locales sin afectar funciones
               locales_dir = os.path.join(dest_dir, "_locales")
               if os.path.isdir(locales_dir):
                   for loc in os.listdir(locales_dir):
@@ -113,7 +111,51 @@ jobs:
               with open(manifest_path, "w", encoding="utf-8") as mf:
                   json.dump(manifest, mf, indent=2, ensure_ascii=False)
 
-          # Integrar el script «Saltarse Todos los Enlaces Acortados» y el puente de TV en Violentmonkey
+          # Preconfigurar Pop-ups Blocker (strict) activo desde el primer inicio
+          pb_dir = os.path.join(EXT_BASE, "popup_blocker")
+          pb_manifest_path = os.path.join(pb_dir, "manifest.json")
+          with open(pb_manifest_path, "r", encoding="utf-8") as mf:
+              pb_manifest = json.load(mf)
+
+          with open(os.path.join(pb_dir, "battv_pb_init.js"), "w", encoding="utf-8") as pbf:
+              pbf.write("""(function () {
+            try {
+              if (typeof browser !== "undefined" && browser.storage && browser.storage.local) {
+                browser.storage.local.get("battv_pb_ready").then(function (res) {
+                  if (!res || !res.battv_pb_ready) {
+                    browser.storage.local.set({
+                      battv_pb_ready: true,
+                      enabled: true,
+                      immediate: true,
+                      aggressive: true,
+                      badge: false
+                    });
+                  }
+                });
+              }
+            } catch (_) {}
+          })();\n""")
+
+          pb_bg = pb_manifest.setdefault("background", {})
+          if "page" in pb_bg:
+              pb_page_path = os.path.join(pb_dir, pb_bg["page"].lstrip("/"))
+              if os.path.exists(pb_page_path):
+                  with open(pb_page_path, "r", encoding="utf-8") as pf:
+                      html = pf.read()
+                  tag = '<script src="/battv_pb_init.js"></script>'
+                  if tag not in html:
+                      html = html.replace("</body>", tag + "\n</body>") if "</body>" in html else (html + "\n" + tag)
+                      with open(pb_page_path, "w", encoding="utf-8") as pf:
+                          pf.write(html)
+          else:
+              pb_scripts = pb_bg.setdefault("scripts", [])
+              if "battv_pb_init.js" not in pb_scripts:
+                  pb_scripts.insert(0, "battv_pb_init.js")
+
+          with open(pb_manifest_path, "w", encoding="utf-8") as mf:
+              json.dump(pb_manifest, mf, indent=2, ensure_ascii=False)
+
+          # Integrar «Saltarse Todos los Enlaces Acortados» y el puente de TV en Violentmonkey
           vm_dir = os.path.join(EXT_BASE, "violentmonkey")
           vm_manifest_path = os.path.join(vm_dir, "manifest.json")
 
@@ -157,7 +199,6 @@ jobs:
                 const loc = window.location;
                 const host = loc.hostname.toLowerCase();
 
-                // Soporte para embedshortener.co/e/<jwt>
                 if (host.includes("embedshortener.co") && loc.pathname.startsWith("/e/")) {
                   const parts = loc.pathname.slice(3).split(".");
                   if (parts.length > 1) {
@@ -338,7 +379,6 @@ jobs:
               } catch (_) {}
             }
 
-            // 1. Asegurar soporte de pantalla completa real en iframes y reproductores sin espacios vacios
             function injectFullscreenFixStyles() {
               try {
                 const styleId = "__battv_fullscreen_css";
@@ -403,7 +443,6 @@ jobs:
             document.addEventListener("fullscreenchange", onFullscreenChanged, true);
             document.addEventListener("mozfullscreenchange", onFullscreenChanged, true);
 
-            // 2. Gestion de formularios y navegacion entre campos para control remoto
             function isEditableTextInput(el) {
               if (!el || el.disabled || el.readOnly) return false;
               const tag = (el.tagName || "").toUpperCase();
@@ -454,6 +493,7 @@ jobs:
             }
 
             document.addEventListener("click", function (e) {
+              enableIframeFullscreenAttrs();
               const target = e.target ? e.target.closest("input, textarea, [contenteditable='true']") : null;
               if (target && isEditableTextInput(target)) {
                 notifyInputFocus(target);
@@ -496,7 +536,6 @@ jobs:
               } catch (_) {}
             }
 
-            // 3. Control e indicadores de video HTML5
             function findActiveVideo() {
               const videos = Array.from(document.querySelectorAll("video"));
               if (videos.length === 0) return null;
@@ -523,7 +562,6 @@ jobs:
               } catch (_) {}
             }, 900);
 
-            // 4. Seguimiento de scroll y extraccion de titulo de serie / temporada / episodio para el Historial
             if (isTopFrame) {
               let lastReportedScroll = -1;
               window.addEventListener("scroll", function () {
@@ -584,6 +622,16 @@ jobs:
                   notifyInputFocus(nextEl);
                 }
               } else if (msg.type === "VIDEO_COMMAND") {
+                if (msg.action === "EXIT_FULLSCREEN") {
+                  try {
+                    if (document.fullscreenElement && document.exitFullscreen) {
+                      document.exitFullscreen().catch(function () {});
+                    } else if (document.mozFullScreenElement && document.mozCancelFullScreen) {
+                      document.mozCancelFullScreen();
+                    }
+                  } catch (_) {}
+                  return;
+                }
                 const v = findActiveVideo();
                 if (!v) return;
                 if (msg.action === "SEEK_TO" && typeof msg.time === "number") {
@@ -591,6 +639,10 @@ jobs:
                 } else if (msg.action === "TOGGLE_PLAY") {
                   if (v.paused) v.play().catch(function () {});
                   else v.pause();
+                }
+              } else if (msg.type === "WEB_SCROLL_BY") {
+                if (isTopFrame && typeof msg.deltaY === "number") {
+                  window.scrollBy({ top: msg.deltaY, behavior: "smooth" });
                 }
               }
             }
@@ -605,7 +657,15 @@ jobs:
               injectFullscreenFixStyles();
               enableIframeFullscreenAttrs();
             }
-            setInterval(enableIframeFullscreenAttrs, 2500);
+
+            try {
+              const obs = new MutationObserver(function () {
+                enableIframeFullscreenAttrs();
+              });
+              obs.observe(document.documentElement || document, { childList: true, subtree: true });
+            } catch (_) {
+              setInterval(enableIframeFullscreenAttrs, 2500);
+            }
           })();
           '''
 
