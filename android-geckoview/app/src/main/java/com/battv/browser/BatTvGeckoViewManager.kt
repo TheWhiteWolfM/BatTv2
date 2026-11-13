@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import android.util.Patterns
 import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
@@ -42,6 +43,47 @@ class BatTvGeckoViewManager(
         const val PC_MODE_USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
 
+        private val AD_AND_POPUP_DOMAINS = listOf(
+            "vidoomy.com",
+            "viwom.com",
+            "wortise.com",
+            "aniview.com",
+            "primis.tech",
+            "adinplay.com",
+            "brid.tv",
+            "doubleclick.net",
+            "googlesyndication.com",
+            "googleadservices.com",
+            "popads.net",
+            "popcash.net",
+            "propellerads.com",
+            "exoclick.com",
+            "magsrv.com",
+            "realsrv.com",
+            "juicyads.com",
+            "adsterra.com",
+            "monetag.com",
+            "acscdn.com",
+            "onclickads.net",
+            "hilltopads.net",
+            "galaksion.com",
+            "clickadu.com",
+            "adcash.com",
+            "richads.com",
+            "admaven.com",
+            "bidgear.com",
+            "trafficjunky.net",
+            "tsyndicate.com",
+            "rollerads.com",
+            "evadav.com",
+            "optad360.io",
+            "teads.tv",
+            "taboola.com",
+            "outbrain.com",
+            "1xbet.com",
+            "bet365.com"
+        )
+
         private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(
             "cache2",
             "OfflineCache",
@@ -78,7 +120,7 @@ class BatTvGeckoViewManager(
 
         val sessionSettings = GeckoSessionSettings.Builder()
             .usePrivateMode(false)
-            .useTrackingProtection(false)
+            .useTrackingProtection(true)
             .suspendMediaWhenInactive(false)
             .userAgentMode(
                 if (isDesktopMode) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
@@ -121,6 +163,17 @@ class BatTvGeckoViewManager(
                     .aboutConfigEnabled(true)
                     .doubleTapZoomingEnabled(false)
                     .automaticFontSizeAdjustment(false)
+                    .contentBlocking(
+                        ContentBlocking.Settings.Builder()
+                            .antiTracking(
+                                ContentBlocking.AntiTracking.DEFAULT or
+                                    ContentBlocking.AntiTracking.STP or
+                                    ContentBlocking.AntiTracking.AD
+                            )
+                            .safeBrowsing(ContentBlocking.SafeBrowsing.NONE)
+                            .cookieBehavior(ContentBlocking.CookieBehavior.ACCEPT_FIRST_PARTY)
+                            .build()
+                    )
 
                 if (cfgFile != null) {
                     builder.configFilePath(cfgFile.absolutePath)
@@ -170,6 +223,8 @@ class BatTvGeckoViewManager(
                   media.mediasource.webm.enabled: true
                   dom.ipc.processCount: 1
                   dom.min_background_timeout_value: 4
+                  dom.disable_open_during_load: true
+                  dom.popup_maximum: 0
                   full-screen-api.enabled: true
                   full-screen-api.allow-trusted-requests-only: false
                   full-screen-api.warning.delay: -1
@@ -198,7 +253,6 @@ class BatTvGeckoViewManager(
                   security.mixed_content.block_active_content: false
                   security.mixed_content.block_display_content: false
                   dom.security.https_only_mode: false
-                  dom.disable_open_during_load: true
                   dom.webdriver.enabled: false
                   xpinstall.signatures.required: false
                   extensions.langpacks.signatures.required: false
@@ -211,15 +265,24 @@ class BatTvGeckoViewManager(
         }
     }
 
+    /**
+     * Deniega automáticamente solicitudes de notificaciones push web ("Atención: Haz clic en Más")
+     * y aprueba únicamente reproducción multimedia y almacenamiento.
+     */
     private fun setupPermissionDelegate(geckoSession: GeckoSession) {
         geckoSession.permissionDelegate = object : GeckoSession.PermissionDelegate {
             override fun onContentPermissionRequest(
                 session: GeckoSession,
                 perm: GeckoSession.PermissionDelegate.ContentPermission
             ): GeckoResult<Int>? {
-                return GeckoResult.fromValue(
-                    GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW
-                )
+                return when (perm.permission) {
+                    GeckoSession.PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION,
+                    GeckoSession.PermissionDelegate.PERMISSION_GEOLOCATION,
+                    GeckoSession.PermissionDelegate.PERMISSION_PERSISTENT_STORAGE ->
+                        GeckoResult.fromValue(GeckoSession.PermissionDelegate.ContentPermission.VALUE_DENY)
+                    else ->
+                        GeckoResult.fromValue(GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW)
+                }
             }
         }
     }
@@ -302,6 +365,20 @@ class BatTvGeckoViewManager(
                 )
             }
         } catch (_: Exception) {}
+    }
+
+    fun isKnownAdOrPopupUri(uriString: String): Boolean {
+        val lower = uriString.lowercase()
+        val host = runCatching { Uri.parse(uriString).host?.lowercase() ?: "" }.getOrDefault("")
+        for (domain in AD_AND_POPUP_DOMAINS) {
+            if (host == domain || host.endsWith(".$domain") || lower.contains(domain)) {
+                return true
+            }
+        }
+        return lower.contains("/popunder") ||
+            lower.contains("/tabunder") ||
+            lower.contains("/clickunder") ||
+            lower.contains("utm_source=pop")
     }
 
     fun applyDisplayMode(isDesktopMode: Boolean, reloadIfActive: Boolean, currentUrl: String) {
