@@ -13,53 +13,59 @@ import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebExtensionController
+import java.io.File
 
 /**
  * BatTvGeckoViewManager
  *
- * Gestor central de Mozilla GeckoView para Android TV.
- * Gestiona las extensiones, navegación, bloqueo de ventanas emergentes
- * y configuración de la sesión del navegador.
+ * Gestor centralizado de Mozilla GeckoView para Battv.2 en Android TV.
+ * Administra el ciclo de vida de GeckoRuntime, GeckoSession, el modo TV/PC,
+ * la limpieza segura de caché y las 3 únicas extensiones requeridas:
+ * 1. Pop-ups Blocker (strict)
+ * 2. uBlock Origin
+ * 3. Violentmonkey (con «Saltarse Todos los Enlaces Acortados»)
  */
 class BatTvGeckoViewManager(
     private val context: Context,
-    private val geckoView: GeckoView,
-    private val onUrlChanged: (String) -> Unit,
-    private val onProgressChanged: (Int) -> Unit
+    private val geckoView: GeckoView
 ) {
 
     companion object {
-        private const val TAG = "BatTvGeckoView"
+        private const val TAG = "BatTvGeckoManager"
 
-        const val FIREFOX_ANDROID_OFFICIAL_UA =
-            "Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0"
+        const val POPUP_BLOCKER_ID = "{54e2eb33-18eb-46ad-a4e4-1329c29f6e17}"
+        const val POPUP_BLOCKER_URI = "resource://android/assets/extensions/popup_blocker/"
+
+        const val UBLOCK_ORIGIN_ID = "uBlock0@raymondhill.net"
+        const val UBLOCK_ORIGIN_URI = "resource://android/assets/extensions/ublock_origin/"
+
+        const val VIOLENTMONKEY_ID = "{aecec67f-0d10-4fa7-b7c7-609a2db280cf}"
+        const val VIOLENTMONKEY_URI = "resource://android/assets/extensions/violentmonkey/"
+
+        const val NATIVE_BRIDGE_NAME = "battv_bridge"
+
+        const val TV_MODE_USER_AGENT =
+            "Mozilla/5.0 (Android 14; Mobile; rv:130.0) Gecko/130.0 Firefox/130.0"
+
+        const val PC_MODE_USER_AGENT =
+            "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
+
+        private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(
+            "cache2",
+            "OfflineCache",
+            "thumbnails",
+            "shader-cache",
+            "safebrowsing",
+            "crashes",
+            "minidumps",
+            "saved-telemetry-pings",
+            "datareporting"
+        )
 
         @Volatile
         private var sharedRuntime: GeckoRuntime? = null
 
-        private val AD_POPUP_DOMAINS = listOf(
-            "popads.net",
-            "propellerads.com",
-            "exoclick.com",
-            "adsterra.com",
-            "clickadu.com",
-            "hilltopads.net",
-            "galaksion.com",
-            "juicyads.com",
-            "trafficjunky.net",
-            "onclickads.net",
-            "doubleclick.net",
-            "googlesyndication.com",
-            "blurtsbrerd.com",
-            "aarems.org",
-            "21wiz.com",
-            "capsidsflyleaf.com",
-            "skypipevatican.com",
-            "1xbet.com",
-            "bet365.com",
-            "mostbet.com",
-            "caliente.mx"
-        )
+        private val installedExtensions = mutableMapOf<String, WebExtension>()
     }
 
     lateinit var runtime: GeckoRuntime
@@ -68,57 +74,66 @@ class BatTvGeckoViewManager(
     lateinit var session: GeckoSession
         private set
 
-    private var currentActiveHost: String? = null
+    private var bridgeMessageDelegate: WebExtension.MessageDelegate? = null
 
-    fun initialize() {
+    fun initialize(
+        isDesktopMode: Boolean,
+        messageDelegate: WebExtension.MessageDelegate
+    ): GeckoSession {
+        bridgeMessageDelegate = messageDelegate
         runtime = getOrCreateRuntime(context.applicationContext)
-
-        setupWebExtensions(runtime.webExtensionController)
 
         val sessionSettings = GeckoSessionSettings.Builder()
             .usePrivateMode(false)
-            .useTrackingProtection(true)
-            .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
-            .userAgentOverride(FIREFOX_ANDROID_OFFICIAL_UA)
+            .useTrackingProtection(false)
             .suspendMediaWhenInactive(false)
+            .userAgentMode(
+                if (isDesktopMode) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+                else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+            )
+            .viewportMode(
+                if (isDesktopMode) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
+                else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
+            )
+            .userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else TV_MODE_USER_AGENT)
             .build()
 
         session = GeckoSession(sessionSettings)
 
-        setupNavigationDelegate(session)
-        setupContentDelegate(session)
-        setupProgressDelegate(session)
-        setupMediaSessionDelegate(session)
+        setupPermissionDelegate(session)
+        setupWebExtensions(runtime.webExtensionController)
 
         session.open(runtime)
         geckoView.setSession(session)
+        session.setActive(true)
+        session.setFocused(true)
+        try {
+            session.setPriorityHint(GeckoSession.PRIORITY_HIGH)
+        } catch (_: Exception) {}
+
+        installedExtensions[VIOLENTMONKEY_ID]?.let { vmExt ->
+            attachBridgeToExtension(vmExt)
+        }
+
+        return session
     }
 
     private fun getOrCreateRuntime(appContext: Context): GeckoRuntime {
-        return sharedRuntime ?: synchronized(this) {
+        return sharedRuntime ?: synchronized(Companion) {
             sharedRuntime ?: run {
-                val runtimeSettings = GeckoRuntimeSettings.Builder()
+                val cfgFile = writeOptimizedGeckoConfig(appContext)
+                val builder = GeckoRuntimeSettings.Builder()
                     .javaScriptEnabled(true)
-                    .consoleOutput(true)
+                    .consoleOutput(false)
                     .aboutConfigEnabled(true)
-                    .automaticFontSizeAdjustment(true)
-                    .contentBlocking(
-                        org.mozilla.geckoview.ContentBlocking.Settings.Builder()
-                            .antiTracking(
-                                org.mozilla.geckoview.ContentBlocking.AntiTracking.DEFAULT or
-                                    org.mozilla.geckoview.ContentBlocking.AntiTracking.STP
-                            )
-                            .safeBrowsing(
-                                org.mozilla.geckoview.ContentBlocking.SafeBrowsing.DEFAULT
-                            )
-                            .cookieBehavior(
-                                org.mozilla.geckoview.ContentBlocking.CookieBehavior.ACCEPT_FIRST_PARTY
-                            )
-                            .build()
-                    )
-                    .build()
+                    .doubleTapZoomingEnabled(false)
+                    .automaticFontSizeAdjustment(false)
 
-                GeckoRuntime.create(appContext, runtimeSettings).also {
+                if (cfgFile != null) {
+                    builder.configFilePath(cfgFile.absolutePath)
+                }
+
+                GeckoRuntime.create(appContext, builder.build()).also {
                     sharedRuntime = it
                 }
             }
@@ -126,250 +141,230 @@ class BatTvGeckoViewManager(
     }
 
     /**
-     * Instalación y habilitación de las extensiones integradas.
-     * La firma de onOptionalPrompt corresponde a GeckoView 130.
+     * Configuración de bajo consumo de RAM/CPU y decodificación por hardware MediaCodec
+     * compatible con Chromecast con Google TV (HD y 4K) y ONN 4K (2021 y 2023).
+     */
+    private fun writeOptimizedGeckoConfig(appContext: Context): File? {
+        return try {
+            val cfgFile = File(appContext.filesDir, "battv_gecko_config.yaml")
+            val yamlContent = """
+                prefs:
+                  browser.cache.disk.enable: true
+                  browser.cache.disk.capacity: 40960
+                  browser.cache.disk.smart_size.enabled: false
+                  browser.cache.offline.enable: false
+                  browser.cache.memory.enable: true
+                  browser.cache.memory.capacity: 16384
+                  browser.sessionhistory.max_total_viewers: 0
+                  media.suspend-bkgnd-video.enabled: false
+                  media.cache_size: 24576
+                  media.memory_cache_max_size: 12288
+                  media.memory_caches_combined_limit_kb: 36864
+                  media.cache_readahead_limit: 30
+                  media.cache_resume_threshold: 10
+                  media.preload.default: 2
+                  media.autoplay.default: 0
+                  media.autoplay.blocking_policy: 0
+                  media.av1.enabled: false
+                  media.ffvpx.enabled: false
+                  media.rdd-ffvpx.enabled: false
+                  media.android-media-codec.enabled: true
+                  media.android-media-codec.preferred: true
+                  media.hardware-video-decoding.enabled: true
+                  media.hardware-video-decoding.force-enabled: true
+                  media.navigator.mediacapabilities.enabled: true
+                  media.decoder.skip-to-next-key-frame.enabled: false
+                  media.ruin-av-sync.enabled: false
+                  media.eme.enabled: true
+                  media.mediasource.enabled: true
+                  media.mediasource.mp4.enabled: true
+                  media.mediasource.webm.enabled: true
+                  dom.ipc.processCount: 1
+                  dom.min_background_timeout_value: 4
+                  full-screen-api.enabled: true
+                  full-screen-api.allow-trusted-requests-only: false
+                  full-screen-api.warning.delay: -1
+                  full-screen-api.warning.timeout: 0
+                  nglayout.initialpaint.delay: 0
+                  layout.frame_rate: 60
+                  layout.css.backdrop-filter.enabled: false
+                  gfx.webrender.all: true
+                  gfx.webrender.compositor: true
+                  gfx.canvas.accelerated: true
+                  layers.acceleration.force-enabled: true
+                  network.buffer.cache.size: 32768
+                  network.buffer.cache.count: 32
+                  network.http.http3.enable: false
+                  network.http.keep-alive.timeout: 180
+                  network.http.max-connections: 64
+                  network.http.max-persistent-connections-per-server: 8
+                  network.http.pacing.requests.enabled: false
+                  network.cookie.cookieBehavior: 4
+                  network.cookie.sameSite.laxByDefault: false
+                  network.cookie.sameSite.noneRequiresSecure: false
+                  network.http.sendRefererHeader: 2
+                  network.dns.disablePrefetch: false
+                  network.dns.disablePrefetchFromHTTPS: false
+                  network.predictor.enabled: true
+                  security.mixed_content.block_active_content: false
+                  security.mixed_content.block_display_content: false
+                  dom.security.https_only_mode: false
+                  dom.disable_open_during_load: true
+                  dom.webdriver.enabled: false
+            """.trimIndent()
+            cfgFile.writeText(yamlContent)
+            cfgFile
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo escribir battv_gecko_config.yaml", e)
+            null
+        }
+    }
+
+    private fun setupPermissionDelegate(geckoSession: GeckoSession) {
+        geckoSession.permissionDelegate = object : GeckoSession.PermissionDelegate {
+            override fun onContentPermissionRequest(
+                session: GeckoSession,
+                perm: GeckoSession.PermissionDelegate.ContentPermission
+            ): GeckoResult<Int>? {
+                return GeckoResult.fromValue(
+                    GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW
+                )
+            }
+        }
+    }
+
+    /**
+     * Carga y habilita exclusivamente las tres extensiones especificadas:
+     * 1. Pop-ups Blocker (strict)
+     * 2. uBlock Origin
+     * 3. Violentmonkey
      */
     private fun setupWebExtensions(controller: WebExtensionController) {
-        controller.promptDelegate =
-            object : WebExtensionController.PromptDelegate {
-
-                override fun onOptionalPrompt(
-                    extension: WebExtension,
-                    permissions: Array<out String>,
-                    origins: Array<out String>
-                ): GeckoResult<AllowOrDeny>? {
-                    Log.i(
-                        TAG,
-                        "Auto-aprobando permisos para extensión: ${extension.id}"
-                    )
-                    return GeckoResult.allow()
-                }
+        controller.promptDelegate = object : WebExtensionController.PromptDelegate {
+            override fun onOptionalPrompt(
+                extension: WebExtension,
+                permissions: Array<out String>,
+                origins: Array<out String>
+            ): GeckoResult<AllowOrDeny>? {
+                return GeckoResult.allow()
             }
+        }
 
-        val builtInExtensions = listOf(
-            Pair(
-                "resource://android/assets/extensions/ublock_origin/",
-                "uBlock0@raymondhill.net"
-            ),
-            Pair(
-                "resource://android/assets/extensions/violentmonkey/",
-                "{aecec67f-0d10-4fa7-b7c7-609a2db280cf}"
-            ),
-            Pair(
-                "resource://android/assets/extensions/battv_shield/",
-                "shield@battv.browser"
-            )
+        val requiredExtensions = listOf(
+            Pair(POPUP_BLOCKER_URI, POPUP_BLOCKER_ID),
+            Pair(UBLOCK_ORIGIN_URI, UBLOCK_ORIGIN_ID),
+            Pair(VIOLENTMONKEY_URI, VIOLENTMONKEY_ID)
         )
 
-        for ((assetUri, extId) in builtInExtensions) {
+        for ((assetUri, extId) in requiredExtensions) {
             controller.ensureBuiltIn(assetUri, extId).accept(
                 { extension ->
                     if (extension != null) {
-                        Log.i(
-                            TAG,
-                            "Extensión instalada correctamente: ${extension.id} " +
-                                "(v${extension.metaData.version})"
-                        )
+                        installedExtensions[extension.id] = extension
+                        Log.i(TAG, "Extensión instalada: ${extension.id}")
+
+                        if (extension.id == VIOLENTMONKEY_ID) {
+                            attachBridgeToExtension(extension)
+                        }
 
                         controller.setAllowedInPrivateBrowsing(extension, true)
-
                         controller.enable(
                             extension,
                             WebExtensionController.EnableSource.USER
                         ).accept(
                             { enabledExt ->
-                                Log.i(
-                                    TAG,
-                                    "Extensión activa: ${enabledExt?.id}"
-                                )
+                                if (enabledExt != null) {
+                                    installedExtensions[enabledExt.id] = enabledExt
+                                    if (enabledExt.id == VIOLENTMONKEY_ID) {
+                                        attachBridgeToExtension(enabledExt)
+                                    }
+                                    Log.i(TAG, "Extensión habilitada y activa: ${enabledExt.id}")
+                                }
                             },
                             { err ->
-                                Log.e(
-                                    TAG,
-                                    "Error al habilitar extensión ${extension.id}",
-                                    err
-                                )
+                                Log.e(TAG, "Error al habilitar extensión ${extension.id}", err)
                             }
                         )
                     }
                 },
-                { throwable ->
-                    Log.e(
-                        TAG,
-                        "Fallo al instalar extensión desde $assetUri ($extId)",
-                        throwable
-                    )
+                { err ->
+                    Log.e(TAG, "Error al cargar extensión integrada $extId desde $assetUri", err)
                 }
             )
         }
     }
 
-    private fun setupNavigationDelegate(geckoSession: GeckoSession) {
-        geckoSession.navigationDelegate =
-            object : GeckoSession.NavigationDelegate {
-
-                override fun onNewSession(
-                    session: GeckoSession,
-                    uri: String
-                ): GeckoResult<GeckoSession>? {
-                    Log.w(TAG, "Pop-up bloqueado: $uri")
-                    return GeckoResult.fromValue(null)
-                }
-
-                override fun onLoadRequest(
-                    session: GeckoSession,
-                    request: GeckoSession.NavigationDelegate.LoadRequest
-                ): GeckoResult<AllowOrDeny>? {
-
-                    val uriString = request.uri
-                    val parsedUri = runCatching {
-                        Uri.parse(uriString)
-                    }.getOrNull()
-
-                    val targetHost = parsedUri?.host?.lowercase() ?: ""
-
-                    if (
-                        request.target ==
-                        GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW
-                    ) {
-                        Log.w(
-                            TAG,
-                            "Bloqueado intento de abrir pestaña emergente: $uriString"
-                        )
-                        return GeckoResult.deny()
-                    }
-
-                    if (isAdOrPopupDomain(targetHost)) {
-                        Log.w(
-                            TAG,
-                            "Bloqueado dominio publicitario: $uriString"
-                        )
-                        return GeckoResult.deny()
-                    }
-
-                    val scheme = parsedUri?.scheme?.lowercase() ?: ""
-
-                    if (
-                        scheme != "http" &&
-                        scheme != "https" &&
-                        scheme != "about" &&
-                        scheme != "resource" &&
-                        scheme != "data" &&
-                        scheme != "blob"
-                    ) {
-                        Log.w(TAG, "Bloqueado esquema externo: $uriString")
-                        return GeckoResult.deny()
-                    }
-
-                    if (
-                        request.isRedirect &&
-                        !request.hasUserGesture &&
-                        currentActiveHost != null
-                    ) {
-                        val active = currentActiveHost!!
-
-                        if (!isSameOrTrustedStreamingDomain(active, targetHost)) {
-                            Log.w(
-                                TAG,
-                                "Bloqueada redirección automática desde " +
-                                    "$active hacia $targetHost"
-                            )
-                            return GeckoResult.deny()
-                        }
-                    }
-
-                    return GeckoResult.allow()
-                }
-
-                override fun onLocationChange(
-                    session: GeckoSession,
-                    url: String?,
-                    perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>,
-                    hasUserGesture: Boolean
-                ) {
-                    if (!url.isNullOrBlank() && !url.startsWith("resource://")) {
-                        currentActiveHost = runCatching {
-                            Uri.parse(url).host?.lowercase()
-                        }.getOrNull()
-
-                        onUrlChanged(url)
-                    }
-                }
+    private fun attachBridgeToExtension(extension: WebExtension) {
+        val delegate = bridgeMessageDelegate ?: return
+        try {
+            extension.setMessageDelegate(delegate, NATIVE_BRIDGE_NAME)
+        } catch (_: Exception) {}
+        try {
+            if (::session.isInitialized) {
+                session.webExtensionController.setMessageDelegate(
+                    extension,
+                    delegate,
+                    NATIVE_BRIDGE_NAME
+                )
             }
+        } catch (_: Exception) {}
     }
 
-    private fun setupContentDelegate(geckoSession: GeckoSession) {
-        geckoSession.contentDelegate =
-            object : GeckoSession.ContentDelegate {
+    fun applyDisplayMode(isDesktopMode: Boolean, reloadIfActive: Boolean, currentUrl: String) {
+        if (!::session.isInitialized) return
+        session.settings.userAgentMode = if (isDesktopMode) {
+            GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+        } else {
+            GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+        }
+        session.settings.viewportMode = if (isDesktopMode) {
+            GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
+        } else {
+            GeckoSessionSettings.VIEWPORT_MODE_MOBILE
+        }
+        session.settings.userAgentOverride = if (isDesktopMode) {
+            PC_MODE_USER_AGENT
+        } else {
+            TV_MODE_USER_AGENT
+        }
 
-                override fun onCloseRequest(session: GeckoSession) {
-                    Log.w(
-                        TAG,
-                        "Ignorado intento de cerrar la pestaña mediante window.close"
-                    )
-                }
-
-                override fun onFullScreen(
-                    session: GeckoSession,
-                    fullScreen: Boolean
-                ) {
-                    Log.i(
-                        TAG,
-                        "Estado de pantalla completa: $fullScreen"
-                    )
-                }
-            }
+        if (reloadIfActive && currentUrl.isNotBlank() && currentUrl != "about:blank") {
+            session.stop()
+            session.reload()
+        }
     }
 
-    private fun setupProgressDelegate(geckoSession: GeckoSession) {
-        geckoSession.progressDelegate =
-            object : GeckoSession.ProgressDelegate {
-
-                override fun onProgressChange(
-                    session: GeckoSession,
-                    progress: Int
-                ) {
-                    onProgressChanged(progress)
-                }
-            }
+    fun isExtensionLoaded(extensionId: String): Boolean {
+        return installedExtensions.containsKey(extensionId)
     }
 
-    private fun setupMediaSessionDelegate(geckoSession: GeckoSession) {
-        geckoSession.mediaSessionDelegate =
-            object : org.mozilla.geckoview.MediaSession.Delegate {
+    fun getExtensionDashboardUrl(extensionId: String, fallbackPath: String): String? {
+        val ext = installedExtensions[extensionId] ?: return null
+        val meta = try {
+            ext.metaData
+        } catch (_: Exception) {
+            null
+        }
+        val optionsUrl = meta?.optionsPageUrl
+        val baseUrl = meta?.baseUrl
 
-                override fun onActivated(
-                    session: GeckoSession,
-                    mediaSession: org.mozilla.geckoview.MediaSession
-                ) {
-                    Log.i(
-                        TAG,
-                        "Reproductor multimedia activo en GeckoView"
-                    )
-                }
-            }
-    }
-
-    fun loadInputFromAddressBar(rawInput: String) {
-        val targetUrl = resolveInputToUrl(rawInput)
-
-        currentActiveHost = runCatching {
-            Uri.parse(targetUrl).host?.lowercase()
-        }.getOrNull()
-
-        session.loadUri(targetUrl)
+        return when {
+            !optionsUrl.isNullOrBlank() -> optionsUrl
+            !baseUrl.isNullOrBlank() -> baseUrl.trimEnd('/') + "/" + fallbackPath.trimStart('/')
+            else -> null
+        }
     }
 
     fun resolveInputToUrl(rawInput: String): String {
         val trimmed = rawInput.trim()
-
         if (trimmed.isEmpty()) {
             return "https://www.google.com/"
         }
 
-        if (
-            trimmed.startsWith("http://", ignoreCase = true) ||
-            trimmed.startsWith("https://", ignoreCase = true)
+        if (trimmed.startsWith("http://", ignoreCase = true) ||
+            trimmed.startsWith("https://", ignoreCase = true) ||
+            trimmed.startsWith("about:", ignoreCase = true) ||
+            trimmed.startsWith("moz-extension://", ignoreCase = true)
         ) {
             return trimmed
         }
@@ -385,50 +380,71 @@ class BatTvGeckoViewManager(
         }
     }
 
-    private fun isAdOrPopupDomain(host: String): Boolean {
-        if (host.isEmpty()) return false
-
-        return AD_POPUP_DOMAINS.any { adDomain ->
-            host == adDomain || host.endsWith(".$adDomain")
-        }
+    /**
+     * Limpia únicamente la caché temporal de Android y las carpetas desechables de GeckoView,
+     * conservando intactos Favoritos, Historial, Configuraciones (SharedPreferences)
+     * y los datos persistentes de las extensiones (storage/).
+     */
+    fun clearSafeCaches(onComplete: (Long) -> Unit) {
+        Thread {
+            var freedBytes = 0L
+            try {
+                freedBytes += deleteDirectoryContents(context.cacheDir)
+                context.externalCacheDir?.let { freedBytes += deleteDirectoryContents(it) }
+                val mozillaDir = File(context.filesDir, "mozilla")
+                if (mozillaDir.exists()) {
+                    freedBytes += cleanDisposableGeckoDirs(mozillaDir)
+                }
+            } catch (_: Exception) {}
+            onComplete(freedBytes)
+        }.start()
     }
 
-    private fun isSameOrTrustedStreamingDomain(
-        originHost: String,
-        targetHost: String
-    ): Boolean {
-        if (originHost == targetHost) return true
-
-        val trustedHosts = listOf(
-            "google.com",
-            "doramasflix.io",
-            "doramasflix.co",
-            "dramachino.com",
-            "asialiveaction.com",
-            "tudorama.com",
-            "kisskh.do",
-            "kisskh.co",
-            "jkanime.net",
-            "twitch.tv",
-            "voe.sx",
-            "filemoon.sx",
-            "byse.sx",
-            "bysebuho.com",
-            "bysefujedu.com",
-            "n1mwq.org",
-            "primeload.co",
-            "streamwish.to",
-            "do7go.com",
-            "streamtape.com",
-            "ok.ru",
-            "vidhidevip.com",
-            "callistanise.com",
-            "mega.nz",
-            "pkaa.top"
-        )
-
-        return trustedHosts.any { trusted ->
-            targetHost == trusted || targetHost.endsWith(".$trusted")
+    private fun cleanDisposableGeckoDirs(dir: File): Long {
+        var bytes = 0L
+        val children = dir.listFiles() ?: return 0L
+        for (child in children) {
+            if (child.isDirectory) {
+                if (GECKO_DISPOSABLE_CACHE_DIRS.contains(child.name)) {
+                    bytes += getFolderSize(child)
+                    child.deleteRecursively()
+                } else if (child.name != "storage" && child.name != "extensions") {
+                    bytes += cleanDisposableGeckoDirs(child)
+                }
+            }
         }
+        return bytes
+    }
+
+    private fun deleteDirectoryContents(dir: File?): Long {
+        if (dir == null || !dir.exists()) return 0L
+        var bytes = 0L
+        val files = dir.listFiles() ?: return 0L
+        for (f in files) {
+            bytes += getFolderSize(f)
+            f.deleteRecursively()
+        }
+        return bytes
+    }
+
+    private fun getFolderSize(file: File): Long {
+        if (!file.exists()) return 0L
+        if (!file.isDirectory) return file.length()
+        var total = 0L
+        val children = file.listFiles() ?: return 0L
+        for (c in children) {
+            total += getFolderSize(c)
+        }
+        return total
+    }
+
+    fun closeSessionCleanly() {
+        try {
+            if (::session.isInitialized) {
+                session.stop()
+                session.setActive(false)
+                session.close()
+            }
+        } catch (_: Exception) {}
     }
 }
