@@ -4,17 +4,6 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
-    // AGP 8.13.2 includes an older R8. Override it with the release required by Kotlin 2.4.
-    buildscript {
-        repositories {
-            google()
-            mavenCentral()
-            maven { url 'https://storage.googleapis.com/r8-releases/raw' }
-        }
-        dependencies {
-            classpath 'com.android.tools:r8:9.1.29'
-        }
-    }
 }
 
 dependencyResolutionManagement {
