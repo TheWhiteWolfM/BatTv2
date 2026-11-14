@@ -68,7 +68,6 @@ class MainActivity : AppCompatActivity() {
 
     private const val URL_BAR_INDEX = 2
 
-    // Velocidades calibradas para bucle VSYNC a 60 FPS
     private const val BASE_CURSOR_FRAME_SPEED_PX = 6.5f
     private const val MAX_CURSOR_FRAME_SPEED_PX = 20.0f
     private const val BASE_SCROLL_FRAME_SPEED_PX = 14.0
@@ -149,7 +148,6 @@ class MainActivity : AppCompatActivity() {
   private var fullscreenPromptDismissedForPage: Boolean = false
   private var lastFullscreenExitUptimeMs: Long = 0L
 
-  // Estado del motor fluido a 60 FPS para cursor y scroll
   private var activeDpadKeyCode: Int = 0
   private var dpadHoldStartUptimeMs: Long = 0L
   private var lastDpadEventUptimeMs: Long = 0L
@@ -163,7 +161,6 @@ class MainActivity : AppCompatActivity() {
         return
       }
       val now = SystemClock.uptimeMillis()
-      // Si el control remoto soltó la tecla sin enviar ACTION_UP, detener de forma segura
       if (now - lastDpadEventUptimeMs > 240L) {
         stopSmoothDpadMovement()
         return
@@ -192,7 +189,6 @@ class MainActivity : AppCompatActivity() {
         dispatchHoverMoveAtCursor()
       }
 
-      // Desplazamiento vertical nativo a 60 FPS sin bloqueos al llegar a los bordes superior o inferior
       if (!isFullScreenVideo) {
         val scrollAccel = (heldMs.toDouble() / 700.0).coerceIn(0.0, 1.0)
         val scrollStep = BASE_SCROLL_FRAME_SPEED_PX +
@@ -1409,9 +1405,6 @@ class MainActivity : AppCompatActivity() {
           return GeckoResult.deny()
         }
 
-        // Cerrojo anti-scam ("Felicitaciones reclama tu bono" / "Limpia tu unknown"):
-        // Si ya estamos en una página web, bloquear cualquier redirección de la pestaña principal
-        // hacia otro dominio distinto que no haya sido escrita o elegida por el usuario en la barra/favoritos.
         if (!isHomeScreenVisible && !isExplicitUserBarNavigation && currentUrl.startsWith("http", ignoreCase = true)) {
           if (!geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
             return GeckoResult.deny()
@@ -2377,7 +2370,6 @@ class MainActivity : AppCompatActivity() {
             }
             return true
           }
-          // En un directo en vivo, Izquierda/Derecha despierta el puntero por si el usuario quiere cambiar calidad
           if (action == KeyEvent.ACTION_DOWN) {
             cursorOverlay.showCursorAndScheduleFade()
             dispatchHoverMoveAtCursor()
@@ -2420,8 +2412,6 @@ class MainActivity : AppCompatActivity() {
       KeyEvent.KEYCODE_DPAD_LEFT,
       KeyEvent.KEYCODE_DPAD_RIGHT -> {
         if (action == KeyEvent.ACTION_DOWN) {
-          // Si el usuario da un toque nuevo hacia ARRIBA cuando el puntero ya está arriba del todo,
-          // subimos a la barra superior de 6 elementos; si mantiene pulsado, sigue haciendo scroll fluido.
           if (keyCode == KeyEvent.KEYCODE_DPAD_UP &&
             event.repeatCount == 0 &&
             !isFullScreenVideo &&
@@ -2431,7 +2421,7 @@ class MainActivity : AppCompatActivity() {
             return true
           }
           startSmoothDpadMovement(keyCode)
-        } else if (action == KeyEvent.ACTION_UP || action == KeyEvent.ACTION_CANCEL) {
+        } else if (action == KeyEvent.ACTION_UP) {
           stopSmoothDpadMovement()
           dispatchHoverMoveAtCursor()
           scheduleCursorAutoHide()
@@ -2504,10 +2494,6 @@ class MainActivity : AppCompatActivity() {
     scheduleCursorAutoHide()
   }
 
-  /**
-   * Desplazamiento directo por el compositor nativo de GeckoView (SCROLL_BEHAVIOR_AUTO)
-   * llamado en cada fotograma VSYNC (60 FPS) para lograr fluidez sin saltos ni bloqueos.
-   */
   private fun scrollWebPageNative(deltaYPixels: Double) {
     try {
       geckoSession?.panZoomController?.scrollBy(
