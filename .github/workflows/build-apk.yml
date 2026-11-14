@@ -35,7 +35,7 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Preparar las 3 extensiones oficiales (Pop-ups Blocker, uBlock Origin, Violentmonkey)
+      - name: Preparar y optimizar las 3 extensiones para Android TV
         run: |
           python3 - << 'EOF'
           import json
@@ -46,7 +46,7 @@ jobs:
 
           EXT_BASE = "android-geckoview/app/src/main/assets/extensions"
           if os.path.exists(EXT_BASE):
-              shutil.rmtree(EXT_BASE)
+              shutil.rmtree(ext_path := EXT_BASE)
           os.makedirs(EXT_BASE, exist_ok=True)
 
           EXTENSIONS = [
@@ -73,7 +73,7 @@ jobs:
               dest_dir = os.path.join(EXT_BASE, ext["folder"])
               os.makedirs(dest_dir, exist_ok=True)
               xpi_path = os.path.join(EXT_BASE, ext["folder"] + ".xpi")
-              print(f"Descargando {ext['folder']} desde {ext['url']}...")
+              print(f"Descargando {ext['folder']}...")
               req = urllib.request.Request(
                   ext["url"],
                   headers={"User-Agent": "Mozilla/5.0 (Android 14; Mobile; rv:130.0) Gecko/130.0 Firefox/130.0"}
@@ -96,7 +96,6 @@ jobs:
                       if os.path.isdir(loc_path) and loc not in KEEP_LOCALES:
                           shutil.rmtree(loc_path)
 
-              # Eliminar mapas de código o documentación innecesaria para reducir tamaño del APK
               for root_d, _, files in os.walk(dest_dir):
                   for file_n in files:
                       if file_n.endswith(".map") or file_n in ("LICENSE.txt", "README.md"):
@@ -157,21 +156,156 @@ jobs:
                       with open(pb_page_path, "w", encoding="utf-8") as pf:
                           pf.write(html)
           else:
-              pb_scripts = bg_scripts = pb_bg.setdefault("scripts", [])
+              pb_scripts = pb_bg.setdefault("scripts", [])
               if "battv_pb_init.js" not in pb_scripts:
                   pb_scripts.insert(0, "battv_pb_init.js")
 
           with open(pb_manifest_path, "w", encoding="utf-8") as mf:
               json.dump(pb_manifest, mf, indent=2, ensure_ascii=False)
 
-          # 2. Integrar «Saltarse Todos los Enlaces Acortados» y el ayudante ligero de TV en Violentmonkey
+          # 2. Optimizar uBlock Origin para Android TV (evita que los 35 MB de listas de escritorio
+          #    bloqueen la carga de páginas y agoten la RAM del televisor causando cierres)
+          ub_dir = os.path.join(EXT_BASE, "ublock_origin")
+          ub_manifest_path = os.path.join(ub_dir, "manifest.json")
+
+          tv_optimized_ublock_filters = """! Title: uBlock Origin TV High-Speed Filters (Battv.2)
+          ||vidoomy.com^$all
+          ||viwom.com^$all
+          ||wortise.com^$all
+          ||aniview.com^$all
+          ||primis.tech^$all
+          ||adinplay.com^$all
+          ||brid.tv^$all
+          ||exoclick.com^$all
+          ||magsrv.com^$all
+          ||realsrv.com^$all
+          ||adsterra.com^$all
+          ||monetag.com^$all
+          ||acscdn.com^$all
+          ||onclickads.net^$all
+          ||popads.net^$all
+          ||popcash.net^$all
+          ||propellerads.com^$all
+          ||hilltopads.net^$all
+          ||galaksion.com^$all
+          ||clickadu.com^$all
+          ||juicyads.com^$all
+          ||bidgear.com^$all
+          ||optad360.io^$all
+          ||teads.tv^$all
+          ||tsyndicate.com^$all
+          ||trafficjunky.net^$all
+          ||trafficstars.com^$all
+          ||rollerads.com^$all
+          ||evadav.com^$all
+          ||richads.com^$all
+          ||admaven.com^$all
+          ||adcash.com^$all
+          ||pushground.com^$all
+          ||yllix.com^$all
+          ||plugrush.com^$all
+          ||adspyglass.com^$all
+          ||clksite.com^$all
+          ||clkmon.com^$all
+          ||betteradsystem.com^$all
+          ||doubleclick.net^$third-party
+          ||googlesyndication.com^$third-party
+          ||googleadservices.com^$third-party
+          ||taboola.com^$all
+          ||outbrain.com^$all
+          ||mgid.com^$all
+          ||revcontent.com^$all
+          ||criteo.com^$all
+          ||pubmatic.com^$all
+          ||rubiconproject.com^$all
+          ||openx.net^$all
+          ||smartadserver.com^$all
+          ||1xbet.com^$all
+          ||bet365.com^$all
+          ||mostbet.com^$all
+          ||caliente.mx^$all
+          ||blurtsbrerd.com^$all
+          ||capsidsflyleaf.com^$all
+          ||skypipevatican.com^$all
+          ||21wiz.com^$all
+          ||aarems.org^$all
+          /popunder$script,subdocument
+          /tabunder$script,subdocument
+          /clickunder$script,subdocument
+          /apu.php$script,subdocument
+          /afu.php$script,subdocument
+          *##div[id*="vidoomy"]
+          *##div[class*="vidoomy"]
+          *##div[id*="viwom"]
+          *##div[class*="viwom"]
+          *##div[id*="aniview"]
+          *##div[class*="aniview"]
+          *##iframe[src*="vidoomy"]
+          *##iframe[src*="viwom"]
+          *##iframe[src*="exoclick"]
+          *##iframe[src*="adsterra"]
+          """
+
+          # Reemplazar los archivos .txt gigantes de uBlock por la lista optimizada de TV
+          # (conservando intacto assets/resources/scriptlets.js y assets.json)
+          ub_assets_dir = os.path.join(ub_dir, "assets")
+          wrote_primary = False
+          for root_d, _, files in os.walk(ub_assets_dir):
+              for file_n in files:
+                  if file_n.endswith(".txt") or file_n == "serverlist":
+                      full_p = os.path.join(root_d, file_n)
+                      if not wrote_primary and ("filters" in file_n or "easylist" in file_n):
+                          with open(full_p, "w", encoding="utf-8") as f_out:
+                              f_out.write(tv_optimized_ublock_filters.strip() + "\n")
+                          wrote_primary = True
+                      else:
+                          with open(full_p, "w", encoding="utf-8") as f_out:
+                              f_out.write("! Lista compactada para Android TV\n" + tv_optimized_ublock_filters.strip() + "\n")
+
+          # Desactivar suspendUntilListsAreLoaded y autoUpdate en uBlock Origin para que nunca congele la carga de páginas
+          with open(os.path.join(ub_dir, "battv_ub_fast.js"), "w", encoding="utf-8") as ubf:
+              ubf.write("""(function () {
+            try {
+              if (typeof browser !== "undefined" && browser.storage && browser.storage.local) {
+                browser.storage.local.set({
+                  "autoUpdate": false,
+                  "suspendUntilListsAreLoaded": false,
+                  "parseAllABPHideFilters": false,
+                  "ignoreGenericCosmeticFilters": true
+                });
+              }
+            } catch (_) {}
+          })();\n""")
+
+          with open(ub_manifest_path, "r", encoding="utf-8") as mf:
+              ub_manifest = json.load(mf)
+          ub_bg = ub_manifest.setdefault("background", {})
+          if "page" in ub_bg:
+              ub_page_path = os.path.join(ub_dir, ub_bg["page"].lstrip("/"))
+              if os.path.exists(ub_page_path):
+                  with open(ub_page_path, "r", encoding="utf-8") as pf:
+                      html = pf.read()
+                  tag = '<script src="/battv_ub_fast.js"></script>'
+                  if tag not in html:
+                      html = html.replace("<script", tag + "\n<script", 1) if "<script" in html else (tag + "\n" + html)
+                      with open(ub_page_path, "w", encoding="utf-8") as pf:
+                          pf.write(html)
+          else:
+              ub_scripts = ub_bg.setdefault("scripts", [])
+              if "battv_ub_fast.js" not in ub_scripts:
+                  ub_scripts.insert(0, "battv_ub_fast.js")
+
+          with open(ub_manifest_path, "w", encoding="utf-8") as mf:
+              json.dump(ub_manifest, mf, indent=2, ensure_ascii=False)
+
+          # 3. Integrar «Saltarse Todos los Enlaces Acortados» y el asistente ligero en Violentmonkey
           vm_dir = os.path.join(EXT_BASE, "violentmonkey")
           vm_manifest_path = os.path.join(vm_dir, "manifest.json")
 
           shortlink_userscript = r'''// ==UserScript==
           // @name         Saltarse Todos los Enlaces Acortados
           // @namespace    battv.shortlinks.bypass
-          // @version      2.4.0
+          // @version      2.5.0
           // @description  Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.
           // @author       BatTV
           // @run-at       document-start
@@ -287,7 +421,7 @@ jobs:
 
           preload_bg_js = r'''(function () {
             "use strict";
-            const SEED_KEY = "battv_shortlink_script_seeded_v6";
+            const SEED_KEY = "battv_shortlink_script_seeded_v7";
             const SCRIPT_CODE = `''' + shortlink_userscript.strip().replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$") + r'''`;
 
             async function seedShortlinkScript() {
@@ -307,7 +441,7 @@ jobs:
                   meta: {
                     name: "Saltarse Todos los Enlaces Acortados",
                     namespace: "battv.shortlinks.bypass",
-                    version: "2.4.0",
+                    version: "2.5.0",
                     description: "Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.",
                     author: "BatTV",
                     runAt: "document-start",
@@ -391,7 +525,6 @@ jobs:
               } catch (_) {}
             }
 
-            // 1. Estilos CSS ligeros para ocultar anuncios flotantes (Vidoomy/Viwom) y ajustar pantalla completa
             function injectFastTvStyles() {
               try {
                 const styleId = "__battv_fullscreen_css";
@@ -528,7 +661,6 @@ jobs:
             document.addEventListener("fullscreenchange", onDomFullscreenChanged, true);
             document.addEventListener("mozfullscreenchange", onDomFullscreenChanged, true);
 
-            // 2. Detección y estabilización de vídeos VOD y Directos en vivo (Chaturbate, Twitch, HLS)
             function isLiveOrLongContentVideo(v) {
               if (!v) return false;
               const rect = v.getBoundingClientRect();
@@ -703,7 +835,6 @@ jobs:
               return !!btn;
             }
 
-            // 3. Gestión de formularios web para control remoto
             function isEditableTextInput(el) {
               if (!el || el.disabled || el.readOnly) return false;
               const tag = (el.tagName || "").toUpperCase();
@@ -1022,7 +1153,7 @@ jobs:
         working-directory: android-geckoview
         run: gradle assembleRelease --no-daemon --no-build-cache --stacktrace
 
-      - name: Verificar APK generado y comprobar que _locales está empaquetado
+      - name: Verificar APK generado y comprobar tamano
         run: |
           ls -lh android-geckoview/app/build/outputs/apk/release/*.apk
           unzip -l android-geckoview/app/build/outputs/apk/release/*.apk | grep "_locales" | head -n 15
