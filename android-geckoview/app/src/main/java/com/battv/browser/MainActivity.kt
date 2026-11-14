@@ -1,6 +1,7 @@
 package com.battv.browser
 
 import android.app.AlertDialog
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Canvas
@@ -51,6 +52,7 @@ import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.MediaSession
 import org.mozilla.geckoview.PanZoomController
 import org.mozilla.geckoview.ScreenLength
+import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebExtension
 import java.util.Collections
 import kotlin.math.abs
@@ -114,7 +116,6 @@ class MainActivity : AppCompatActivity() {
   private var currentUrl: String = ""
   private var currentTitle: String = ""
   private var latestExtractedHeading: String = ""
-  private var allowTopDomainChangeUntilUptimeMs: Long = 0L
 
   private var isDesktopMode: Boolean = false
   private var isCursorModeActive: Boolean = false
@@ -152,7 +153,6 @@ class MainActivity : AppCompatActivity() {
   private var dpadHoldStartUptimeMs: Long = 0L
   private var lastDpadEventUptimeMs: Long = 0L
   private var isSmoothDpadLoopRunning: Boolean = false
-  private var lastHoverDispatchUptimeMs: Long = 0L
 
   private val smoothDpadFrameCallback = object : Choreographer.FrameCallback {
     override fun doFrame(frameTimeNanos: Long) {
@@ -183,11 +183,6 @@ class MainActivity : AppCompatActivity() {
       }
 
       cursorOverlay.moveCursorBy(dx, dy)
-
-      if (now - lastHoverDispatchUptimeMs >= 90L) {
-        lastHoverDispatchUptimeMs = now
-        dispatchHoverMoveAtCursor()
-      }
 
       if (!isFullScreenVideo) {
         val scrollAccel = (heldMs.toDouble() / 700.0).coerceIn(0.0, 1.0)
@@ -272,6 +267,24 @@ class MainActivity : AppCompatActivity() {
     }
   }
 
+  override fun onTrimMemory(level: Int) {
+    super.onTrimMemory(level)
+    if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW && ::geckoManager.isInitialized) {
+      try {
+        geckoManager.runtime.storageController.clearData(StorageController.ClearFlags.IMAGE_CACHE)
+      } catch (_: Exception) {}
+    }
+  }
+
+  override fun onLowMemory() {
+    super.onLowMemory()
+    if (::geckoManager.isInitialized) {
+      try {
+        geckoManager.runtime.storageController.clearData(StorageController.ClearFlags.IMAGE_CACHE)
+      } catch (_: Exception) {}
+    }
+  }
+
   override fun onResume() {
     super.onResume()
     geckoSession?.setActive(true)
@@ -287,9 +300,6 @@ class MainActivity : AppCompatActivity() {
     mainHandler.removeCallbacks(hideCursorRunnable)
     mainHandler.removeCallbacks(hideVideoSeekRunnable)
     geckoSession?.setActive(false)
-    if (::geckoManager.isInitialized) {
-      geckoManager.pruneDisposableStorageNow()
-    }
   }
 
   override fun onDestroy() {
@@ -352,7 +362,6 @@ class MainActivity : AppCompatActivity() {
             exitFullScreenSafely()
           }
           fullscreenPromptDismissedForPage = false
-          allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 5000L
           geckoSession?.stop()
           geckoSession?.reload()
           activateCursorMode(showPointerNow = false)
@@ -927,7 +936,6 @@ class MainActivity : AppCompatActivity() {
   private fun setBrowserDisplayMode(desktopMode: Boolean) {
     isDesktopMode = desktopMode
     prefs.edit().putBoolean(KEY_DESKTOP_MODE, isDesktopMode).apply()
-    allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 5000L
     geckoManager.applyDisplayMode(
       isDesktopMode = isDesktopMode,
       reloadIfActive = !isHomeScreenVisible,
@@ -956,7 +964,6 @@ class MainActivity : AppCompatActivity() {
     if (!isHomeScreenVisible && canGoBackState) {
       items.add("\u25C4  P\u00E1gina anterior (Atr\u00E1s)")
       actions.add {
-        allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 5000L
         geckoSession?.goBack()
         activateCursorMode(showPointerNow = false)
       }
@@ -964,7 +971,6 @@ class MainActivity : AppCompatActivity() {
     if (!isHomeScreenVisible && canGoForwardState) {
       items.add("\u25BA  P\u00E1gina siguiente (Adelante)")
       actions.add {
-        allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 5000L
         geckoSession?.goForward()
         activateCursorMode(showPointerNow = false)
       }
@@ -1394,21 +1400,13 @@ class MainActivity : AppCompatActivity() {
           return GeckoResult.deny()
         }
 
-        val now = SystemClock.uptimeMillis()
-        val isExplicitUserBarNavigation = (now <= allowTopDomainChangeUntilUptimeMs) || request.isDirectNavigation
-
+        // Bloquear ventanas emergentes (TARGET_WINDOW_NEW), permitiendo abrir en la misma pestaña
+        // únicamente si el usuario hizo clic en un enlace del mismo sitio.
         if (request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
           if (request.hasUserGesture && geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
-            allowTopDomainChangeUntilUptimeMs = now + 4000L
             session.loadUri(uri)
           }
           return GeckoResult.deny()
-        }
-
-        if (!isHomeScreenVisible && !isExplicitUserBarNavigation && currentUrl.startsWith("http", ignoreCase = true)) {
-          if (!geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
-            return GeckoResult.deny()
-          }
         }
 
         return GeckoResult.allow()
@@ -1972,7 +1970,6 @@ class MainActivity : AppCompatActivity() {
   private fun closeNativeWebInputBridge(submit: Boolean) {
     mainHandler.removeCallbacks(activateNativeWebInputRunnable)
     if (submit) {
-      allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 5000L
       val finalQuery = urlEditText.text?.toString() ?: ""
       syncWebInputTextToPage(finalQuery, submit = true)
     } else {
@@ -2045,7 +2042,6 @@ class MainActivity : AppCompatActivity() {
       exitFullScreenSafely()
     }
     fullscreenPromptDismissedForPage = false
-    allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 6000L
     isHomeScreenVisible = false
     isHomeToolbarFocused = false
     homeOverlayLayout.visibility = View.GONE
@@ -2231,10 +2227,7 @@ class MainActivity : AppCompatActivity() {
           isEditingUrlText -> stopEditingUrlTextAndStayOnBar()
           isFullScreenVideo -> exitFullScreenSafely()
           !isHomeScreenVisible && !isCursorModeActive -> activateCursorMode(showPointerNow = true)
-          !isHomeScreenVisible && canGoBackState -> {
-            allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 5000L
-            geckoSession?.goBack()
-          }
+          !isHomeScreenVisible && canGoBackState -> geckoSession?.goBack()
           !isHomeScreenVisible && !canGoBackState -> showHomeScreen()
           isHomeScreenVisible && isHomeToolbarFocused -> {
             isHomeToolbarFocused = false
