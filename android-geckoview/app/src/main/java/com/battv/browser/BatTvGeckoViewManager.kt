@@ -25,14 +25,13 @@ class BatTvGeckoViewManager(
     companion object {
         private const val TAG = "BatTvGeckoManager"
 
-        const val POPUP_BLOCKER_ID = "{54e2eb33-18eb-46ad-a4e4-1329c29f6e17}"
-        const val POPUP_BLOCKER_URI = "resource://android/assets/extensions/popup_blocker/"
+        const val BATTV_SHIELD_ID = "shield@battv.browser"
+        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield/"
 
-        const val UBLOCK_ORIGIN_ID = "uBlock0@raymondhill.net"
-        const val UBLOCK_ORIGIN_URI = "resource://android/assets/extensions/ublock_origin/"
-
-        const val VIOLENTMONKEY_ID = "{aecec67f-0d10-4fa7-b7c7-609a2db280cf}"
-        const val VIOLENTMONKEY_URI = "resource://android/assets/extensions/violentmonkey/"
+        // Mantenemos las constantes de referencia para compatibilidad con el menú de estado
+        const val POPUP_BLOCKER_ID = BATTV_SHIELD_ID
+        const val UBLOCK_ORIGIN_ID = BATTV_SHIELD_ID
+        const val VIOLENTMONKEY_ID = BATTV_SHIELD_ID
 
         const val NATIVE_BRIDGE_NAME = "battv_bridge"
 
@@ -54,7 +53,8 @@ class BatTvGeckoViewManager(
             "outbrain.com", "1xbet.com", "bet365.com", "mostbet.com", "caliente.mx",
             "pushground.com", "yllix.com", "plugrush.com", "adspyglass.com",
             "clksite.com", "clkmon.com", "betteradsystem.com", "blurtsbrerd.com",
-            "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org"
+            "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
+            "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
@@ -113,7 +113,7 @@ class BatTvGeckoViewManager(
         session = GeckoSession(sessionSettings)
 
         setupPermissionDelegate(session)
-        setupWebExtensions(runtime.webExtensionController)
+        setupNativeShieldExtension(runtime.webExtensionController)
 
         session.open(runtime)
         geckoView.setSession(session)
@@ -123,8 +123,8 @@ class BatTvGeckoViewManager(
             session.setPriorityHint(GeckoSession.PRIORITY_HIGH)
         } catch (_: Exception) {}
 
-        installedExtensions[VIOLENTMONKEY_ID]?.let { vmExt ->
-            attachBridgeToExtension(vmExt)
+        installedExtensions[BATTV_SHIELD_ID]?.let { shieldExt ->
+            attachBridgeToExtension(shieldExt)
         }
 
         return session
@@ -161,21 +161,17 @@ class BatTvGeckoViewManager(
         }
     }
 
-    /**
-     * Configuracion estable y ligera para Android TV:
-     * Sin banderas experimentales de procesos o compositor que provoquen cierres en GPUs Mali-G31.
-     */
     private fun writeStableTvGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.filesDir, "battv_gecko_config.yaml")
             val yamlContent = """
                 prefs:
                   browser.cache.disk.enable: true
-                  browser.cache.disk.capacity: 15360
+                  browser.cache.disk.capacity: 12288
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 8192
+                  browser.cache.memory.capacity: 12288
                   browser.sessionhistory.max_total_viewers: 0
                   browser.safebrowsing.malware.enabled: false
                   browser.safebrowsing.phishing.enabled: false
@@ -184,9 +180,11 @@ class BatTvGeckoViewManager(
                   datareporting.healthreport.uploadEnabled: false
                   toolkit.telemetry.enabled: false
                   media.suspend-bkgnd-video.enabled: false
-                  media.cache_size: 16384
-                  media.memory_cache_max_size: 8192
-                  media.memory_caches_combined_limit_kb: 20480
+                  media.cache_size: 24576
+                  media.memory_cache_max_size: 12288
+                  media.memory_caches_combined_limit_kb: 28672
+                  media.cache_readahead_limit: 45
+                  media.cache_resume_threshold: 15
                   media.preload.default: 2
                   media.autoplay.default: 0
                   media.autoplay.blocking_policy: 0
@@ -198,6 +196,7 @@ class BatTvGeckoViewManager(
                   media.eme.enabled: true
                   media.mediasource.enabled: true
                   dom.disable_open_during_load: true
+                  dom.popup_maximum: 0
                   full-screen-api.enabled: true
                   full-screen-api.allow-trusted-requests-only: false
                   full-screen-api.warning.delay: -1
@@ -237,11 +236,7 @@ class BatTvGeckoViewManager(
         }
     }
 
-    /**
-     * Registra las 3 extensiones mediante ensureBuiltIn (que ya las instala y habilita en GeckoView)
-     * sin llamar a controller.enable() encima para evitar reiniciar sus procesos mientras carga una pagina.
-     */
-    private fun setupWebExtensions(controller: WebExtensionController) {
+    private fun setupNativeShieldExtension(controller: WebExtensionController) {
         controller.promptDelegate = object : WebExtensionController.PromptDelegate {
             override fun onOptionalPrompt(
                 extension: WebExtension,
@@ -252,34 +247,42 @@ class BatTvGeckoViewManager(
             }
         }
 
-        val requiredExtensions = listOf(
-            Pair(POPUP_BLOCKER_URI, POPUP_BLOCKER_ID),
-            Pair(UBLOCK_ORIGIN_URI, UBLOCK_ORIGIN_ID),
-            Pair(VIOLENTMONKEY_URI, VIOLENTMONKEY_ID)
-        )
-
-        for ((assetUri, extId) in requiredExtensions) {
-            controller.ensureBuiltIn(assetUri, extId).accept(
-                { extension ->
-                    if (extension != null) {
-                        installedExtensions[extension.id] = extension
-                        if (extension.id == VIOLENTMONKEY_ID) {
-                            attachBridgeToExtension(extension)
-                        }
-                        Log.i(TAG, "Extension lista: ${extension.id}")
-                    }
-                },
-                { err ->
-                    Log.e(TAG, "Error al cargar extension $extId desde $assetUri", err)
+        // Desinstalar cualquier extensión pesada antigua que haya quedado en el almacenamiento
+        controller.list().accept({ existingList ->
+            existingList?.forEach { ext ->
+                if (ext.id != BATTV_SHIELD_ID) {
+                    controller.uninstall(ext)
                 }
-            )
-        }
+            }
+        }, {})
+
+        controller.ensureBuiltIn(BATTV_SHIELD_URI, BATTV_SHIELD_ID).accept(
+            { extension ->
+                if (extension != null) {
+                    installedExtensions[extension.id] = extension
+                    attachBridgeToExtension(extension)
+                    Log.i(TAG, "Escudo nativo activo: ${extension.id}")
+                }
+            },
+            { err ->
+                Log.e(TAG, "Error al cargar escudo nativo", err)
+            }
+        )
     }
 
     private fun attachBridgeToExtension(extension: WebExtension) {
         val delegate = bridgeMessageDelegate ?: return
         try {
             extension.setMessageDelegate(delegate, NATIVE_BRIDGE_NAME)
+        } catch (_: Exception) {}
+        try {
+            if (::session.isInitialized) {
+                session.webExtensionController.setMessageDelegate(
+                    extension,
+                    delegate,
+                    NATIVE_BRIDGE_NAME
+                )
+            }
         } catch (_: Exception) {}
     }
 
@@ -348,24 +351,11 @@ class BatTvGeckoViewManager(
     }
 
     fun isExtensionLoaded(extensionId: String): Boolean {
-        return installedExtensions.containsKey(extensionId)
+        return installedExtensions.containsKey(BATTV_SHIELD_ID)
     }
 
     fun getExtensionDashboardUrl(extensionId: String, fallbackPath: String): String? {
-        val ext = installedExtensions[extensionId] ?: return null
-        val meta = try {
-            ext.metaData
-        } catch (_: Exception) {
-            null
-        }
-        val optionsUrl = meta?.optionsPageUrl
-        val baseUrl = meta?.baseUrl
-
-        return when {
-            !optionsUrl.isNullOrBlank() -> optionsUrl
-            !baseUrl.isNullOrBlank() -> baseUrl.trimEnd('/') + "/" + fallbackPath.trimStart('/')
-            else -> null
-        }
+        return null
     }
 
     fun resolveInputToUrl(rawInput: String): String {
@@ -438,7 +428,6 @@ class BatTvGeckoViewManager(
                     bytes += cleanDisposableGeckoDirs(child)
                 }
             } else if (child.isFile && child.name == "prefs.js") {
-                // Limpiar preferencias antiguas que causaban bloqueo en el TV
                 try {
                     val sanitized = child.readLines().filterNot { line ->
                         line.contains("dom.ipc.processCount") ||
