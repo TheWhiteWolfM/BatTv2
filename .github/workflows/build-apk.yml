@@ -112,7 +112,7 @@ jobs:
               with open(manifest_path, "w", encoding="utf-8") as mf:
                   json.dump(manifest, mf, indent=2, ensure_ascii=False)
 
-          # 1. Preconfigurar Pop-ups Blocker (strict) en modo estricto inmediato
+          # 1. Preconfigurar Pop-ups Blocker (strict) en modo estricto silencioso
           pb_dir = os.path.join(EXT_BASE, "popup_blocker")
           pb_manifest_path = os.path.join(pb_dir, "manifest.json")
           with open(pb_manifest_path, "r", encoding="utf-8") as mf:
@@ -154,7 +154,7 @@ jobs:
           with open(pb_manifest_path, "w", encoding="utf-8") as mf:
               json.dump(pb_manifest, mf, indent=2, ensure_ascii=False)
 
-          # 2. Reforzar listas preinstaladas de uBlock Origin desde el primer inicio
+          # 2. Reforzar las listas preinstaladas de uBlock Origin
           ub_dir = os.path.join(EXT_BASE, "ublock_origin")
           extra_ublock_rules = """
           ! Filtros integrados Battv.2 para sitios de streaming
@@ -227,7 +227,7 @@ jobs:
           shortlink_userscript = r'''// ==UserScript==
           // @name         Saltarse Todos los Enlaces Acortados
           // @namespace    battv.shortlinks.bypass
-          // @version      2.3.0
+          // @version      2.2.0
           // @description  Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.
           // @author       BatTV
           // @run-at       document-start
@@ -344,7 +344,7 @@ jobs:
 
           preload_bg_js = r'''(function () {
             "use strict";
-            const SEED_KEY = "battv_shortlink_script_seeded_v3";
+            const SEED_KEY = "battv_shortlink_script_seeded_v4";
             const SCRIPT_CODE = `''' + shortlink_userscript.strip().replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$") + r'''`;
 
             async function seedShortlinkScript() {
@@ -364,7 +364,7 @@ jobs:
                   meta: {
                     name: "Saltarse Todos los Enlaces Acortados",
                     namespace: "battv.shortlinks.bypass",
-                    version: "2.3.0",
+                    version: "2.2.0",
                     description: "Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.",
                     author: "BatTV",
                     runAt: "document-start",
@@ -440,12 +440,8 @@ jobs:
             let inputCounter = 1;
             let promptedVideosSet = new WeakSet();
             let lastFullscreenPromptMs = 0;
-            let isForcedFullscreenActive = false;
 
-            // 1. Inyectar en el Main World:
-            //    - Bloqueo de window.open
-            //    - Permiso allowfullscreen automatico en todo iframe antes de cargar
-            //    - Hook de requestFullscreen / exitFullscreen para que el boton nativo del reproductor funcione siempre
+            // 1. Bloquear window.open hacia dominios publicitarios externos en el Main World
             try {
               const mainWorldScript = document.createElement("script");
               mainWorldScript.textContent = `(function(){
@@ -468,59 +464,6 @@ jobs:
                     writable: false,
                     configurable: false
                   });
-
-                  // Asegurar que cualquier iframe creado dinamicamente tenga permiso de pantalla completa antes de cargar
-                  const origCreateElement = Document.prototype.createElement;
-                  Document.prototype.createElement = function(tagName, options) {
-                    const el = origCreateElement.call(this, tagName, options);
-                    try {
-                      if (typeof tagName === "string" && tagName.toLowerCase() === "iframe") {
-                        el.allowFullscreen = true;
-                        el.setAttribute("allowfullscreen", "true");
-                        el.setAttribute("webkitallowfullscreen", "true");
-                        el.setAttribute("mozallowfullscreen", "true");
-                        el.setAttribute("allow", "fullscreen *; autoplay *; encrypted-media *; picture-in-picture *");
-                      }
-                    } catch (_) {}
-                    return el;
-                  };
-
-                  // Interceptar llamadas a requestFullscreen de cualquier reproductor (JWPlayer, Video.js, Plyr, etc.)
-                  const origReqFs = Element.prototype.requestFullscreen || Element.prototype.mozRequestFullScreen || Element.prototype.webkitRequestFullscreen;
-                  const hookReqFs = function() {
-                    window.postMessage({ __battvMainWorldFsAction: "ENTER" }, "*");
-                    if (origReqFs) {
-                      try {
-                        const res = origReqFs.apply(this, arguments);
-                        if (res && typeof res.catch === "function") {
-                          res.catch(function(){});
-                        }
-                        return res;
-                      } catch (_) {}
-                    }
-                    return Promise.resolve();
-                  };
-                  Element.prototype.requestFullscreen = hookReqFs;
-                  Element.prototype.mozRequestFullScreen = hookReqFs;
-                  Element.prototype.webkitRequestFullscreen = hookReqFs;
-
-                  const origExitFs = Document.prototype.exitFullscreen || Document.prototype.mozCancelFullScreen || Document.prototype.webkitExitFullscreen;
-                  const hookExitFs = function() {
-                    window.postMessage({ __battvMainWorldFsAction: "EXIT" }, "*");
-                    if (origExitFs) {
-                      try {
-                        const res = origExitFs.apply(this, arguments);
-                        if (res && typeof res.catch === "function") {
-                          res.catch(function(){});
-                        }
-                        return res;
-                      } catch (_) {}
-                    }
-                    return Promise.resolve();
-                  };
-                  Document.prototype.exitFullscreen = hookExitFs;
-                  Document.prototype.mozCancelFullScreen = hookExitFs;
-                  Document.prototype.webkitExitFullscreen = hookExitFs;
                 } catch(_) {}
               })();`;
               (document.head || document.documentElement).appendChild(mainWorldScript);
@@ -546,7 +489,7 @@ jobs:
               } catch (_) {}
             }
 
-            // 2. Limpiar anuncios flotantes (Vidoomy/Viwom/Outstream) y carteles falsos ("Atencion")
+            // 2. Eliminar reproductores publicitarios flotantes (Vidoomy/Viwom) y avisos falsos
             function purgeFloatingAdOverlays() {
               try {
                 const adSelectors = [
@@ -564,12 +507,18 @@ jobs:
                   badNodes[i].remove();
                 }
 
+                if (!isTopFrame) return;
+
                 const fixedEls = document.querySelectorAll("div, section, aside, ins");
                 const vw = window.innerWidth || 1280;
                 const vh = window.innerHeight || 720;
                 for (let j = 0; j < fixedEls.length; j++) {
                   const el = fixedEls[j];
-                  if (el.id === "__battv_fullscreen_css" || el.classList.contains("__battv_forced_fullscreen") || el.classList.contains("__battv_fs_ancestor")) continue;
+                  if (el.classList.contains("__battv_player_fill_frame") ||
+                      el.classList.contains("__battv_iframe_fullscreen") ||
+                      el.classList.contains("__battv_fs_ancestor")) {
+                    continue;
+                  }
                   const style = window.getComputedStyle(el);
                   if (style.position === "fixed" || style.position === "sticky") {
                     const z = parseInt(style.zIndex || "0", 10);
@@ -581,7 +530,7 @@ jobs:
                       continue;
                     }
 
-                    if (rect.width > 80 && rect.width < vw * 0.58 && rect.height > 60 && rect.height < vh * 0.65 && z >= 99) {
+                    if (rect.width > 80 && rect.width < vw * 0.55 && rect.height > 60 && rect.height < vh * 0.60 && z >= 99) {
                       const hasShortAdVideo = el.querySelector("video");
                       if (hasShortAdVideo && (!Number.isFinite(hasShortAdVideo.duration) || hasShortAdVideo.duration < 90)) {
                         hasShortAdVideo.pause();
@@ -591,7 +540,7 @@ jobs:
                       }
                     }
 
-                    if (z > 900 && parseFloat(style.opacity || "1") < 0.12 && rect.width > vw * 0.4 && !el.querySelector("video")) {
+                    if (z > 900 && parseFloat(style.opacity || "1") < 0.10 && rect.width > vw * 0.4) {
                       el.remove();
                     }
                   }
@@ -599,8 +548,7 @@ jobs:
               } catch (_) {}
             }
 
-            // 3. Estilos CSS para que tanto el <video> como cualquier <iframe> contenedor ocupen el 100% real del televisor
-            //    desactivando cualquier transform/overflow en los contenedores padres de la pagina
+            // 3. Estilos de pantalla completa (aplicados al contenedor del reproductor y al iframe, NUNCA sobre <video> aislado)
             function injectFullscreenFixStyles() {
               try {
                 const styleId = "__battv_fullscreen_css";
@@ -608,7 +556,25 @@ jobs:
                 const style = document.createElement("style");
                 style.id = styleId;
                 style.textContent = `
-                  :fullscreen, :-moz-full-screen, .__battv_forced_fullscreen {
+                  html.__battv_lock_scroll,
+                  html.__battv_lock_scroll body {
+                    overflow: hidden !important;
+                    background: #000 !important;
+                  }
+                  .__battv_fs_ancestor {
+                    transform: none !important;
+                    filter: none !important;
+                    backdrop-filter: none !important;
+                    perspective: none !important;
+                    contain: none !important;
+                    clip-path: none !important;
+                    mask: none !important;
+                    overflow: visible !important;
+                    z-index: 2147483645 !important;
+                  }
+                  :fullscreen, :-moz-full-screen,
+                  .__battv_iframe_fullscreen,
+                  .__battv_player_fill_frame {
                     position: fixed !important;
                     inset: 0 !important;
                     top: 0 !important;
@@ -624,65 +590,20 @@ jobs:
                     margin: 0 !important;
                     padding: 0 !important;
                     border: none !important;
-                    z-index: 2147483647 !important;
+                    z-index: 2147483646 !important;
                     background: #000 !important;
                     box-sizing: border-box !important;
-                    transform: none !important;
                   }
                   :fullscreen video, :-moz-full-screen video,
-                  video:fullscreen, video:-moz-full-screen,
-                  video.__battv_forced_fullscreen, .__battv_forced_fullscreen video {
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    max-width: 100vw !important;
-                    max-height: 100vh !important;
+                  .__battv_player_fill_frame video {
+                    width: 100% !important;
+                    height: 100% !important;
+                    max-width: 100% !important;
+                    max-height: 100% !important;
                     object-fit: contain !important;
-                    background: #000 !important;
-                  }
-                  .__battv_fs_ancestor {
-                    transform: none !important;
-                    filter: none !important;
-                    perspective: none !important;
-                    backdrop-filter: none !important;
-                    will-change: auto !important;
-                    contain: none !important;
-                    overflow: visible !important;
-                    z-index: 2147483646 !important;
-                  }
-                  html.__battv_fs_lock_scroll, body.__battv_fs_lock_scroll {
-                    overflow: hidden !important;
-                    background: #000 !important;
                   }
                 `;
                 (document.head || document.documentElement).appendChild(style);
-              } catch (_) {}
-            }
-
-            function markAncestorsForFixedEscape(el) {
-              try {
-                let curr = el ? el.parentElement : null;
-                while (curr && curr !== document.documentElement) {
-                  curr.classList.add("__battv_fs_ancestor");
-                  curr = curr.parentElement;
-                }
-                if (document.documentElement) document.documentElement.classList.add("__battv_fs_lock_scroll");
-                if (document.body) document.body.classList.add("__battv_fs_lock_scroll");
-              } catch (_) {}
-            }
-
-            function clearForcedFullscreenClasses() {
-              isForcedFullscreenActive = false;
-              try {
-                const forced = document.querySelectorAll(".__battv_forced_fullscreen");
-                for (let i = 0; i < forced.length; i++) {
-                  forced[i].classList.remove("__battv_forced_fullscreen");
-                }
-                const anc = document.querySelectorAll(".__battv_fs_ancestor");
-                for (let j = 0; j < anc.length; j++) {
-                  anc[j].classList.remove("__battv_fs_ancestor");
-                }
-                if (document.documentElement) document.documentElement.classList.remove("__battv_fs_lock_scroll");
-                if (document.body) document.body.classList.remove("__battv_fs_lock_scroll");
               } catch (_) {}
             }
 
@@ -691,7 +612,6 @@ jobs:
                 const iframes = document.querySelectorAll("iframe");
                 for (let i = 0; i < iframes.length; i++) {
                   const f = iframes[i];
-                  f.allowFullscreen = true;
                   if (!f.hasAttribute("allowfullscreen")) f.setAttribute("allowfullscreen", "true");
                   if (!f.hasAttribute("webkitallowfullscreen")) f.setAttribute("webkitallowfullscreen", "true");
                   if (!f.hasAttribute("mozallowfullscreen")) f.setAttribute("mozallowfullscreen", "true");
@@ -703,61 +623,39 @@ jobs:
               } catch (_) {}
             }
 
-            function findMainPlayerIframe() {
-              try {
-                const iframes = Array.from(document.querySelectorAll("iframe")).filter(function (f) {
-                  const src = (f.src || "").toLowerCase();
-                  if (src.includes("vidoomy") || src.includes("viwom") || src.includes("exoclick") || src.includes("adsterra") || src.includes("doubleclick")) {
-                    return false;
-                  }
-                  const r = f.getBoundingClientRect();
-                  return r.width >= 220 && r.height >= 120;
-                });
-                if (iframes.length === 0) return null;
-                iframes.sort(function (a, b) {
-                  const ra = a.getBoundingClientRect();
-                  const rb = b.getBoundingClientRect();
-                  return (rb.width * rb.height) - (ra.width * ra.height);
-                });
-                return iframes[0];
-              } catch (_) {
-                return null;
+            function markFullscreenAncestors(el) {
+              let curr = el ? el.parentElement : null;
+              while (curr && curr !== document.body && curr !== document.documentElement) {
+                curr.classList.add("__battv_fs_ancestor");
+                curr = curr.parentElement;
+              }
+              if (document.documentElement) {
+                document.documentElement.classList.add("__battv_lock_scroll");
               }
             }
 
-            function expandParentIframeInThisFrame(sourceWin) {
+            function clearCustomFullscreenClasses() {
               try {
-                injectFullscreenFixStyles();
-                let targetIframe = null;
-                if (sourceWin) {
-                  const allIframes = document.querySelectorAll("iframe");
-                  for (let i = 0; i < allIframes.length; i++) {
-                    if (allIframes[i].contentWindow === sourceWin) {
-                      targetIframe = allIframes[i];
-                      break;
-                    }
-                  }
+                if (document.documentElement) {
+                  document.documentElement.classList.remove("__battv_lock_scroll");
                 }
-                if (!targetIframe) {
-                  targetIframe = findMainPlayerIframe();
-                }
-                if (targetIframe) {
-                  isForcedFullscreenActive = true;
-                  targetIframe.classList.add("__battv_forced_fullscreen");
-                  markAncestorsForFixedEscape(targetIframe);
-                  if (window !== window.top && window.parent) {
-                    window.parent.postMessage({ __battvExpandParentIframe: true }, "*");
-                  }
+                const nodes = document.querySelectorAll(".__battv_iframe_fullscreen, .__battv_player_fill_frame, .__battv_fs_ancestor");
+                for (let i = 0; i < nodes.length; i++) {
+                  nodes[i].classList.remove("__battv_iframe_fullscreen", "__battv_player_fill_frame", "__battv_fs_ancestor");
                 }
               } catch (_) {}
             }
 
-            function onFullscreenChanged() {
-              const inDomFs = !!(document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement);
-              if (inDomFs) {
-                postToNative({ type: "VIDEO_ENTERED_FULLSCREEN" });
-              } else if (!isForcedFullscreenActive) {
-                postToNative({ type: "VIDEO_EXITED_FULLSCREEN" });
+            function onDomFullscreenChanged() {
+              const isDomFs = !!(document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement);
+              if (!isDomFs) {
+                clearCustomFullscreenClasses();
+              }
+              if (isTopFrame) {
+                postToNative({
+                  type: "WEB_FULLSCREEN_STATE",
+                  enabled: isDomFs
+                });
               }
               setTimeout(function () {
                 try { window.dispatchEvent(new Event("resize")); } catch (_) {}
@@ -767,37 +665,150 @@ jobs:
               }, 240);
             }
 
-            document.addEventListener("fullscreenchange", onFullscreenChanged, true);
-            document.addEventListener("mozfullscreenchange", onFullscreenChanged, true);
+            document.addEventListener("fullscreenchange", onDomFullscreenChanged, true);
+            document.addEventListener("mozfullscreenchange", onDomFullscreenChanged, true);
 
-            // Escuchar mensajes entre subframes y el Main World para escalar el video a pantalla completa real
-            window.addEventListener("message", function (e) {
-              if (!e || !e.data) return;
-              if (e.data.__battvMainWorldFsAction === "ENTER") {
-                if (findActiveVideo()) {
-                  requestEnterFullscreenOnActiveVideo();
-                } else {
-                  expandParentIframeInThisFrame(null);
-                  postToNative({ type: "VIDEO_ENTERED_FULLSCREEN" });
+            // 4. Deteccion de video real y contenedor del reproductor
+            function isRealContentVideo(v) {
+              if (!v) return false;
+              const rect = v.getBoundingClientRect();
+              if (rect.width < 180 || rect.height < 100) return false;
+              const dur = v.duration;
+              if (Number.isFinite(dur) && dur > 0 && dur < 90) return false;
+              return (Number.isFinite(dur) && dur >= 90) || (!Number.isFinite(dur) && v.readyState >= 2);
+            }
+
+            function findActiveVideo() {
+              const videos = Array.from(document.querySelectorAll("video")).filter(isRealContentVideo);
+              if (videos.length === 0) return null;
+              videos.sort(function (a, b) {
+                const durA = Number.isFinite(a.duration) ? a.duration : 3600;
+                const durB = Number.isFinite(b.duration) ? b.duration : 3600;
+                return durB - durA;
+              });
+              return videos[0];
+            }
+
+            function getPlayerRootContainer(v) {
+              if (!v) return null;
+              return v.closest(
+                ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, " +
+                ".fp-player, .dplayer, .clappr-player, #player, .player, .video-player"
+              ) || v.parentElement || v;
+            }
+
+            function findMainPlayerIframeInCurrentDocument() {
+              const iframes = Array.from(document.querySelectorAll("iframe"));
+              let best = null;
+              let bestArea = 0;
+              for (let i = 0; i < iframes.length; i++) {
+                const f = iframes[i];
+                const src = (f.getAttribute("src") || "").toLowerCase();
+                if (src.includes("vidoomy") || src.includes("viwom") || src.includes("exoclick") ||
+                    src.includes("adsterra") || src.includes("doubleclick") || src.includes("disqus") ||
+                    src.includes("facebook")) {
+                  continue;
                 }
-              } else if (e.data.__battvMainWorldFsAction === "EXIT") {
-                clearForcedFullscreenClasses();
-                if (window !== window.top && window.parent) {
-                  window.parent.postMessage({ __battvCollapseParentIframe: true }, "*");
-                }
-                postToNative({ type: "VIDEO_EXITED_FULLSCREEN" });
-              } else if (e.data.__battvExpandParentIframe) {
-                expandParentIframeInThisFrame(e.source);
-                postToNative({ type: "VIDEO_ENTERED_FULLSCREEN" });
-              } else if (e.data.__battvCollapseParentIframe) {
-                clearForcedFullscreenClasses();
-                if (window !== window.top && window.parent) {
-                  window.parent.postMessage({ __battvCollapseParentIframe: true }, "*");
+                const r = f.getBoundingClientRect();
+                const area = r.width * r.height;
+                if (r.width >= 240 && r.height >= 135 && area > bestArea) {
+                  bestArea = area;
+                  best = f;
                 }
               }
-            });
+              return best;
+            }
 
-            // 4. Gestion de formularios para control remoto
+            function enterFullscreenInCurrentFrame() {
+              try {
+                injectFullscreenFixStyles();
+                enableIframeFullscreenAttrs();
+
+                const v = findActiveVideo();
+                if (v) {
+                  const playerRoot = getPlayerRootContainer(v);
+                  if (playerRoot) {
+                    playerRoot.classList.add("__battv_player_fill_frame");
+                    markFullscreenAncestors(playerRoot);
+
+                    const reqFn = playerRoot.requestFullscreen || playerRoot.mozRequestFullScreen || playerRoot.webkitRequestFullscreen;
+                    if (reqFn && !document.fullscreenElement && !document.mozFullScreenElement) {
+                      try {
+                        const p = reqFn.call(playerRoot);
+                        if (p && typeof p.catch === "function") p.catch(function () {});
+                      } catch (_) {}
+                    }
+                  }
+                  if (isTopFrame) {
+                    postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: true });
+                  }
+                  setTimeout(function () {
+                    try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+                  }, 120);
+                  return;
+                }
+
+                // Si este marco (por ejemplo la pagina principal dramachino.com) contiene el iframe del reproductor:
+                const playerIframe = findMainPlayerIframeInCurrentDocument();
+                if (playerIframe) {
+                  setTimeout(function () {
+                    const alreadyDomFs = !!(document.fullscreenElement || document.mozFullScreenElement);
+                    if (!alreadyDomFs) {
+                      playerIframe.classList.add("__battv_iframe_fullscreen");
+                      markFullscreenAncestors(playerIframe);
+                      const reqFn = playerIframe.requestFullscreen || playerIframe.mozRequestFullScreen || playerIframe.webkitRequestFullscreen;
+                      if (reqFn) {
+                        try {
+                          const p = reqFn.call(playerIframe);
+                          if (p && typeof p.catch === "function") p.catch(function () {});
+                        } catch (_) {}
+                      }
+                    }
+                    if (isTopFrame) {
+                      postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: true });
+                    }
+                    setTimeout(function () {
+                      try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+                    }, 120);
+                  }, 90);
+                }
+              } catch (_) {}
+            }
+
+            function exitFullscreenInCurrentFrame() {
+              try {
+                clearCustomFullscreenClasses();
+                if (document.fullscreenElement && document.exitFullscreen) {
+                  document.exitFullscreen().catch(function () {});
+                } else if (document.mozFullScreenElement && document.mozCancelFullScreen) {
+                  document.mozCancelFullScreen();
+                } else if (document.webkitFullscreenElement && document.webkitExitFullscreen) {
+                  document.webkitExitFullscreen();
+                }
+                if (isTopFrame) {
+                  postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: false });
+                }
+                setTimeout(function () {
+                  try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+                }, 120);
+              } catch (_) {}
+            }
+
+            // Si el usuario hace clic directamente en el boton de pantalla completa propio del reproductor,
+            // aseguramos que entre o salga de pantalla completa aunque el iframe tenga restricciones.
+            function isPlayerFullscreenButton(target) {
+              if (!target || !target.closest) return false;
+              const btn = target.closest(
+                ".jw-icon-fullscreen, .vjs-fullscreen-control, [data-plyr='fullscreen'], " +
+                ".art-icon-fullscreen, .fp-fullscreen, .dplayer-full-icon, " +
+                "button[class*='fullscreen' i], div[class*='fullscreen' i], " +
+                "[aria-label*='fullscreen' i], [aria-label*='pantalla completa' i], " +
+                "[title*='fullscreen' i], [title*='pantalla completa' i]"
+              );
+              return !!btn;
+            }
+
+            // 5. Gestion de formularios para control remoto
             function isEditableTextInput(el) {
               if (!el || el.disabled || el.readOnly) return false;
               const tag = (el.tagName || "").toUpperCase();
@@ -847,39 +858,29 @@ jobs:
               });
             }
 
-            // Detectar si el usuario hizo clic directamente en el boton de pantalla completa del reproductor
-            function isPlayerFullscreenButton(target) {
-              if (!target || !target.closest) return false;
-              const btn = target.closest(
-                ".jw-icon-fullscreen, .vjs-fullscreen-control, .plyr__control[data-plyr='fullscreen'], " +
-                ".art-icon-fullscreen, .dplayer-full-icon, .fp-fullscreen, " +
-                "[aria-label*='fullscreen' i], [aria-label*='pantalla completa' i], " +
-                "[title*='fullscreen' i], [title*='full screen' i], [title*='pantalla completa' i], " +
-                "[data-title*='fullscreen' i], [class*='fullscreen-btn' i], [class*='btn-fullscreen' i]"
-              );
-              return !!btn;
-            }
-
             document.addEventListener("click", function (e) {
               enableIframeFullscreenAttrs();
               purgeFloatingAdOverlays();
 
-              const target = e.target;
-              if (target && isPlayerFullscreenButton(target) && findActiveVideo()) {
+              if (isPlayerFullscreenButton(e.target)) {
+                const hasCustomFs = document.querySelector(".__battv_player_fill_frame, .__battv_iframe_fullscreen") !== null;
+                const hasDomFs = !!(document.fullscreenElement || document.mozFullScreenElement);
                 setTimeout(function () {
-                  const inDomFs = !!(document.fullscreenElement || document.mozFullScreenElement);
-                  if (!inDomFs && !isForcedFullscreenActive) {
-                    requestEnterFullscreenOnActiveVideo();
-                  } else if (isForcedFullscreenActive) {
-                    exitForcedAndDomFullscreen();
+                  const nowDomFs = !!(document.fullscreenElement || document.mozFullScreenElement);
+                  if (hasCustomFs || hasDomFs) {
+                    if (!nowDomFs && hasCustomFs) {
+                      postToNative({ type: "REQUEST_UNIFIED_FULLSCREEN", enable: false });
+                    }
+                  } else if (!nowDomFs) {
+                    postToNative({ type: "REQUEST_UNIFIED_FULLSCREEN", enable: true });
                   }
-                }, 120);
+                }, 180);
                 return;
               }
 
-              const inp = target && target.closest ? target.closest("input, textarea, [contenteditable='true']") : null;
-              if (inp && isEditableTextInput(inp)) {
-                notifyInputFocus(inp);
+              const target = e.target ? e.target.closest("input, textarea, [contenteditable='true']") : null;
+              if (target && isEditableTextInput(target)) {
+                notifyInputFocus(target);
               }
             }, true);
 
@@ -919,86 +920,6 @@ jobs:
               } catch (_) {}
             }
 
-            // 5. Deteccion de video real (excluyendo anuncios) y apertura de pantalla completa real
-            function isRealContentVideo(v) {
-              if (!v) return false;
-              const rect = v.getBoundingClientRect();
-              if (rect.width < 180 || rect.height < 100) return false;
-              const dur = v.duration;
-              if (Number.isFinite(dur) && dur > 0 && dur < 90) return false;
-              return (Number.isFinite(dur) && dur >= 90) || (!Number.isFinite(dur) && v.readyState >= 2);
-            }
-
-            function findActiveVideo() {
-              const videos = Array.from(document.querySelectorAll("video")).filter(isRealContentVideo);
-              if (videos.length === 0) return null;
-              videos.sort(function (a, b) {
-                const durA = Number.isFinite(a.duration) ? a.duration : 3600;
-                const durB = Number.isFinite(b.duration) ? b.duration : 3600;
-                return durB - durA;
-              });
-              return videos[0];
-            }
-
-            function requestEnterFullscreenOnActiveVideo() {
-              try {
-                injectFullscreenFixStyles();
-                const v = findActiveVideo();
-                if (v) {
-                  isForcedFullscreenActive = true;
-                  const container = v.closest(".jwplayer, .video-js, .plyr, .art-video-player, .dplayer, .fluid_video_wrapper, #player, .player") || v;
-                  container.classList.add("__battv_forced_fullscreen");
-                  v.classList.add("__battv_forced_fullscreen");
-                  markAncestorsForFixedEscape(container);
-
-                  // Pedir a todos los marcos padres (ej. dramachino.com) que expandan el <iframe> del reproductor al 100% de la pantalla
-                  if (window !== window.top && window.parent) {
-                    window.parent.postMessage({ __battvExpandParentIframe: true }, "*");
-                  }
-
-                  // Intentar tambien el Fullscreen API nativo de GeckoView
-                  const reqFn = container.requestFullscreen || container.mozRequestFullScreen || container.webkitRequestFullscreen;
-                  if (reqFn) {
-                    try {
-                      const p = reqFn.call(container);
-                      if (p && typeof p.catch === "function") p.catch(function () {});
-                    } catch (_) {}
-                  }
-
-                  postToNative({ type: "VIDEO_ENTERED_FULLSCREEN" });
-                  setTimeout(function () {
-                    try { window.dispatchEvent(new Event("resize")); } catch (_) {}
-                  }, 120);
-                } else if (isTopFrame) {
-                  // Si en el marco principal el video vive dentro de un iframe cross-origin, expandir el iframe principal
-                  const mainIframe = findMainPlayerIframe();
-                  if (mainIframe) {
-                    isForcedFullscreenActive = true;
-                    mainIframe.classList.add("__battv_forced_fullscreen");
-                    markAncestorsForFixedEscape(mainIframe);
-                  }
-                }
-              } catch (_) {}
-            }
-
-            function exitForcedAndDomFullscreen() {
-              try {
-                clearForcedFullscreenClasses();
-                if (window !== window.top && window.parent) {
-                  window.parent.postMessage({ __battvCollapseParentIframe: true }, "*");
-                }
-                if (document.fullscreenElement && document.exitFullscreen) {
-                  document.exitFullscreen().catch(function () {});
-                } else if (document.mozFullScreenElement && document.mozCancelFullScreen) {
-                  document.mozCancelFullScreen();
-                }
-                postToNative({ type: "VIDEO_EXITED_FULLSCREEN" });
-                setTimeout(function () {
-                  try { window.dispatchEvent(new Event("resize")); } catch (_) {}
-                }, 120);
-              } catch (_) {}
-            }
-
             setInterval(function () {
               try {
                 purgeFloatingAdOverlays();
@@ -1014,9 +935,11 @@ jobs:
                     duration: dur
                   });
 
-                  const inDomFullscreen = !!(document.fullscreenElement || document.mozFullScreenElement) || isForcedFullscreenActive;
+                  const inDomFullscreen = !!(document.fullscreenElement || document.mozFullScreenElement);
+                  const inCustomFullscreen = document.querySelector(".__battv_player_fill_frame") !== null;
                   const now = Date.now();
-                  if (isPlaying && v.currentTime >= 0.5 && !inDomFullscreen && !promptedVideosSet.has(v) && (now - lastFullscreenPromptMs > 4000)) {
+                  if (isPlaying && v.currentTime >= 0.4 && !inDomFullscreen && !inCustomFullscreen &&
+                      !promptedVideosSet.has(v) && (now - lastFullscreenPromptMs > 4000)) {
                     promptedVideosSet.add(v);
                     lastFullscreenPromptMs = now;
                     postToNative({
@@ -1089,11 +1012,11 @@ jobs:
                 }
               } else if (msg.type === "VIDEO_COMMAND") {
                 if (msg.action === "ENTER_FULLSCREEN") {
-                  requestEnterFullscreenOnActiveVideo();
+                  enterFullscreenInCurrentFrame();
                   return;
                 }
                 if (msg.action === "EXIT_FULLSCREEN") {
-                  exitForcedAndDomFullscreen();
+                  exitFullscreenInCurrentFrame();
                   return;
                 }
                 const v = findActiveVideo();
@@ -1106,3 +1029,108 @@ jobs:
                 }
               } else if (msg.type === "WEB_SCROLL_BY") {
                 if (isTopFrame && typeof msg.deltaY === "number") {
+                  window.scrollBy({ top: msg.deltaY, behavior: "smooth" });
+                }
+              }
+            }
+
+            connectBridge();
+            if (document.readyState === "loading") {
+              document.addEventListener("DOMContentLoaded", function () {
+                injectFullscreenFixStyles();
+                enableIframeFullscreenAttrs();
+                purgeFloatingAdOverlays();
+              });
+            } else {
+              injectFullscreenFixStyles();
+              enableIframeFullscreenAttrs();
+              purgeFloatingAdOverlays();
+            }
+
+            try {
+              const obs = new MutationObserver(function () {
+                enableIframeFullscreenAttrs();
+              });
+              obs.observe(document.documentElement || document, { childList: true, subtree: true });
+            } catch (_) {
+              setInterval(enableIframeFullscreenAttrs, 2500);
+            }
+          })();
+          '''
+
+          with open(os.path.join(vm_dir, "battv_tv_helper.js"), "w", encoding="utf-8") as hf:
+              hf.write(battv_tv_helper_js.strip() + "\n")
+
+          with open(vm_manifest_path, "r", encoding="utf-8") as mf:
+              vm_manifest = json.load(mf)
+
+          perms = vm_manifest.setdefault("permissions", [])
+          # Crítico: nativeMessagingFromContent permite que el script de contenido conecte con MainActivity en todos los iframes
+          for p in ["<all_urls>", "storage", "nativeMessaging", "nativeMessagingFromContent", "geckoViewAddons"]:
+              if p not in perms:
+                  perms.append(p)
+
+          bg = vm_manifest.setdefault("background", {})
+          if "page" in bg:
+              bg_page_path = os.path.join(vm_dir, bg["page"].lstrip("/"))
+              if os.path.exists(bg_page_path):
+                  with open(bg_page_path, "r", encoding="utf-8") as bf:
+                      html = bf.read()
+                  script_tag = '<script src="/preload_shortlinks.js"></script>'
+                  if script_tag not in html:
+                      if "</body>" in html:
+                          html = html.replace("</body>", script_tag + "\n</body>")
+                      else:
+                          html += "\n" + script_tag
+                      with open(bg_page_path, "w", encoding="utf-8") as bf:
+                          bf.write(html)
+          else:
+              bg_scripts = bg.setdefault("scripts", [])
+              if "preload_shortlinks.js" not in bg_scripts:
+                  bg_scripts.append("preload_shortlinks.js")
+
+          cs_list = vm_manifest.setdefault("content_scripts", [])
+          cs_list.append({
+              "matches": ["<all_urls>"],
+              "js": ["saltarse_enlaces_acortados.user.js", "battv_tv_helper.js"],
+              "run_at": "document_start",
+              "all_frames": True,
+              "match_about_blank": True
+          })
+
+          with open(vm_manifest_path, "w", encoding="utf-8") as mf:
+              json.dump(vm_manifest, mf, indent=2, ensure_ascii=False)
+
+          installed_folders = sorted(os.listdir(EXT_BASE))
+          print("Extensiones preparadas en assets/extensions:", installed_folders)
+          assert installed_folders == ["popup_blocker", "ublock_origin", "violentmonkey"], \
+              f"Error: se encontraron carpetas distintas a las 3 permitidas: {installed_folders}"
+          EOF
+
+      - name: Instalar Gradle 8.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+          cache-disabled: true
+
+      - name: Verificar herramientas
+        run: |
+          java -version
+          gradle --version
+
+      - name: Compilar APK Release
+        working-directory: android-geckoview
+        run: gradle assembleRelease --no-daemon --no-build-cache --stacktrace
+
+      - name: Verificar APK generado y comprobar que _locales está empaquetado
+        run: |
+          ls -lh android-geckoview/app/build/outputs/apk/release/*.apk
+          unzip -l android-geckoview/app/build/outputs/apk/release/*.apk | grep "_locales" | head -n 15
+
+      - name: Subir APK generado
+        uses: actions/upload-artifact@v4
+        with:
+          name: Battv.2-APK
+          path: android-geckoview/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
