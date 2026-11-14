@@ -63,19 +63,17 @@ class BatTvGeckoViewManager(
             "spin-wheel", "lucky-winner", "phone-cleaner", "virus-scan", "battery-alert"
         )
 
-        // Directorios que inflan el almacenamiento en Android TV y pueden borrarse siempre con seguridad
+        // IMPORTANTE: No incluir startupCache ni security_state para no romper la caché
+        // compilada de las extensiones ni causar cierres durante el arranque de GeckoRuntime.
         private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(
             "cache2",
             "OfflineCache",
             "thumbnails",
-            "shader-cache",
-            "startupCache",
             "safebrowsing",
             "crashes",
             "minidumps",
             "saved-telemetry-pings",
-            "datareporting",
-            "security_state"
+            "datareporting"
         )
 
         @Volatile
@@ -97,14 +95,8 @@ class BatTvGeckoViewManager(
         messageDelegate: WebExtension.MessageDelegate
     ): GeckoSession {
         bridgeMessageDelegate = messageDelegate
-
-        // Limpiar basura acumulada de caché en disco antes de arrancar para mantener <200 MB en el TV
-        pruneDisposableStorageNow()
-
         runtime = getOrCreateRuntime(context.applicationContext)
 
-        // Desactivamos useTrackingProtection nativo de GeckoSession porque uBlock Origin ya hace
-        // el filtrado; tener ambos activos duplica la latencia de red en Android TV.
         val sessionSettings = GeckoSessionSettings.Builder()
             .usePrivateMode(false)
             .useTrackingProtection(false)
@@ -143,6 +135,17 @@ class BatTvGeckoViewManager(
     private fun getOrCreateRuntime(appContext: Context): GeckoRuntime {
         return sharedRuntime ?: synchronized(Companion) {
             sharedRuntime ?: run {
+                // Limpiar carpetas residuales de forma síncrona ANTES de iniciar GeckoRuntime
+                // para evitar condiciones de carrera con el motor C++.
+                try {
+                    deleteDirectoryContents(appContext.cacheDir)
+                    appContext.externalCacheDir?.let { deleteDirectoryContents(it) }
+                    val mozillaDir = File(appContext.filesDir, "mozilla")
+                    if (mozillaDir.exists()) {
+                        cleanDisposableGeckoDirs(mozillaDir)
+                    }
+                } catch (_: Exception) {}
+
                 val cfgFile = writeOptimizedGeckoConfig(appContext)
                 val builder = GeckoRuntimeSettings.Builder()
                     .javaScriptEnabled(true)
@@ -163,11 +166,11 @@ class BatTvGeckoViewManager(
     }
 
     /**
-     * Configuración optimizada para Android TV:
-     * - Cero caché en disco (browser.cache.disk.enable: false) para no superar los 200 MB de almacenamiento
-     *   y evitar cuellos de botella de escritura en la memoria flash del televisor.
-     * - Búfer de vídeo y HLS en RAM optimizado para que directos (Chaturbate, Twitch, etc.) y VOD
-     *   funcionen a 60 FPS en máxima calidad sin parones.
+     * Configuración equilibrada para Android TV (1.5 GB - 2 GB de RAM):
+     * - network.http.http3.enable: false (evita cuelgues de carga por bloqueo UDP/QUIC en routers).
+     * - browser.cache.disk.enable: false (mantiene el almacenamiento total bajo 200 MB).
+     * - media.preload.default: 2 (descarga solo metadatos hasta que el usuario da Play, evitando
+     *   quedarse sin memoria RAM al cargar páginas con múltiples reproductores).
      */
     private fun writeOptimizedGeckoConfig(appContext: Context): File? {
         return try {
@@ -179,8 +182,8 @@ class BatTvGeckoViewManager(
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 32768
-                  browser.sessionhistory.max_total_viewers: 1
+                  browser.cache.memory.capacity: 14336
+                  browser.sessionhistory.max_total_viewers: 0
                   browser.safebrowsing.malware.enabled: false
                   browser.safebrowsing.phishing.enabled: false
                   browser.safebrowsing.downloads.enabled: false
@@ -188,12 +191,12 @@ class BatTvGeckoViewManager(
                   datareporting.healthreport.uploadEnabled: false
                   toolkit.telemetry.enabled: false
                   media.suspend-bkgnd-video.enabled: false
-                  media.cache_size: 40960
-                  media.memory_cache_max_size: 24576
-                  media.memory_caches_combined_limit_kb: 65536
-                  media.cache_readahead_limit: 60
-                  media.cache_resume_threshold: 20
-                  media.preload.default: 3
+                  media.cache_size: 24576
+                  media.memory_cache_max_size: 12288
+                  media.memory_caches_combined_limit_kb: 32768
+                  media.cache_readahead_limit: 40
+                  media.cache_resume_threshold: 15
+                  media.preload.default: 2
                   media.autoplay.default: 0
                   media.autoplay.blocking_policy: 0
                   media.block-autoplay-until-in-foreground: false
@@ -216,7 +219,6 @@ class BatTvGeckoViewManager(
                   dom.min_background_timeout_value: 4
                   dom.disable_open_during_load: true
                   dom.popup_maximum: 0
-                  dom.allow_scripts_to_close_windows: false
                   full-screen-api.enabled: true
                   full-screen-api.allow-trusted-requests-only: false
                   full-screen-api.warning.delay: -1
@@ -228,13 +230,12 @@ class BatTvGeckoViewManager(
                   gfx.webrender.compositor: true
                   gfx.canvas.accelerated: true
                   layers.acceleration.force-enabled: true
-                  apz.fling_min_velocity_threshold: "0.5"
-                  network.buffer.cache.size: 65536
-                  network.buffer.cache.count: 48
-                  network.http.http3.enable: true
-                  network.http.keep-alive.timeout: 300
-                  network.http.max-connections: 96
-                  network.http.max-persistent-connections-per-server: 12
+                  network.buffer.cache.size: 32768
+                  network.buffer.cache.count: 24
+                  network.http.http3.enable: false
+                  network.http.keep-alive.timeout: 180
+                  network.http.max-connections: 48
+                  network.http.max-persistent-connections-per-server: 8
                   network.http.pacing.requests.enabled: false
                   network.cookie.cookieBehavior: 4
                   network.cookie.sameSite.laxByDefault: false
@@ -372,11 +373,6 @@ class BatTvGeckoViewManager(
         return false
     }
 
-    /**
-     * Comprueba si dos URLs pertenecen al mismo sitio o marca (ej. dramachino.com, doramasflix.co, chaturbate.com)
-     * para impedir que al hacer clic en un reproductor de vídeo se redirija la pestaña principal
-     * hacia páginas de anuncios como "Felicitaciones reclama tu bono" o "Limpia tu teléfono".
-     */
     fun isSameOrTrustedNavigationTarget(currentPageUrl: String, targetUrl: String): Boolean {
         if (currentPageUrl.isBlank() || !currentPageUrl.startsWith("http", ignoreCase = true)) return true
         val curHost = runCatching { Uri.parse(currentPageUrl).host?.lowercase()?.removePrefix("www.") ?: "" }.getOrDefault("")
@@ -384,12 +380,10 @@ class BatTvGeckoViewManager(
         if (curHost.isEmpty() || tarHost.isEmpty()) return true
         if (curHost == tarHost || tarHost.endsWith(".$curHost") || curHost.endsWith(".$tarHost")) return true
 
-        // Si el usuario está buscando en un buscador (Google, Bing, DuckDuckGo), permitir abrir cualquier resultado
         if (curHost.contains("google.") || curHost.contains("bing.com") || curHost.contains("duckduckgo.com")) {
             return true
         }
 
-        // Comparar nombre de marca principal (ej. doramasflix.co -> doramasflix.io)
         val curParts = curHost.split(".")
         val tarParts = tarHost.split(".")
         if (curParts.size >= 2 && tarParts.size >= 2) {
@@ -473,15 +467,15 @@ class BatTvGeckoViewManager(
         }
     }
 
+    /**
+     * Limpia únicamente la caché temporal de Android mientras la app está en ejecución,
+     * sin tocar la carpeta activa de Gecko (filesDir/mozilla) para evitar bloqueos o cierres.
+     */
     fun pruneDisposableStorageNow() {
         Thread {
             try {
                 deleteDirectoryContents(context.cacheDir)
                 context.externalCacheDir?.let { deleteDirectoryContents(it) }
-                val mozillaDir = File(context.filesDir, "mozilla")
-                if (mozillaDir.exists()) {
-                    cleanDisposableGeckoDirs(mozillaDir)
-                }
             } catch (_: Exception) {}
         }.start()
     }
@@ -518,12 +512,9 @@ class BatTvGeckoViewManager(
                 if (GECKO_DISPOSABLE_CACHE_DIRS.contains(child.name)) {
                     bytes += getFolderSize(child)
                     child.deleteRecursively()
-                } else if (child.name != "storage" && child.name != "extensions") {
+                } else if (child.name != "storage" && child.name != "extensions" && child.name != "startupCache") {
                     bytes += cleanDisposableGeckoDirs(child)
                 }
-            } else if (child.isFile && (child.name.endsWith(".tmp") || child.name == "webappsstore.sqlite-wal")) {
-                bytes += child.length()
-                child.delete()
             }
         }
         return bytes
