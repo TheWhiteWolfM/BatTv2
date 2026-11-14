@@ -63,19 +63,19 @@ class MainActivity : AppCompatActivity() {
 
   companion object {
     private const val PREFS_NAME = "battv_browser_prefs"
-    private const val KEY_BOOKMARKS = "bookmarks_user_list_v2"
-    private const val KEY_BOOKMARKS_SEEDED = "bookmarks_default_seeded_v3"
+    private const val KEY_BOOKMARKS = "bookmarks_tv_list_v5"
+    private const val KEY_BOOKMARKS_SEEDED = "bookmarks_tv_seeded_v5"
     private const val KEY_HISTORY = "history_json_v2"
     private const val KEY_DESKTOP_MODE = "desktop_mode_enabled"
     private const val KEY_MODE_SELECTED = "initial_mode_selected_v2"
 
     private const val URL_BAR_INDEX = 2
 
-    private const val BASE_CURSOR_FRAME_SPEED_PX = 7.0f
-    private const val MAX_CURSOR_FRAME_SPEED_PX = 21.0f
-    private const val BASE_SCROLL_FRAME_SPEED_PX = 16.0
-    private const val MAX_SCROLL_FRAME_SPEED_PX = 42.0
-    private const val EDGE_SCROLL_ZONE_PX = 110f
+    private const val BASE_CURSOR_FRAME_SPEED_PX = 7.5f
+    private const val MAX_CURSOR_FRAME_SPEED_PX = 22.0f
+    private const val BASE_SCROLL_FRAME_SPEED_PX = 18.0
+    private const val MAX_SCROLL_FRAME_SPEED_PX = 46.0
+    private const val EDGE_SCROLL_ZONE_PX = 96f
     private const val CURSOR_AUTO_HIDE_MS = 3000L
   }
 
@@ -156,6 +156,7 @@ class MainActivity : AppCompatActivity() {
   private var dpadHoldStartUptimeMs: Long = 0L
   private var lastDpadEventUptimeMs: Long = 0L
   private var isSmoothDpadLoopRunning: Boolean = false
+  private var scrollFrameParity: Boolean = false
 
   private val smoothDpadFrameCallback = object : Choreographer.FrameCallback {
     override fun doFrame(frameTimeNanos: Long) {
@@ -164,13 +165,13 @@ class MainActivity : AppCompatActivity() {
         return
       }
       val now = SystemClock.uptimeMillis()
-      if (now - lastDpadEventUptimeMs > 240L) {
+      if (now - lastDpadEventUptimeMs > 220L) {
         stopSmoothDpadMovement()
         return
       }
 
       val heldMs = (now - dpadHoldStartUptimeMs).coerceAtLeast(0L)
-      val accelFactor = (heldMs.toFloat() / 600f).coerceIn(0f, 1f)
+      val accelFactor = (heldMs.toFloat() / 550f).coerceIn(0f, 1f)
       val cursorSpeed = BASE_CURSOR_FRAME_SPEED_PX +
         (MAX_CURSOR_FRAME_SPEED_PX - BASE_CURSOR_FRAME_SPEED_PX) * (accelFactor * accelFactor)
 
@@ -188,16 +189,19 @@ class MainActivity : AppCompatActivity() {
       cursorOverlay.moveCursorBy(dx, dy)
 
       if (!isFullScreenVideo) {
-        val scrollAccel = (heldMs.toDouble() / 650.0).coerceIn(0.0, 1.0)
-        val scrollStep = BASE_SCROLL_FRAME_SPEED_PX +
-          (MAX_SCROLL_FRAME_SPEED_PX - BASE_SCROLL_FRAME_SPEED_PX) * (scrollAccel * scrollAccel)
+        scrollFrameParity = !scrollFrameParity
+        if (scrollFrameParity) {
+          val scrollAccel = (heldMs.toDouble() / 600.0).coerceIn(0.0, 1.0)
+          val scrollStep = BASE_SCROLL_FRAME_SPEED_PX +
+            (MAX_SCROLL_FRAME_SPEED_PX - BASE_SCROLL_FRAME_SPEED_PX) * (scrollAccel * scrollAccel)
 
-        if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
-          scrollWebPageNative(-scrollStep)
-        } else if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
-          cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
-        ) {
-          scrollWebPageNative(scrollStep)
+          if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
+            scrollWebPageNative(-scrollStep)
+          } else if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+            cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
+          ) {
+            scrollWebPageNative(scrollStep)
+          }
         }
       }
 
@@ -220,11 +224,15 @@ class MainActivity : AppCompatActivity() {
     videoSeekOverlay.fadeOutAndHide()
   }
 
+  // Envía una única orden de salto rápido (fastSeek) al terminar de pulsar para que el vídeo no recargue dos veces
   private val commitVideoSeekRunnable = Runnable {
-    try {
-      activeMediaSession?.seekTo(vodCurrentTimeSec, false)
-    } catch (_: Exception) {}
-    sendVideoCommandToWeb("SEEK_TO", vodCurrentTimeSec)
+    if (activeWebPorts.isNotEmpty()) {
+      sendVideoCommandToWeb("SEEK_TO", vodCurrentTimeSec)
+    } else {
+      try {
+        activeMediaSession?.seekTo(vodCurrentTimeSec, true)
+      } catch (_: Exception) {}
+    }
     isUserSeekingVod = false
   }
 
@@ -271,27 +279,25 @@ class MainActivity : AppCompatActivity() {
     }
   }
 
+  /**
+   * Inicializa exactamente los 7 favoritos solicitados por el usuario:
+   * doramasflix.io, doramasflix.co, dramachino.com, tudorama.com, asialiveaction.com, kisskh.do y jkanime.net
+   */
   private fun ensureDefaultBookmarksOnFirstInstall() {
     if (!prefs.getBoolean(KEY_BOOKMARKS_SEEDED, false)) {
-      val current = getBookmarksArray()
-      if (current.length() == 0) {
-        val defaults = JSONArray().apply {
-          put(JSONObject().put("title", "DramaChino (Doramas HD)").put("url", "https://dramachino.com/"))
-          put(JSONObject().put("title", "Doramasflix (Doramas y Series)").put("url", "https://doramasflix.co/"))
-          put(JSONObject().put("title", "JKAnime (Anime HD)").put("url", "https://jkanime.net/"))
-          put(JSONObject().put("title", "HDFull (Pel\u00EDculas y Series)").put("url", "https://hdfull.one/"))
-          put(JSONObject().put("title", "Chaturbate (Directos)").put("url", "https://chaturbate.com/"))
-          put(JSONObject().put("title", "Twitch (Directos)").put("url", "https://www.twitch.tv/"))
-          put(JSONObject().put("title", "YouTube").put("url", "https://www.youtube.com/"))
-          put(JSONObject().put("title", "Google").put("url", "https://www.google.com/"))
-        }
-        prefs.edit()
-          .putString(KEY_BOOKMARKS, defaults.toString())
-          .putBoolean(KEY_BOOKMARKS_SEEDED, true)
-          .apply()
-      } else {
-        prefs.edit().putBoolean(KEY_BOOKMARKS_SEEDED, true).apply()
+      val defaults = JSONArray().apply {
+        put(JSONObject().put("title", "Doramasflix.io").put("url", "https://doramasflix.io/"))
+        put(JSONObject().put("title", "Doramasflix.co").put("url", "https://doramasflix.co/"))
+        put(JSONObject().put("title", "DramaChino").put("url", "https://dramachino.com/"))
+        put(JSONObject().put("title", "TuDorama").put("url", "https://tudorama.com/"))
+        put(JSONObject().put("title", "AsiaLiveAction").put("url", "https://asialiveaction.com/"))
+        put(JSONObject().put("title", "KissKH").put("url", "https://kisskh.do/"))
+        put(JSONObject().put("title", "JKAnime").put("url", "https://jkanime.net/"))
       }
+      prefs.edit()
+        .putString(KEY_BOOKMARKS, defaults.toString())
+        .putBoolean(KEY_BOOKMARKS_SEEDED, true)
+        .apply()
     }
   }
 
@@ -529,6 +535,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     webContainer = FrameLayout(this).apply {
+      clipChildren = false
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         0,
@@ -597,15 +604,14 @@ class MainActivity : AppCompatActivity() {
       elevation = 90f
     }
 
+    // Puntero pequeño de 56dp x 56dp acelerado por GPU (cero redibujado de pantalla completa al moverse)
     cursorOverlay = CursorOverlayView(this).apply {
-      layoutParams = FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.MATCH_PARENT
-      )
+      layoutParams = FrameLayout.LayoutParams(dp(56), dp(56))
       isFocusable = false
       isFocusableInTouchMode = false
       isClickable = false
       elevation = 100f
+      setLayerType(View.LAYER_TYPE_HARDWARE, null)
     }
 
     webContainer.addView(geckoView)
@@ -732,7 +738,7 @@ class MainActivity : AppCompatActivity() {
 
     val modeSubtitleView = TextView(this).apply {
       val modeText = if (isDesktopMode) "Modo PC (Escritorio)" else "Modo TV (Control remoto)"
-      text = "$modeText  \u2022  Escudo Nativo Anti-Ads, Anti-Popups y Motor 60FPS Activo"
+      text = "$modeText  \u2022  Bloqueador Anti-Ads, Anti-Popups y Motor 60FPS Activo"
       setTextColor(Color.parseColor("#A5B4FC"))
       setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
     }
@@ -1069,8 +1075,8 @@ class MainActivity : AppCompatActivity() {
 
     val extItems = arrayOf(
       "1. Pop-ups Blocker (strict) + Cerrojo de Dominio \u2014 [$shieldLoaded]",
-      "2. Escudo Anti-Ads (Vidoomy, Viwom, Adsterra, Exoclick, Monetag) \u2014 [$shieldLoaded]",
-      "3. Saltarse Todos los Enlaces Acortados + Motor 60FPS Directos \u2014 [$shieldLoaded]"
+      "2. Cortafuegos Anti-Ads (Adsterra, Vidoomy, Exoclick, Monetag) \u2014 [$shieldLoaded]",
+      "3. Saltarse Todos los Enlaces Acortados + Motor 60FPS \u2014 [$shieldLoaded]"
     )
 
     AlertDialog.Builder(this)
@@ -1160,7 +1166,7 @@ class MainActivity : AppCompatActivity() {
     container.addView(urlInput)
 
     AlertDialog.Builder(this)
-      .setTitle("\u2795 Agregar a Favoritos")
+      .setTitle("\u2795 Agregar favorito")
       .setView(container)
       .setPositiveButton("Guardar") { d, _ ->
         val rawUrl = urlInput.text?.toString()?.trim() ?: ""
@@ -1176,27 +1182,25 @@ class MainActivity : AppCompatActivity() {
       .show()
   }
 
+  /**
+   * Diálogo de Favoritos simplificado según lo solicitado:
+   * Únicamente muestra: 1. Agregar, 2. Eliminar y 3. La lista de favoritos.
+   */
   private fun showBookmarksDialog() {
     stopSmoothDpadMovement()
     val arr = getBookmarksArray()
     val items = mutableListOf<String>()
     val actions = mutableListOf<() -> Unit>()
 
-    if (!isHomeScreenVisible && currentUrl.startsWith("http")) {
-      items.add("\u2795 Guardar p\u00E1gina actual en Favoritos (${currentTitle.ifBlank { currentUrl }.take(38)})")
-      actions.add { addBookmark(currentTitle.ifBlank { currentUrl }, currentUrl) }
-    }
-
-    items.add("\u2795 Agregar nuevo favorito manualmente...")
-    actions.add { showAddBookmarkDialog() }
-
-    if (!isHomeScreenVisible) {
-      items.add("\uD83C\uDFE0 Ir a la pantalla de inicio de Favoritos")
-      actions.add { showHomeScreen() }
+    items.add("\u2795 Agregar favorito")
+    actions.add {
+      val defaultTitle = if (!isHomeScreenVisible && currentUrl.startsWith("http")) currentTitle.ifBlank { currentUrl } else ""
+      val defaultUrl = if (!isHomeScreenVisible && currentUrl.startsWith("http")) currentUrl else ""
+      showAddBookmarkDialog(prefillTitle = defaultTitle, prefillUrl = defaultUrl)
     }
 
     if (arr.length() > 0) {
-      items.add("\uD83D\uDDD1\uFE0F Eliminar un favorito...")
+      items.add("\uD83D\uDDD1\uFE0F Eliminar favorito")
       actions.add { showDeleteBookmarkDialog(arr) }
     }
 
@@ -1209,7 +1213,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     AlertDialog.Builder(this)
-      .setTitle("\u2B50 Favoritos de Battv.2")
+      .setTitle("\u2B50 Favoritos")
       .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
       .setNegativeButton("Cerrar") { d, _ -> d.dismiss() }
       .show()
@@ -1424,7 +1428,6 @@ class MainActivity : AppCompatActivity() {
 
         val now = SystemClock.uptimeMillis()
 
-        // Bloquear siempre pestañas emergentes (TARGET_WINDOW_NEW), salvo que sea un enlace del mismo sitio
         if (request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
           if (request.hasUserGesture && geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
             allowTopDomainChangeUntilUptimeMs = now + 5000L
@@ -1433,9 +1436,6 @@ class MainActivity : AppCompatActivity() {
           return GeckoResult.deny()
         }
 
-        // Si el usuario abrió un marcador o escribió en la barra, permitir que cargue libremente
-        // (incluso si el sitio redirige a un dominio espejo al entrar).
-        // Una vez terminada la carga inicial, bloquear redirecciones trampa hacia otros dominios al tocar el vídeo.
         val isUserInitiatedNavigation = isInitialNavigationInProgress ||
           (now <= allowTopDomainChangeUntilUptimeMs) ||
           request.isDirectNavigation
@@ -2186,26 +2186,25 @@ class MainActivity : AppCompatActivity() {
     cursorOverlay.showCursorAndScheduleFade()
     scheduleCursorAutoHide()
 
-    // Aplicar un paso inmediato al primer toque para que pulsaciones rápidas respondan al instante
     if (isInitialTap) {
       val dx = when (keyCode) {
-        KeyEvent.KEYCODE_DPAD_LEFT -> -10f
-        KeyEvent.KEYCODE_DPAD_RIGHT -> 10f
+        KeyEvent.KEYCODE_DPAD_LEFT -> -11f
+        KeyEvent.KEYCODE_DPAD_RIGHT -> 11f
         else -> 0f
       }
       val dy = when (keyCode) {
-        KeyEvent.KEYCODE_DPAD_UP -> -10f
-        KeyEvent.KEYCODE_DPAD_DOWN -> 10f
+        KeyEvent.KEYCODE_DPAD_UP -> -11f
+        KeyEvent.KEYCODE_DPAD_DOWN -> 11f
         else -> 0f
       }
       cursorOverlay.moveCursorBy(dx, dy)
       if (!isFullScreenVideo) {
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
-          scrollWebPageNative(-22.0)
+          scrollWebPageNative(-26.0)
         } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
           cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
         ) {
-          scrollWebPageNative(22.0)
+          scrollWebPageNative(26.0)
         }
       }
     }
@@ -2243,7 +2242,7 @@ class MainActivity : AppCompatActivity() {
     val now = SystemClock.uptimeMillis()
     val dir = if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
 
-    if (dir == lastSeekDirection && (now - lastSeekPressUptime) < 750L) {
+    if (dir == lastSeekDirection && (now - lastSeekPressUptime) < 800L) {
       consecutiveSeekPresses++
     } else {
       consecutiveSeekPresses = 1
@@ -2256,8 +2255,8 @@ class MainActivity : AppCompatActivity() {
 
     val effectiveCount = max(consecutiveSeekPresses, repeatCount + 1)
     val stepSec = when {
-      effectiveCount >= 10 -> 25.0
-      effectiveCount >= 6 -> 15.0
+      effectiveCount >= 10 -> 30.0
+      effectiveCount >= 6 -> 20.0
       effectiveCount >= 3 -> 10.0
       else -> 5.0
     }
@@ -2276,7 +2275,7 @@ class MainActivity : AppCompatActivity() {
     )
 
     mainHandler.removeCallbacks(commitVideoSeekRunnable)
-    mainHandler.postDelayed(commitVideoSeekRunnable, 220L)
+    mainHandler.postDelayed(commitVideoSeekRunnable, 360L)
 
     mainHandler.removeCallbacks(hideVideoSeekRunnable)
     mainHandler.postDelayed(hideVideoSeekRunnable, 2200L)
@@ -2470,7 +2469,7 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    // 7. Movimiento fluido a 60 FPS del puntero y del scroll con las flechas del D-pad
+    // 7. Movimiento fluido a 60 FPS del puntero por GPU y del scroll con las flechas del D-pad
     when (keyCode) {
       KeyEvent.KEYCODE_DPAD_UP,
       KeyEvent.KEYCODE_DPAD_DOWN,
@@ -2480,7 +2479,7 @@ class MainActivity : AppCompatActivity() {
           if (keyCode == KeyEvent.KEYCODE_DPAD_UP &&
             event.repeatCount == 0 &&
             !isFullScreenVideo &&
-            cursorOverlay.cursorY <= 5f
+            cursorOverlay.cursorY <= 6f
           ) {
             activateToolbarMode()
             return true
@@ -2794,7 +2793,14 @@ class MainActivity : AppCompatActivity() {
     }
   }
 
+  /**
+   * Puntero ligero en capa de hardware (56dp x 56dp):
+   * Se dibuja una única vez y se desplaza mediante translationX y translationY en la GPU,
+   * eliminando por completo el lag al mover el ratón o desplazarse por las páginas.
+   */
   private inner class CursorOverlayView(context: Context) : View(context) {
+    private val hotspotOffsetPx = 16f
+
     var cursorX: Float = 400f
       private set
     var cursorY: Float = 260f
@@ -2815,70 +2821,82 @@ class MainActivity : AppCompatActivity() {
     private val pulsePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
       color = Color.parseColor("#8038BDF8")
       style = Paint.Style.STROKE
-      strokeWidth = 4f
+      strokeWidth = 3.5f
     }
-    private val pointerPath = Path()
+    private val pointerPath = Path().apply {
+      val ox = 16f
+      val oy = 16f
+      moveTo(ox, oy)
+      lineTo(ox, oy + 26f)
+      lineTo(ox + 7.5f, oy + 20f)
+      lineTo(ox + 13f, oy + 31f)
+      lineTo(ox + 17.5f, oy + 28.5f)
+      lineTo(ox + 12f, oy + 18f)
+      lineTo(ox + 20f, oy + 18f)
+      close()
+    }
 
-    fun isCursorCurrentlyVisible(): Boolean = cursorVisible
+    fun isCursorCurrentlyVisible(): Boolean = cursorVisible && visibility == VISIBLE
 
     fun centerCursor() {
-      if (width > 0 && height > 0) {
-        cursorX = width / 2f
-        cursorY = height / 2f
-        postInvalidateOnAnimation()
+      val parentW = webContainer.width
+      val parentH = webContainer.height
+      if (parentW > 0 && parentH > 0) {
+        cursorX = parentW / 2f
+        cursorY = parentH / 2f
+        translationX = cursorX - hotspotOffsetPx
+        translationY = cursorY - hotspotOffsetPx
       }
     }
 
     fun moveCursorBy(dx: Float, dy: Float): Boolean {
-      val maxW = max(1f, width.toFloat())
-      val maxH = max(1f, height.toFloat())
+      val maxW = max(1f, webContainer.width.toFloat())
+      val maxH = max(1f, webContainer.height.toFloat())
       val nextY = cursorY + dy
       val hitTop = nextY <= 2f
       cursorX = (cursorX + dx).coerceIn(4f, maxW - 4f)
       cursorY = nextY.coerceIn(2f, maxH - 4f)
-      cursorVisible = true
-      postInvalidateOnAnimation()
+
+      // Movimiento directo en GPU sin redibujar el Canvas
+      translationX = cursorX - hotspotOffsetPx
+      translationY = cursorY - hotspotOffsetPx
+
+      if (!cursorVisible || visibility != VISIBLE) {
+        cursorVisible = true
+        visibility = VISIBLE
+      }
       return hitTop
     }
 
     fun showCursorAndScheduleFade() {
-      cursorVisible = true
-      postInvalidateOnAnimation()
+      translationX = cursorX - hotspotOffsetPx
+      translationY = cursorY - hotspotOffsetPx
+      if (!cursorVisible || visibility != VISIBLE) {
+        cursorVisible = true
+        visibility = VISIBLE
+      }
     }
 
     fun hideCursorUntilMoved() {
       cursorVisible = false
       pulseRadius = 0f
-      postInvalidateOnAnimation()
+      visibility = GONE
     }
 
     fun animateClickPulse() {
-      pulseRadius = 22f
-      postInvalidateOnAnimation()
+      pulseRadius = 14f
+      invalidate()
       postDelayed({
         pulseRadius = 0f
-        postInvalidateOnAnimation()
-      }, 140L)
+        invalidate()
+      }, 130L)
     }
 
     override fun onDraw(canvas: Canvas) {
       super.onDraw(canvas)
-      if (!cursorVisible) return
-
       if (pulseRadius > 0f) {
-        canvas.drawCircle(cursorX, cursorY, pulseRadius, pulsePaint)
+        canvas.drawCircle(hotspotOffsetPx, hotspotOffsetPx, pulseRadius, pulsePaint)
       }
-
-      pointerPath.reset()
-      pointerPath.moveTo(cursorX, cursorY)
-      pointerPath.lineTo(cursorX, cursorY + 26f)
-      pointerPath.lineTo(cursorX + 7.5f, cursorY + 20f)
-      pointerPath.lineTo(cursorX + 13f, cursorY + 31f)
-      pointerPath.lineTo(cursorX + 17.5f, cursorY + 28.5f)
-      pointerPath.lineTo(cursorX + 12f, cursorY + 18f)
-      pointerPath.lineTo(cursorX + 20f, cursorY + 18f)
-      pointerPath.close()
-
       canvas.drawPath(pointerPath, fillPaint)
       canvas.drawPath(pointerPath, strokePaint)
     }
