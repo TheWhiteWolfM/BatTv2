@@ -63,8 +63,6 @@ class BatTvGeckoViewManager(
             "spin-wheel", "lucky-winner", "phone-cleaner", "virus-scan", "battery-alert"
         )
 
-        // IMPORTANTE: No incluir startupCache ni security_state para no romper la caché
-        // compilada de las extensiones ni causar cierres durante el arranque de GeckoRuntime.
         private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(
             "cache2",
             "OfflineCache",
@@ -135,8 +133,6 @@ class BatTvGeckoViewManager(
     private fun getOrCreateRuntime(appContext: Context): GeckoRuntime {
         return sharedRuntime ?: synchronized(Companion) {
             sharedRuntime ?: run {
-                // Limpiar carpetas residuales de forma síncrona ANTES de iniciar GeckoRuntime
-                // para evitar condiciones de carrera con el motor C++.
                 try {
                     deleteDirectoryContents(appContext.cacheDir)
                     appContext.externalCacheDir?.let { deleteDirectoryContents(it) }
@@ -146,7 +142,7 @@ class BatTvGeckoViewManager(
                     }
                 } catch (_: Exception) {}
 
-                val cfgFile = writeOptimizedGeckoConfig(appContext)
+                val cfgFile = writeStableTvGeckoConfig(appContext)
                 val builder = GeckoRuntimeSettings.Builder()
                     .javaScriptEnabled(true)
                     .consoleOutput(false)
@@ -166,23 +162,20 @@ class BatTvGeckoViewManager(
     }
 
     /**
-     * Configuración equilibrada para Android TV (1.5 GB - 2 GB de RAM):
-     * - network.http.http3.enable: false (evita cuelgues de carga por bloqueo UDP/QUIC en routers).
-     * - browser.cache.disk.enable: false (mantiene el almacenamiento total bajo 200 MB).
-     * - media.preload.default: 2 (descarga solo metadatos hasta que el usuario da Play, evitando
-     *   quedarse sin memoria RAM al cargar páginas con múltiples reproductores).
+     * Configuracion estable y ligera para Android TV:
+     * Sin banderas experimentales de procesos o compositor que provoquen cierres en GPUs Mali-G31.
      */
-    private fun writeOptimizedGeckoConfig(appContext: Context): File? {
+    private fun writeStableTvGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.filesDir, "battv_gecko_config.yaml")
             val yamlContent = """
                 prefs:
-                  browser.cache.disk.enable: false
-                  browser.cache.disk.capacity: 0
+                  browser.cache.disk.enable: true
+                  browser.cache.disk.capacity: 15360
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 14336
+                  browser.cache.memory.capacity: 8192
                   browser.sessionhistory.max_total_viewers: 0
                   browser.safebrowsing.malware.enabled: false
                   browser.safebrowsing.phishing.enabled: false
@@ -191,59 +184,26 @@ class BatTvGeckoViewManager(
                   datareporting.healthreport.uploadEnabled: false
                   toolkit.telemetry.enabled: false
                   media.suspend-bkgnd-video.enabled: false
-                  media.cache_size: 24576
-                  media.memory_cache_max_size: 12288
-                  media.memory_caches_combined_limit_kb: 32768
-                  media.cache_readahead_limit: 40
-                  media.cache_resume_threshold: 15
+                  media.cache_size: 16384
+                  media.memory_cache_max_size: 8192
+                  media.memory_caches_combined_limit_kb: 20480
                   media.preload.default: 2
                   media.autoplay.default: 0
                   media.autoplay.blocking_policy: 0
-                  media.block-autoplay-until-in-foreground: false
                   media.hls.enabled: true
                   media.av1.enabled: false
-                  media.ffvpx.enabled: false
-                  media.rdd-ffvpx.enabled: false
                   media.android-media-codec.enabled: true
                   media.android-media-codec.preferred: true
                   media.hardware-video-decoding.enabled: true
-                  media.hardware-video-decoding.force-enabled: true
-                  media.navigator.mediacapabilities.enabled: true
-                  media.decoder.skip-to-next-key-frame.enabled: true
-                  media.ruin-av-sync.enabled: false
                   media.eme.enabled: true
                   media.mediasource.enabled: true
-                  media.mediasource.mp4.enabled: true
-                  media.mediasource.webm.enabled: true
-                  dom.ipc.processCount: 1
-                  dom.min_background_timeout_value: 4
                   dom.disable_open_during_load: true
-                  dom.popup_maximum: 0
                   full-screen-api.enabled: true
                   full-screen-api.allow-trusted-requests-only: false
                   full-screen-api.warning.delay: -1
                   full-screen-api.warning.timeout: 0
-                  nglayout.initialpaint.delay: 0
-                  layout.frame_rate: 60
-                  layout.css.backdrop-filter.enabled: false
-                  gfx.webrender.all: true
-                  gfx.webrender.compositor: true
-                  gfx.canvas.accelerated: true
-                  layers.acceleration.force-enabled: true
-                  network.buffer.cache.size: 32768
-                  network.buffer.cache.count: 24
                   network.http.http3.enable: false
-                  network.http.keep-alive.timeout: 180
-                  network.http.max-connections: 48
-                  network.http.max-persistent-connections-per-server: 8
-                  network.http.pacing.requests.enabled: false
                   network.cookie.cookieBehavior: 4
-                  network.cookie.sameSite.laxByDefault: false
-                  network.cookie.sameSite.noneRequiresSecure: false
-                  network.http.sendRefererHeader: 2
-                  network.dns.disablePrefetch: false
-                  network.dns.disablePrefetchFromHTTPS: false
-                  network.predictor.enabled: true
                   security.mixed_content.block_active_content: false
                   security.mixed_content.block_display_content: false
                   dom.security.https_only_mode: false
@@ -277,6 +237,10 @@ class BatTvGeckoViewManager(
         }
     }
 
+    /**
+     * Registra las 3 extensiones mediante ensureBuiltIn (que ya las instala y habilita en GeckoView)
+     * sin llamar a controller.enable() encima para evitar reiniciar sus procesos mientras carga una pagina.
+     */
     private fun setupWebExtensions(controller: WebExtensionController) {
         controller.promptDelegate = object : WebExtensionController.PromptDelegate {
             override fun onOptionalPrompt(
@@ -294,44 +258,15 @@ class BatTvGeckoViewManager(
             Pair(VIOLENTMONKEY_URI, VIOLENTMONKEY_ID)
         )
 
-        val allowedIds = requiredExtensions.map { it.second }.toSet()
-
-        controller.list().accept({ existingList ->
-            existingList?.forEach { ext ->
-                if (!allowedIds.contains(ext.id)) {
-                    controller.uninstall(ext)
-                }
-            }
-        }, {})
-
         for ((assetUri, extId) in requiredExtensions) {
             controller.ensureBuiltIn(assetUri, extId).accept(
                 { extension ->
                     if (extension != null) {
                         installedExtensions[extension.id] = extension
-
                         if (extension.id == VIOLENTMONKEY_ID) {
                             attachBridgeToExtension(extension)
                         }
-
-                        controller.setAllowedInPrivateBrowsing(extension, true)
-                        controller.enable(
-                            extension,
-                            WebExtensionController.EnableSource.USER
-                        ).accept(
-                            { enabledExt ->
-                                if (enabledExt != null) {
-                                    installedExtensions[enabledExt.id] = enabledExt
-                                    if (enabledExt.id == VIOLENTMONKEY_ID) {
-                                        attachBridgeToExtension(enabledExt)
-                                    }
-                                    Log.i(TAG, "Extension activa: ${enabledExt.id}")
-                                }
-                            },
-                            { err ->
-                                Log.e(TAG, "Error al habilitar extension ${extension.id}", err)
-                            }
-                        )
+                        Log.i(TAG, "Extension lista: ${extension.id}")
                     }
                 },
                 { err ->
@@ -345,15 +280,6 @@ class BatTvGeckoViewManager(
         val delegate = bridgeMessageDelegate ?: return
         try {
             extension.setMessageDelegate(delegate, NATIVE_BRIDGE_NAME)
-        } catch (_: Exception) {}
-        try {
-            if (::session.isInitialized) {
-                session.webExtensionController.setMessageDelegate(
-                    extension,
-                    delegate,
-                    NATIVE_BRIDGE_NAME
-                )
-            }
         } catch (_: Exception) {}
     }
 
@@ -467,10 +393,6 @@ class BatTvGeckoViewManager(
         }
     }
 
-    /**
-     * Limpia únicamente la caché temporal de Android mientras la app está en ejecución,
-     * sin tocar la carpeta activa de Gecko (filesDir/mozilla) para evitar bloqueos o cierres.
-     */
     fun pruneDisposableStorageNow() {
         Thread {
             try {
@@ -515,6 +437,19 @@ class BatTvGeckoViewManager(
                 } else if (child.name != "storage" && child.name != "extensions" && child.name != "startupCache") {
                     bytes += cleanDisposableGeckoDirs(child)
                 }
+            } else if (child.isFile && child.name == "prefs.js") {
+                // Limpiar preferencias antiguas que causaban bloqueo en el TV
+                try {
+                    val sanitized = child.readLines().filterNot { line ->
+                        line.contains("dom.ipc.processCount") ||
+                            line.contains("gfx.webrender") ||
+                            line.contains("layers.acceleration") ||
+                            line.contains("network.http.http3") ||
+                            line.contains("browser.cache.disk.enable") ||
+                            line.contains("media.preload.default")
+                    }
+                    child.writeText(sanitized.joinToString("\n") + "\n")
+                } catch (_: Exception) {}
             }
         }
         return bytes
