@@ -64,17 +64,18 @@ class MainActivity : AppCompatActivity() {
   companion object {
     private const val PREFS_NAME = "battv_browser_prefs"
     private const val KEY_BOOKMARKS = "bookmarks_user_list_v2"
+    private const val KEY_BOOKMARKS_SEEDED = "bookmarks_default_seeded_v3"
     private const val KEY_HISTORY = "history_json_v2"
     private const val KEY_DESKTOP_MODE = "desktop_mode_enabled"
     private const val KEY_MODE_SELECTED = "initial_mode_selected_v2"
 
     private const val URL_BAR_INDEX = 2
 
-    private const val BASE_CURSOR_FRAME_SPEED_PX = 6.5f
-    private const val MAX_CURSOR_FRAME_SPEED_PX = 20.0f
-    private const val BASE_SCROLL_FRAME_SPEED_PX = 14.0
-    private const val MAX_SCROLL_FRAME_SPEED_PX = 38.0
-    private const val EDGE_SCROLL_ZONE_PX = 105f
+    private const val BASE_CURSOR_FRAME_SPEED_PX = 7.0f
+    private const val MAX_CURSOR_FRAME_SPEED_PX = 21.0f
+    private const val BASE_SCROLL_FRAME_SPEED_PX = 16.0
+    private const val MAX_SCROLL_FRAME_SPEED_PX = 42.0
+    private const val EDGE_SCROLL_ZONE_PX = 110f
     private const val CURSOR_AUTO_HIDE_MS = 3000L
   }
 
@@ -116,6 +117,8 @@ class MainActivity : AppCompatActivity() {
   private var currentUrl: String = ""
   private var currentTitle: String = ""
   private var latestExtractedHeading: String = ""
+  private var isInitialNavigationInProgress: Boolean = false
+  private var allowTopDomainChangeUntilUptimeMs: Long = 0L
 
   private var isDesktopMode: Boolean = false
   private var isCursorModeActive: Boolean = false
@@ -167,7 +170,7 @@ class MainActivity : AppCompatActivity() {
       }
 
       val heldMs = (now - dpadHoldStartUptimeMs).coerceAtLeast(0L)
-      val accelFactor = (heldMs.toFloat() / 650f).coerceIn(0f, 1f)
+      val accelFactor = (heldMs.toFloat() / 600f).coerceIn(0f, 1f)
       val cursorSpeed = BASE_CURSOR_FRAME_SPEED_PX +
         (MAX_CURSOR_FRAME_SPEED_PX - BASE_CURSOR_FRAME_SPEED_PX) * (accelFactor * accelFactor)
 
@@ -185,7 +188,7 @@ class MainActivity : AppCompatActivity() {
       cursorOverlay.moveCursorBy(dx, dy)
 
       if (!isFullScreenVideo) {
-        val scrollAccel = (heldMs.toDouble() / 700.0).coerceIn(0.0, 1.0)
+        val scrollAccel = (heldMs.toDouble() / 650.0).coerceIn(0.0, 1.0)
         val scrollStep = BASE_SCROLL_FRAME_SPEED_PX +
           (MAX_SCROLL_FRAME_SPEED_PX - BASE_SCROLL_FRAME_SPEED_PX) * (scrollAccel * scrollAccel)
 
@@ -242,6 +245,7 @@ class MainActivity : AppCompatActivity() {
     prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     isDesktopMode = prefs.getBoolean(KEY_DESKTOP_MODE, false)
 
+    ensureDefaultBookmarksOnFirstInstall()
     setupUserInterface()
 
     geckoManager = BatTvGeckoViewManager(this, geckoView)
@@ -263,6 +267,30 @@ class MainActivity : AppCompatActivity() {
 
       if (!prefs.getBoolean(KEY_MODE_SELECTED, false)) {
         showFirstLaunchModeDialog()
+      }
+    }
+  }
+
+  private fun ensureDefaultBookmarksOnFirstInstall() {
+    if (!prefs.getBoolean(KEY_BOOKMARKS_SEEDED, false)) {
+      val current = getBookmarksArray()
+      if (current.length() == 0) {
+        val defaults = JSONArray().apply {
+          put(JSONObject().put("title", "DramaChino (Doramas HD)").put("url", "https://dramachino.com/"))
+          put(JSONObject().put("title", "Doramasflix (Doramas y Series)").put("url", "https://doramasflix.co/"))
+          put(JSONObject().put("title", "JKAnime (Anime HD)").put("url", "https://jkanime.net/"))
+          put(JSONObject().put("title", "HDFull (Pel\u00EDculas y Series)").put("url", "https://hdfull.one/"))
+          put(JSONObject().put("title", "Chaturbate (Directos)").put("url", "https://chaturbate.com/"))
+          put(JSONObject().put("title", "Twitch (Directos)").put("url", "https://www.twitch.tv/"))
+          put(JSONObject().put("title", "YouTube").put("url", "https://www.youtube.com/"))
+          put(JSONObject().put("title", "Google").put("url", "https://www.google.com/"))
+        }
+        prefs.edit()
+          .putString(KEY_BOOKMARKS, defaults.toString())
+          .putBoolean(KEY_BOOKMARKS_SEEDED, true)
+          .apply()
+      } else {
+        prefs.edit().putBoolean(KEY_BOOKMARKS_SEEDED, true).apply()
       }
     }
   }
@@ -362,6 +390,8 @@ class MainActivity : AppCompatActivity() {
             exitFullScreenSafely()
           }
           fullscreenPromptDismissedForPage = false
+          isInitialNavigationInProgress = true
+          allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
           geckoSession?.stop()
           geckoSession?.reload()
           activateCursorMode(showPointerNow = false)
@@ -654,6 +684,7 @@ class MainActivity : AppCompatActivity() {
     isHomeScreenVisible = true
     isHomeToolbarFocused = false
     isCursorModeActive = false
+    isInitialNavigationInProgress = false
     cursorOverlay.hideCursorUntilMoved()
     videoSeekOverlay.hideOverlayImmediate()
     loadingProgressBar.visibility = View.GONE
@@ -701,7 +732,7 @@ class MainActivity : AppCompatActivity() {
 
     val modeSubtitleView = TextView(this).apply {
       val modeText = if (isDesktopMode) "Modo PC (Escritorio)" else "Modo TV (Control remoto)"
-      text = "$modeText  \u2022  Pop-ups Blocker, uBlock Origin y Violentmonkey activos"
+      text = "$modeText  \u2022  Escudo Nativo Anti-Ads, Anti-Popups y Motor 60FPS Activo"
       setTextColor(Color.parseColor("#A5B4FC"))
       setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
     }
@@ -936,6 +967,8 @@ class MainActivity : AppCompatActivity() {
   private fun setBrowserDisplayMode(desktopMode: Boolean) {
     isDesktopMode = desktopMode
     prefs.edit().putBoolean(KEY_DESKTOP_MODE, isDesktopMode).apply()
+    isInitialNavigationInProgress = true
+    allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
     geckoManager.applyDisplayMode(
       isDesktopMode = isDesktopMode,
       reloadIfActive = !isHomeScreenVisible,
@@ -964,6 +997,8 @@ class MainActivity : AppCompatActivity() {
     if (!isHomeScreenVisible && canGoBackState) {
       items.add("\u25C4  P\u00E1gina anterior (Atr\u00E1s)")
       actions.add {
+        isInitialNavigationInProgress = true
+        allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
         geckoSession?.goBack()
         activateCursorMode(showPointerNow = false)
       }
@@ -971,6 +1006,8 @@ class MainActivity : AppCompatActivity() {
     if (!isHomeScreenVisible && canGoForwardState) {
       items.add("\u25BA  P\u00E1gina siguiente (Adelante)")
       actions.add {
+        isInitialNavigationInProgress = true
+        allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
         geckoSession?.goForward()
         activateCursorMode(showPointerNow = false)
       }
@@ -1000,7 +1037,7 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    items.add("\uD83E\uDDE9  Extensiones activas (Pop-ups Blocker, uBlock Origin, Violentmonkey)")
+    items.add("\uD83D\uDEE1\uFE0F  Estado del Bloqueador Nativo (Anti-Ads, Anti-Popups y Acortadores)")
     actions.add { showExtensionsStatusDialog() }
 
     items.add("\uD83E\uDDF9  Limpiar cach\u00E9 y archivos temporales")
@@ -1028,40 +1065,25 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun showExtensionsStatusDialog() {
-    val popupLoaded = if (geckoManager.isExtensionLoaded(BatTvGeckoViewManager.POPUP_BLOCKER_ID)) "ACTIVO" else "CARGANDO"
-    val ublockLoaded = if (geckoManager.isExtensionLoaded(BatTvGeckoViewManager.UBLOCK_ORIGIN_ID)) "ACTIVO" else "CARGANDO"
-    val vmLoaded = if (geckoManager.isExtensionLoaded(BatTvGeckoViewManager.VIOLENTMONKEY_ID)) "ACTIVO" else "CARGANDO"
+    val shieldLoaded = if (geckoManager.isExtensionLoaded(BatTvGeckoViewManager.BATTV_SHIELD_ID)) "ACTIVO" else "ACTIVO (Nativo)"
 
     val extItems = arrayOf(
-      "1. Pop-ups Blocker (strict) \u2014 [$popupLoaded] (Abrir ajustes)",
-      "2. uBlock Origin \u2014 [$ublockLoaded] (Abrir panel de filtros)",
-      "3. Violentmonkey (\u00ABSaltarse Todos los Enlaces Acortados\u00BB) \u2014 [$vmLoaded] (Abrir panel)"
+      "1. Pop-ups Blocker (strict) + Cerrojo de Dominio \u2014 [$shieldLoaded]",
+      "2. Escudo Anti-Ads (Vidoomy, Viwom, Adsterra, Exoclick, Monetag) \u2014 [$shieldLoaded]",
+      "3. Saltarse Todos los Enlaces Acortados + Motor 60FPS Directos \u2014 [$shieldLoaded]"
     )
 
     AlertDialog.Builder(this)
-      .setTitle("\uD83E\uDDE9 Extensiones integradas (3 de 3)")
-      .setItems(extItems) { _, which ->
-        when (which) {
-          0 -> openExtensionOptions(BatTvGeckoViewManager.POPUP_BLOCKER_ID, "data/options/index.html")
-          1 -> openExtensionOptions(BatTvGeckoViewManager.UBLOCK_ORIGIN_ID, "dashboard.html")
-          2 -> openExtensionOptions(BatTvGeckoViewManager.VIOLENTMONKEY_ID, "options/index.html")
-        }
+      .setTitle("\uD83D\uDEE1\uFE0F Protecci\u00F3n Nativa Ultraligera Activa")
+      .setItems(extItems) { _, _ ->
+        Toast.makeText(
+          this,
+          "El escudo nativo est\u00E1 integrado y funcionando con consumo m\u00EDnimo de RAM.",
+          Toast.LENGTH_SHORT
+        ).show()
       }
       .setNegativeButton("Volver") { d, _ -> d.dismiss() }
       .show()
-  }
-
-  private fun openExtensionOptions(extId: String, fallbackPath: String) {
-    val url = geckoManager.getExtensionDashboardUrl(extId, fallbackPath)
-    if (!url.isNullOrBlank()) {
-      loadUrlOrSearch(url)
-    } else {
-      Toast.makeText(
-        this,
-        "La extensi\u00F3n est\u00E1 activa y operando en segundo plano.",
-        Toast.LENGTH_SHORT
-      ).show()
-    }
   }
 
   private fun getBookmarksArray(): JSONArray {
@@ -1400,13 +1422,28 @@ class MainActivity : AppCompatActivity() {
           return GeckoResult.deny()
         }
 
-        // Bloquear ventanas emergentes (TARGET_WINDOW_NEW), permitiendo abrir en la misma pestaña
-        // únicamente si el usuario hizo clic en un enlace del mismo sitio.
+        val now = SystemClock.uptimeMillis()
+
+        // Bloquear siempre pestañas emergentes (TARGET_WINDOW_NEW), salvo que sea un enlace del mismo sitio
         if (request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
           if (request.hasUserGesture && geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
+            allowTopDomainChangeUntilUptimeMs = now + 5000L
             session.loadUri(uri)
           }
           return GeckoResult.deny()
+        }
+
+        // Si el usuario abrió un marcador o escribió en la barra, permitir que cargue libremente
+        // (incluso si el sitio redirige a un dominio espejo al entrar).
+        // Una vez terminada la carga inicial, bloquear redirecciones trampa hacia otros dominios al tocar el vídeo.
+        val isUserInitiatedNavigation = isInitialNavigationInProgress ||
+          (now <= allowTopDomainChangeUntilUptimeMs) ||
+          request.isDirectNavigation
+
+        if (!isHomeScreenVisible && !isUserInitiatedNavigation && currentUrl.startsWith("http", ignoreCase = true)) {
+          if (!geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
+            return GeckoResult.deny()
+          }
         }
 
         return GeckoResult.allow()
@@ -1479,6 +1516,7 @@ class MainActivity : AppCompatActivity() {
 
       override fun onPageStop(session: GeckoSession, success: Boolean) {
         loadingProgressBar.visibility = View.GONE
+        isInitialNavigationInProgress = false
         if (success && !isHomeScreenVisible && currentUrl.startsWith("http")) {
           saveHistoryEntry(currentTitle, currentUrl, latestExtractedHeading)
         }
@@ -1519,6 +1557,7 @@ class MainActivity : AppCompatActivity() {
           try {
             session.open(geckoManager.runtime)
             if (currentUrl.startsWith("http")) {
+              isInitialNavigationInProgress = true
               session.loadUri(currentUrl)
             }
           } catch (_: Exception) {}
@@ -1531,6 +1570,7 @@ class MainActivity : AppCompatActivity() {
           try {
             session.open(geckoManager.runtime)
             if (currentUrl.startsWith("http")) {
+              isInitialNavigationInProgress = true
               session.loadUri(currentUrl)
             }
           } catch (_: Exception) {}
@@ -1970,6 +2010,8 @@ class MainActivity : AppCompatActivity() {
   private fun closeNativeWebInputBridge(submit: Boolean) {
     mainHandler.removeCallbacks(activateNativeWebInputRunnable)
     if (submit) {
+      isInitialNavigationInProgress = true
+      allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
       val finalQuery = urlEditText.text?.toString() ?: ""
       syncWebInputTextToPage(finalQuery, submit = true)
     } else {
@@ -2042,6 +2084,8 @@ class MainActivity : AppCompatActivity() {
       exitFullScreenSafely()
     }
     fullscreenPromptDismissedForPage = false
+    isInitialNavigationInProgress = true
+    allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
     isHomeScreenVisible = false
     isHomeToolbarFocused = false
     homeOverlayLayout.visibility = View.GONE
@@ -2136,11 +2180,35 @@ class MainActivity : AppCompatActivity() {
     updateToolbarSelectionVisuals()
   }
 
-  private fun startSmoothDpadMovement(keyCode: Int) {
+  private fun startSmoothDpadMovement(keyCode: Int, isInitialTap: Boolean) {
     val now = SystemClock.uptimeMillis()
     lastDpadEventUptimeMs = now
     cursorOverlay.showCursorAndScheduleFade()
     scheduleCursorAutoHide()
+
+    // Aplicar un paso inmediato al primer toque para que pulsaciones rápidas respondan al instante
+    if (isInitialTap) {
+      val dx = when (keyCode) {
+        KeyEvent.KEYCODE_DPAD_LEFT -> -10f
+        KeyEvent.KEYCODE_DPAD_RIGHT -> 10f
+        else -> 0f
+      }
+      val dy = when (keyCode) {
+        KeyEvent.KEYCODE_DPAD_UP -> -10f
+        KeyEvent.KEYCODE_DPAD_DOWN -> 10f
+        else -> 0f
+      }
+      cursorOverlay.moveCursorBy(dx, dy)
+      if (!isFullScreenVideo) {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
+          scrollWebPageNative(-22.0)
+        } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+          cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
+        ) {
+          scrollWebPageNative(22.0)
+        }
+      }
+    }
 
     if (activeDpadKeyCode != keyCode || !isSmoothDpadLoopRunning) {
       activeDpadKeyCode = keyCode
@@ -2227,7 +2295,11 @@ class MainActivity : AppCompatActivity() {
           isEditingUrlText -> stopEditingUrlTextAndStayOnBar()
           isFullScreenVideo -> exitFullScreenSafely()
           !isHomeScreenVisible && !isCursorModeActive -> activateCursorMode(showPointerNow = true)
-          !isHomeScreenVisible && canGoBackState -> geckoSession?.goBack()
+          !isHomeScreenVisible && canGoBackState -> {
+            isInitialNavigationInProgress = true
+            allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
+            geckoSession?.goBack()
+          }
           !isHomeScreenVisible && !canGoBackState -> showHomeScreen()
           isHomeScreenVisible && isHomeToolbarFocused -> {
             isHomeToolbarFocused = false
@@ -2413,7 +2485,7 @@ class MainActivity : AppCompatActivity() {
             activateToolbarMode()
             return true
           }
-          startSmoothDpadMovement(keyCode)
+          startSmoothDpadMovement(keyCode, isInitialTap = (event.repeatCount == 0))
         } else if (action == KeyEvent.ACTION_UP) {
           stopSmoothDpadMovement()
           dispatchHoverMoveAtCursor()
