@@ -28,7 +28,6 @@ class BatTvGeckoViewManager(
         const val BATTV_SHIELD_ID = "shield@battv.browser"
         const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield/"
 
-        // Mantenemos las constantes de referencia para compatibilidad con el menú de estado
         const val POPUP_BLOCKER_ID = BATTV_SHIELD_ID
         const val UBLOCK_ORIGIN_ID = BATTV_SHIELD_ID
         const val VIOLENTMONKEY_ID = BATTV_SHIELD_ID
@@ -54,7 +53,9 @@ class BatTvGeckoViewManager(
             "pushground.com", "yllix.com", "plugrush.com", "adspyglass.com",
             "clksite.com", "clkmon.com", "betteradsystem.com", "blurtsbrerd.com",
             "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
-            "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk"
+            "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk",
+            "wpadmngr.com", "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
+            "highperformanceformat.com", "surfe.pro"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
@@ -161,17 +162,21 @@ class BatTvGeckoViewManager(
         }
     }
 
+    /**
+     * Búfer multimedia y de red calibrado para carga rápida de páginas y búsqueda (seek)
+     * instantánea al adelantar o atrasar vídeos en Android TV.
+     */
     private fun writeStableTvGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.filesDir, "battv_gecko_config.yaml")
             val yamlContent = """
                 prefs:
                   browser.cache.disk.enable: true
-                  browser.cache.disk.capacity: 12288
+                  browser.cache.disk.capacity: 16384
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 12288
+                  browser.cache.memory.capacity: 14336
                   browser.sessionhistory.max_total_viewers: 0
                   browser.safebrowsing.malware.enabled: false
                   browser.safebrowsing.phishing.enabled: false
@@ -180,11 +185,11 @@ class BatTvGeckoViewManager(
                   datareporting.healthreport.uploadEnabled: false
                   toolkit.telemetry.enabled: false
                   media.suspend-bkgnd-video.enabled: false
-                  media.cache_size: 24576
-                  media.memory_cache_max_size: 12288
-                  media.memory_caches_combined_limit_kb: 28672
-                  media.cache_readahead_limit: 45
-                  media.cache_resume_threshold: 15
+                  media.cache_size: 32768
+                  media.memory_cache_max_size: 16384
+                  media.memory_caches_combined_limit_kb: 36864
+                  media.cache_readahead_limit: 90
+                  media.cache_resume_threshold: 25
                   media.preload.default: 2
                   media.autoplay.default: 0
                   media.autoplay.blocking_policy: 0
@@ -193,6 +198,7 @@ class BatTvGeckoViewManager(
                   media.android-media-codec.enabled: true
                   media.android-media-codec.preferred: true
                   media.hardware-video-decoding.enabled: true
+                  media.decoder.skip-to-next-key-frame.enabled: true
                   media.eme.enabled: true
                   media.mediasource.enabled: true
                   dom.disable_open_during_load: true
@@ -201,7 +207,14 @@ class BatTvGeckoViewManager(
                   full-screen-api.allow-trusted-requests-only: false
                   full-screen-api.warning.delay: -1
                   full-screen-api.warning.timeout: 0
+                  nglayout.initialpaint.delay: 0
                   network.http.http3.enable: false
+                  network.http.max-connections: 64
+                  network.http.max-persistent-connections-per-server: 10
+                  network.http.pacing.requests.enabled: false
+                  network.dns.disablePrefetch: false
+                  network.dns.disablePrefetchFromHTTPS: false
+                  network.predictor.enabled: true
                   network.cookie.cookieBehavior: 4
                   security.mixed_content.block_active_content: false
                   security.mixed_content.block_display_content: false
@@ -247,7 +260,6 @@ class BatTvGeckoViewManager(
             }
         }
 
-        // Desinstalar cualquier extensión pesada antigua que haya quedado en el almacenamiento
         controller.list().accept({ existingList ->
             existingList?.forEach { ext ->
                 if (ext.id != BATTV_SHIELD_ID) {
