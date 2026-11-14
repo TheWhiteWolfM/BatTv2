@@ -140,7 +140,6 @@ class MainActivity : AppCompatActivity() {
   private var lastSeekPressUptime: Long = 0L
   private var cumulativeSeekDeltaSec: Double = 0.0
 
-  // Control del aviso automatico de pantalla completa para evitar bucles
   private var fullscreenPromptDialog: AlertDialog? = null
   private var fullscreenPromptDismissedForPage: Boolean = false
   private var lastFullscreenExitUptimeMs: Long = 0L
@@ -285,6 +284,9 @@ class MainActivity : AppCompatActivity() {
           renderHomeScreenContent()
           Toast.makeText(this@MainActivity, "Favoritos actualizados", Toast.LENGTH_SHORT).show()
         } else {
+          if (isFullScreenVideo) {
+            exitFullScreenSafely()
+          }
           fullscreenPromptDismissedForPage = false
           geckoSession?.stop()
           geckoSession?.reload()
@@ -515,7 +517,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   /**
-   * Muestra la opcion automatica "¿Quieres abrir en pantalla completa? (Aceptar / Cancelar)"
+   * Muestra la opcion automatica "¿Quieres abrir el vídeo en pantalla completa? (Aceptar / Cancelar)"
    * cuando se detecta que un video real ha comenzado a reproducirse.
    */
   private fun promptAutoFullscreenIfEligible() {
@@ -558,8 +560,13 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun enterVideoFullscreenAutomatically() {
-    sendVideoCommandToWeb("ENTER_FULLSCREEN", 0.0)
     applyFullScreenState(true)
+    sendVideoCommandToWeb("ENTER_FULLSCREEN", 0.0)
+    mainHandler.postDelayed({
+      if (isFullScreenVideo) {
+        sendVideoCommandToWeb("ENTER_FULLSCREEN", 0.0)
+      }
+    }, 180L)
   }
 
   private fun showHomeScreen() {
@@ -1425,6 +1432,11 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
           mainHandler.removeCallbacks(fullScreenExitWatchdogRunnable)
           applyFullScreenState(fullScreen)
+          if (fullScreen) {
+            sendVideoCommandToWeb("ENTER_FULLSCREEN", 0.0)
+          } else {
+            sendVideoCommandToWeb("EXIT_FULLSCREEN", 0.0)
+          }
         }
       }
 
@@ -1514,6 +1526,11 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
           mainHandler.removeCallbacks(fullScreenExitWatchdogRunnable)
           applyFullScreenState(enabled)
+          if (enabled) {
+            sendVideoCommandToWeb("ENTER_FULLSCREEN", 0.0)
+          } else {
+            sendVideoCommandToWeb("EXIT_FULLSCREEN", 0.0)
+          }
         }
       }
     }
@@ -1642,6 +1659,24 @@ class MainActivity : AppCompatActivity() {
                     hasActiveVodVideo = dur >= 90.0
                     if (dur > 0.0) vodDurationSec = dur
                     promptAutoFullscreenIfEligible()
+                  }
+                }
+              }
+              "REQUEST_UNIFIED_FULLSCREEN" -> {
+                val enable = json.optBoolean("enable", true)
+                runOnUiThread {
+                  if (enable) {
+                    enterVideoFullscreenAutomatically()
+                  } else {
+                    exitFullScreenSafely()
+                  }
+                }
+              }
+              "WEB_FULLSCREEN_STATE" -> {
+                val enabled = json.optBoolean("enabled", false)
+                runOnUiThread {
+                  if (enabled != isFullScreenVideo) {
+                    applyFullScreenState(enabled)
                   }
                 }
               }
@@ -1929,6 +1964,9 @@ class MainActivity : AppCompatActivity() {
   private fun loadUrlOrSearch(input: String) {
     val finalUri = geckoManager.resolveInputToUrl(input)
     dismissFullscreenPromptDialog()
+    if (isFullScreenVideo) {
+      exitFullScreenSafely()
+    }
     fullscreenPromptDismissedForPage = false
     isHomeScreenVisible = false
     isHomeToolbarFocused = false
@@ -2213,7 +2251,7 @@ class MainActivity : AppCompatActivity() {
       return true
     }
 
-    // 6. Modo cursor / reproduccion de video a pantalla completa
+    // 6. Controles directos en pantalla completa cuando el puntero esta oculto
     if (isFullScreenVideo && hasActiveVodVideo && !cursorOverlay.isCursorCurrentlyVisible()) {
       when (keyCode) {
         KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -2240,6 +2278,7 @@ class MainActivity : AppCompatActivity() {
         KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
           if (action == KeyEvent.ACTION_DOWN) {
             cursorOverlay.showCursorAndScheduleFade()
+            dispatchHoverMoveAtCursor()
             scheduleCursorAutoHide()
           }
           return true
@@ -2247,7 +2286,7 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    // Movimiento del puntero virtual con D-pad
+    // 7. Movimiento del puntero virtual con D-pad (cuando el puntero esta visible, OK hace clic)
     when (keyCode) {
       KeyEvent.KEYCODE_DPAD_UP,
       KeyEvent.KEYCODE_DPAD_DOWN,
@@ -2277,14 +2316,15 @@ class MainActivity : AppCompatActivity() {
           }
 
           val hitTopEdge = cursorOverlay.moveCursorBy(dx, dy)
+          dispatchHoverMoveAtCursor()
 
           if (keyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_MARGIN_PX) {
-            if (webScrollY > 4.0) {
+            if (!isFullScreenVideo && webScrollY > 4.0) {
               scrollWebContentBy(-currentCursorStepPx * 2.4f)
             } else if (hitTopEdge && !isFullScreenVideo) {
               activateToolbarMode()
             }
-          } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+          } else if (!isFullScreenVideo && keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
             cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_MARGIN_PX)
           ) {
             scrollWebContentBy(currentCursorStepPx * 2.4f)
@@ -2313,6 +2353,19 @@ class MainActivity : AppCompatActivity() {
     return false
   }
 
+  private fun dispatchHoverMoveAtCursor() {
+    val x = cursorOverlay.cursorX
+    val y = cursorOverlay.cursorY
+    val now = SystemClock.uptimeMillis()
+    try {
+      val hoverEvent = MotionEvent.obtain(now, now, MotionEvent.ACTION_HOVER_MOVE, x, y, 0).apply {
+        source = InputDevice.SOURCE_MOUSE
+      }
+      geckoView.dispatchGenericMotionEvent(hoverEvent)
+      hoverEvent.recycle()
+    } catch (_: Exception) {}
+  }
+
   private fun simulateTapAtCursor() {
     val x = cursorOverlay.cursorX
     val y = cursorOverlay.cursorY
@@ -2320,11 +2373,15 @@ class MainActivity : AppCompatActivity() {
     lastUserWebClickTime = now
     isSyntheticDpadTap = true
 
+    geckoView.requestFocus()
+    geckoSession?.setActive(true)
+    geckoSession?.setFocused(true)
+
     try {
       val downEvent = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0).apply {
         source = InputDevice.SOURCE_TOUCHSCREEN
       }
-      val upEvent = MotionEvent.obtain(now, now + 45L, MotionEvent.ACTION_UP, x, y, 0).apply {
+      val upEvent = MotionEvent.obtain(now, now + 40L, MotionEvent.ACTION_UP, x, y, 0).apply {
         source = InputDevice.SOURCE_TOUCHSCREEN
       }
       geckoView.dispatchTouchEvent(downEvent)
