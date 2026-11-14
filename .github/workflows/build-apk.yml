@@ -35,314 +35,186 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Preparar y optimizar las 3 extensiones para Android TV
+      - name: Generar Motor Nativo Ultraligero de Bloqueo y Fluidez TV (battv_shield)
         run: |
           python3 - << 'EOF'
           import json
           import os
           import shutil
-          import urllib.request
-          import zipfile
 
           EXT_BASE = "android-geckoview/app/src/main/assets/extensions"
           if os.path.exists(EXT_BASE):
-              shutil.rmtree(ext_path := EXT_BASE)
-          os.makedirs(EXT_BASE, exist_ok=True)
+              shutil.rmtree(EXT_BASE)
 
-          EXTENSIONS = [
-              {
-                  "folder": "popup_blocker",
-                  "id": "{54e2eb33-18eb-46ad-a4e4-1329c29f6e17}",
-                  "url": "https://addons.mozilla.org/firefox/downloads/latest/popup-blocker/latest.xpi"
-              },
-              {
-                  "folder": "ublock_origin",
-                  "id": "uBlock0@raymondhill.net",
-                  "url": "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
-              },
-              {
-                  "folder": "violentmonkey",
-                  "id": "{aecec67f-0d10-4fa7-b7c7-609a2db280cf}",
-                  "url": "https://addons.mozilla.org/firefox/downloads/latest/violentmonkey/latest.xpi"
-              }
-          ]
+          SHIELD_DIR = os.path.join(EXT_BASE, "battv_shield")
+          os.makedirs(SHIELD_DIR, exist_ok=True)
 
-          KEEP_LOCALES = {"en", "en_US", "en_GB", "es", "es_ES", "es_419"}
-
-          for ext in EXTENSIONS:
-              dest_dir = os.path.join(EXT_BASE, ext["folder"])
-              os.makedirs(dest_dir, exist_ok=True)
-              xpi_path = os.path.join(EXT_BASE, ext["folder"] + ".xpi")
-              print(f"Descargando {ext['folder']}...")
-              req = urllib.request.Request(
-                  ext["url"],
-                  headers={"User-Agent": "Mozilla/5.0 (Android 14; Mobile; rv:130.0) Gecko/130.0 Firefox/130.0"}
-              )
-              with urllib.request.urlopen(req, timeout=60) as resp, open(xpi_path, "wb") as out_f:
-                  shutil.copyfileobj(resp, out_f)
-
-              with zipfile.ZipFile(xpi_path, "r") as zf:
-                  zf.extractall(dest_dir)
-              os.remove(xpi_path)
-
-              meta_inf = os.path.join(dest_dir, "META-INF")
-              if os.path.exists(meta_inf):
-                  shutil.rmtree(meta_inf)
-
-              locales_dir = os.path.join(dest_dir, "_locales")
-              if os.path.isdir(locales_dir):
-                  for loc in os.listdir(locales_dir):
-                      loc_path = os.path.join(locales_dir, loc)
-                      if os.path.isdir(loc_path) and loc not in KEEP_LOCALES:
-                          shutil.rmtree(loc_path)
-
-              for root_d, _, files in os.walk(dest_dir):
-                  for file_n in files:
-                      if file_n.endswith(".map") or file_n in ("LICENSE.txt", "README.md"):
-                          try:
-                              os.remove(os.path.join(root_d, file_n))
-                          except Exception:
-                              pass
-
-              manifest_path = os.path.join(dest_dir, "manifest.json")
-              with open(manifest_path, "r", encoding="utf-8") as mf:
-                  manifest = json.load(mf)
-
-              bss = manifest.setdefault("browser_specific_settings", {})
-              gecko = bss.setdefault("gecko", {})
-              gecko["id"] = ext["id"]
-              gecko.pop("update_url", None)
-              if "applications" in manifest and "gecko" in manifest["applications"]:
-                  manifest["applications"]["gecko"]["id"] = ext["id"]
-                  manifest["applications"]["gecko"].pop("update_url", None)
-
-              with open(manifest_path, "w", encoding="utf-8") as mf:
-                  json.dump(manifest, mf, indent=2, ensure_ascii=False)
-
-          # 1. Preconfigurar Pop-ups Blocker (strict) activo desde el primer inicio
-          pb_dir = os.path.join(EXT_BASE, "popup_blocker")
-          pb_manifest_path = os.path.join(pb_dir, "manifest.json")
-          with open(pb_manifest_path, "r", encoding="utf-8") as mf:
-              pb_manifest = json.load(mf)
-
-          with open(os.path.join(pb_dir, "battv_pb_init.js"), "w", encoding="utf-8") as pbf:
-              pbf.write("""(function () {
-            try {
-              if (typeof browser !== "undefined" && browser.storage && browser.storage.local) {
-                browser.storage.local.get("battv_pb_ready").then(function (res) {
-                  if (!res || !res.battv_pb_ready) {
-                    browser.storage.local.set({
-                      battv_pb_ready: true,
-                      enabled: true,
-                      immediate: true,
-                      aggressive: true,
-                      badge: false
-                    });
+          # 1. Manifiesto ligero (<1 KB) sin bases de datos pesadas que inflen el almacenamiento del TV
+          manifest = {
+              "manifest_version": 2,
+              "name": "BatTV Native Shield & Cinema 60FPS Engine",
+              "version": "3.0.0",
+              "description": "Bloqueador nativo ultraligero de anuncios, pop-ups, redirecciones scam, acortadores y estabilizador 60FPS para Android TV.",
+              "browser_specific_settings": {
+                  "gecko": {
+                      "id": "shield@battv.browser",
+                      "strict_min_version": "115.0"
                   }
-                });
-              }
-            } catch (_) {}
-          })();\n""")
+              },
+              "permissions": [
+                  "<all_urls>",
+                  "webRequest",
+                  "webRequestBlocking",
+                  "storage",
+                  "tabs",
+                  "nativeMessaging",
+                  "nativeMessagingFromContent",
+                  "geckoViewAddons"
+              ],
+              "background": {
+                  "scripts": ["background.js"]
+              },
+              "content_scripts": [
+                  {
+                      "matches": ["<all_urls>"],
+                      "js": ["content_start.js"],
+                      "run_at": "document_start",
+                      "all_frames": True,
+                      "match_about_blank": False
+                  }
+              ]
+          }
 
-          pb_bg = pb_manifest.setdefault("background", {})
-          if "page" in pb_bg:
-              pb_page_path = os.path.join(pb_dir, pb_bg["page"].lstrip("/"))
-              if os.path.exists(pb_page_path):
-                  with open(pb_page_path, "r", encoding="utf-8") as pf:
-                      html = pf.read()
-                  tag = '<script src="/battv_pb_init.js"></script>'
-                  if tag not in html:
-                      html = html.replace("</body>", tag + "\n</body>") if "</body>" in html else (html + "\n" + tag)
-                      with open(pb_page_path, "w", encoding="utf-8") as pf:
-                          pf.write(html)
-          else:
-              pb_scripts = pb_bg.setdefault("scripts", [])
-              if "battv_pb_init.js" not in pb_scripts:
-                  pb_scripts.insert(0, "battv_pb_init.js")
+          with open(os.path.join(SHIELD_DIR, "manifest.json"), "w", encoding="utf-8") as mf:
+              json.dump(manifest, mf, indent=2, ensure_ascii=False)
 
-          with open(pb_manifest_path, "w", encoding="utf-8") as mf:
-              json.dump(pb_manifest, mf, indent=2, ensure_ascii=False)
-
-          # 2. Optimizar uBlock Origin para Android TV (evita que los 35 MB de listas de escritorio
-          #    bloqueen la carga de páginas y agoten la RAM del televisor causando cierres)
-          ub_dir = os.path.join(EXT_BASE, "ublock_origin")
-          ub_manifest_path = os.path.join(ub_dir, "manifest.json")
-
-          tv_optimized_ublock_filters = """! Title: uBlock Origin TV High-Speed Filters (Battv.2)
-          ||vidoomy.com^$all
-          ||viwom.com^$all
-          ||wortise.com^$all
-          ||aniview.com^$all
-          ||primis.tech^$all
-          ||adinplay.com^$all
-          ||brid.tv^$all
-          ||exoclick.com^$all
-          ||magsrv.com^$all
-          ||realsrv.com^$all
-          ||adsterra.com^$all
-          ||monetag.com^$all
-          ||acscdn.com^$all
-          ||onclickads.net^$all
-          ||popads.net^$all
-          ||popcash.net^$all
-          ||propellerads.com^$all
-          ||hilltopads.net^$all
-          ||galaksion.com^$all
-          ||clickadu.com^$all
-          ||juicyads.com^$all
-          ||bidgear.com^$all
-          ||optad360.io^$all
-          ||teads.tv^$all
-          ||tsyndicate.com^$all
-          ||trafficjunky.net^$all
-          ||trafficstars.com^$all
-          ||rollerads.com^$all
-          ||evadav.com^$all
-          ||richads.com^$all
-          ||admaven.com^$all
-          ||adcash.com^$all
-          ||pushground.com^$all
-          ||yllix.com^$all
-          ||plugrush.com^$all
-          ||adspyglass.com^$all
-          ||clksite.com^$all
-          ||clkmon.com^$all
-          ||betteradsystem.com^$all
-          ||doubleclick.net^$third-party
-          ||googlesyndication.com^$third-party
-          ||googleadservices.com^$third-party
-          ||taboola.com^$all
-          ||outbrain.com^$all
-          ||mgid.com^$all
-          ||revcontent.com^$all
-          ||criteo.com^$all
-          ||pubmatic.com^$all
-          ||rubiconproject.com^$all
-          ||openx.net^$all
-          ||smartadserver.com^$all
-          ||1xbet.com^$all
-          ||bet365.com^$all
-          ||mostbet.com^$all
-          ||caliente.mx^$all
-          ||blurtsbrerd.com^$all
-          ||capsidsflyleaf.com^$all
-          ||skypipevatican.com^$all
-          ||21wiz.com^$all
-          ||aarems.org^$all
-          /popunder$script,subdocument
-          /tabunder$script,subdocument
-          /clickunder$script,subdocument
-          /apu.php$script,subdocument
-          /afu.php$script,subdocument
-          *##div[id*="vidoomy"]
-          *##div[class*="vidoomy"]
-          *##div[id*="viwom"]
-          *##div[class*="viwom"]
-          *##div[id*="aniview"]
-          *##div[class*="aniview"]
-          *##iframe[src*="vidoomy"]
-          *##iframe[src*="viwom"]
-          *##iframe[src*="exoclick"]
-          *##iframe[src*="adsterra"]
-          """
-
-          # Reemplazar los archivos .txt gigantes de uBlock por la lista optimizada de TV
-          # (conservando intacto assets/resources/scriptlets.js y assets.json)
-          ub_assets_dir = os.path.join(ub_dir, "assets")
-          wrote_primary = False
-          for root_d, _, files in os.walk(ub_assets_dir):
-              for file_n in files:
-                  if file_n.endswith(".txt") or file_n == "serverlist":
-                      full_p = os.path.join(root_d, file_n)
-                      if not wrote_primary and ("filters" in file_n or "easylist" in file_n):
-                          with open(full_p, "w", encoding="utf-8") as f_out:
-                              f_out.write(tv_optimized_ublock_filters.strip() + "\n")
-                          wrote_primary = True
-                      else:
-                          with open(full_p, "w", encoding="utf-8") as f_out:
-                              f_out.write("! Lista compactada para Android TV\n" + tv_optimized_ublock_filters.strip() + "\n")
-
-          # Desactivar suspendUntilListsAreLoaded y autoUpdate en uBlock Origin para que nunca congele la carga de páginas
-          with open(os.path.join(ub_dir, "battv_ub_fast.js"), "w", encoding="utf-8") as ubf:
-              ubf.write("""(function () {
-            try {
-              if (typeof browser !== "undefined" && browser.storage && browser.storage.local) {
-                browser.storage.local.set({
-                  "autoUpdate": false,
-                  "suspendUntilListsAreLoaded": false,
-                  "parseAllABPHideFilters": false,
-                  "ignoreGenericCosmeticFilters": true
-                });
-              }
-            } catch (_) {}
-          })();\n""")
-
-          with open(ub_manifest_path, "r", encoding="utf-8") as mf:
-              ub_manifest = json.load(mf)
-          ub_bg = ub_manifest.setdefault("background", {})
-          if "page" in ub_bg:
-              ub_page_path = os.path.join(ub_dir, ub_bg["page"].lstrip("/"))
-              if os.path.exists(ub_page_path):
-                  with open(ub_page_path, "r", encoding="utf-8") as pf:
-                      html = pf.read()
-                  tag = '<script src="/battv_ub_fast.js"></script>'
-                  if tag not in html:
-                      html = html.replace("<script", tag + "\n<script", 1) if "<script" in html else (tag + "\n" + html)
-                      with open(ub_page_path, "w", encoding="utf-8") as pf:
-                          pf.write(html)
-          else:
-              ub_scripts = ub_bg.setdefault("scripts", [])
-              if "battv_ub_fast.js" not in ub_scripts:
-                  ub_scripts.insert(0, "battv_ub_fast.js")
-
-          with open(ub_manifest_path, "w", encoding="utf-8") as mf:
-              json.dump(ub_manifest, mf, indent=2, ensure_ascii=False)
-
-          # 3. Integrar «Saltarse Todos los Enlaces Acortados» y el asistente ligero en Violentmonkey
-          vm_dir = os.path.join(EXT_BASE, "violentmonkey")
-          vm_manifest_path = os.path.join(vm_dir, "manifest.json")
-
-          shortlink_userscript = r'''// ==UserScript==
-          // @name         Saltarse Todos los Enlaces Acortados
-          // @namespace    battv.shortlinks.bypass
-          // @version      2.5.0
-          // @description  Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.
-          // @author       BatTV
-          // @run-at       document-start
-          // @match        *://*/*
-          // @grant        none
-          // ==/UserScript==
-
-          (function () {
+          # 2. Interceptor de Red en Segundo Plano (Cero consumo de RAM, bloqueo instantáneo)
+          background_js = r'''(function () {
             "use strict";
-            if (window.__battvShortlinkBypassActive) return;
-            window.__battvShortlinkBypassActive = true;
 
-            const SHORTENER_HOSTS = [
-              "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
-              "shrtfly.com", "shrinke.me", "shrinkme.io", "linkvertise.com",
-              "adfoc.us", "bc.vc", "shorte.st", "gestyy.com", "destyy.com",
-              "corneey.com", "clk.sh", "clk.asia", "oko.sh", "za.gl",
-              "cuty.io", "cety.app", "gplinks.co", "droplink.co", "tnshort.net",
-              "rekonise.com", "sub2unlock.com", "boost.ink", "mboost.me",
-              "embedshortener.co", "short-jambo.com", "uii.io", "mitly.us"
+            const BLOCKED_AD_DOMAINS = [
+              "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
+              "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
+              "googleadservices.com", "popads.net", "popcash.net", "propellerads.com",
+              "exoclick.com", "magsrv.com", "realsrv.com", "juicyads.com", "adsterra.com",
+              "monetag.com", "acscdn.com", "onclickads.net", "hilltopads.net",
+              "galaksion.com", "clickadu.com", "adcash.com", "richads.com", "admaven.com",
+              "bidgear.com", "trafficjunky.net", "trafficstars.com", "tsyndicate.com",
+              "rollerads.com", "evadav.com", "optad360.io", "teads.tv", "taboola.com",
+              "outbrain.com", "mgid.com", "revcontent.com", "criteo.com", "pubmatic.com",
+              "rubiconproject.com", "openx.net", "smartadserver.com", "1xbet.com",
+              "bet365.com", "mostbet.com", "caliente.mx", "pushground.com", "yllix.com",
+              "plugrush.com", "adspyglass.com", "clksite.com", "clkmon.com",
+              "betteradsystem.com", "blurtsbrerd.com", "capsidsflyleaf.com",
+              "skypipevatican.com", "21wiz.com", "aarems.org", "twinrdsyn.com",
+              "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk"
             ];
 
-            function tryDecodeBase64Url(str) {
-              try {
-                const clean = decodeURIComponent(str).trim().replace(/-/g, "+").replace(/_/g, "/");
-                const decoded = atob(clean).trim();
-                if (/^https?:\/\/[^\s"']+$/i.test(decoded)) return decoded;
-              } catch (_) {}
-              return null;
+            const BLOCKED_URL_PATTERNS = [
+              "/popunder", "/tabunder", "/clickunder", "/apu.php", "/afu.php",
+              "utm_source=pop", "ad_type=pop", "zoneid=", "directlink",
+              "reclama-tu", "felicitaciones", "phone-cleaner", "virus-scan"
+            ];
+
+            if (typeof browser !== "undefined" && browser.webRequest && browser.webRequest.onBeforeRequest) {
+              browser.webRequest.onBeforeRequest.addListener(
+                function (details) {
+                  try {
+                    const rawUrl = details.url || "";
+                    const lowerUrl = rawUrl.toLowerCase();
+                    const parsed = new URL(rawUrl);
+                    const host = parsed.hostname.toLowerCase();
+
+                    // Desacortar automáticamente embedshortener.co/e/<jwt> en iframes de episodios
+                    if (host.includes("embedshortener.co") && parsed.pathname.startsWith("/e/")) {
+                      const token = parsed.pathname.slice(3).split(".")[1];
+                      if (token) {
+                        const payload = JSON.parse(atob(token.replace(/-/g, "+").replace(/_/g, "/")));
+                        if (payload && payload.link) {
+                          const decodedUrl = atob(payload.link).trim();
+                          if (/^https?:\/\//i.test(decodedUrl)) {
+                            return { redirectUrl: decodedUrl };
+                          }
+                        }
+                      }
+                    }
+
+                    for (let i = 0; i < BLOCKED_AD_DOMAINS.length; i++) {
+                      const d = BLOCKED_AD_DOMAINS[i];
+                      if (host === d || host.endsWith("." + d)) {
+                        return { cancel: true };
+                      }
+                    }
+
+                    for (let j = 0; j < BLOCKED_URL_PATTERNS.length; j++) {
+                      if (lowerUrl.includes(BLOCKED_URL_PATTERNS[j])) {
+                        return { cancel: true };
+                      }
+                    }
+                  } catch (_) {}
+                  return {};
+                },
+                { urls: ["<all_urls>"] },
+                ["blocking"]
+              );
             }
 
-            function checkDirectRedirectParams() {
+            if (typeof browser !== "undefined" && browser.tabs && browser.tabs.onCreated) {
+              browser.tabs.onCreated.addListener(function (tab) {
+                if (tab && tab.openerTabId !== undefined && tab.id !== undefined) {
+                  browser.tabs.remove(tab.id).catch(function () {});
+                }
+              });
+            }
+          })();
+          '''
+
+          with open(os.path.join(SHIELD_DIR, "background.js"), "w", encoding="utf-8") as bf:
+              bf.write(background_js.strip() + "\n")
+
+          # 3. Script de Contenido Inteligente:
+          #    - En sitios de directos limpios (Chaturbate, Twitch, Kick, YouTube): 0% escaneo de anuncios,
+          #      100% dedicado a fluidez de vídeo y búfer en directo sin cortes.
+          #    - En sitios de series/películas (DramaChino, Doramasflix, JKAnime, HDFull, etc.):
+          #      bloqueo agresivo de popups, capas invisibles de clickjacking, anuncios flotantes y acortadores.
+          content_start_js = r'''(function () {
+            "use strict";
+            if (window.__battvNativeShieldActive) return;
+            window.__battvNativeShieldActive = true;
+
+            const isTopFrame = (window === window.top);
+            const currentHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
+
+            // Detectar si estamos en una plataforma de directos limpia (ej. Chaturbate, Twitch, Kick, YouTube)
+            const CLEAN_LIVESTREAM_SITES = ["chaturbate.com", "twitch.tv", "kick.com", "youtube.com"];
+            const isCleanLiveStreamSite = CLEAN_LIVESTREAM_SITES.some(function (d) {
+              return currentHost === d || currentHost.endsWith("." + d);
+            });
+
+            // 1. Salto automático de acortadores compatibles («Saltarse Todos los Enlaces Acortados»)
+            if (isTopFrame && !isCleanLiveStreamSite) {
+              const SHORTENER_HOSTS = [
+                "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
+                "shrtfly.com", "shrinke.me", "shrinkme.io", "linkvertise.com",
+                "adfoc.us", "bc.vc", "shorte.st", "gestyy.com", "destyy.com",
+                "corneey.com", "clk.sh", "clk.asia", "oko.sh", "za.gl",
+                "cuty.io", "cety.app", "gplinks.co", "droplink.co", "tnshort.net",
+                "rekonise.com", "sub2unlock.com", "boost.ink", "mboost.me",
+                "embedshortener.co", "short-jambo.com", "uii.io", "mitly.us"
+              ];
+
+              function tryDecodeBase64Url(str) {
+                try {
+                  const clean = decodeURIComponent(str).trim().replace(/-/g, "+").replace(/_/g, "/");
+                  const decoded = atob(clean).trim();
+                  if (/^https?:\/\/[^\s"']+$/i.test(decoded)) return decoded;
+                } catch (_) {}
+                return null;
+              }
+
               try {
                 const loc = window.location;
-                const host = loc.hostname.toLowerCase();
-
-                if (host.includes("embedshortener.co") && loc.pathname.startsWith("/e/")) {
+                if (currentHost.includes("embedshortener.co") && loc.pathname.startsWith("/e/")) {
                   const parts = loc.pathname.slice(3).split(".");
                   if (parts.length > 1) {
                     const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
@@ -350,152 +222,101 @@ jobs:
                       const target = tryDecodeBase64Url(payload.link);
                       if (target) {
                         loc.replace(target);
-                        return true;
+                        return;
                       }
                     }
                   }
                 }
 
-                const isKnownShortener = SHORTENER_HOSTS.some(function (d) {
-                  return host === d || host.endsWith("." + d);
+                const isShortener = SHORTENER_HOSTS.some(function (d) {
+                  return currentHost === d || currentHost.endsWith("." + d);
                 });
-                if (!isKnownShortener) return false;
-
-                const params = new URLSearchParams(loc.search);
-                const candidateKeys = ["url", "dest", "destination", "go", "link", "target", "out", "redirect", "r", "u"];
-                for (let i = 0; i < candidateKeys.length; i++) {
-                  const val = params.get(candidateKeys[i]);
-                  if (!val) continue;
-                  if (/^https?:\/\//i.test(val)) {
-                    loc.replace(val);
-                    return true;
-                  }
-                  const b64 = tryDecodeBase64Url(val);
-                  if (b64) {
-                    loc.replace(b64);
-                    return true;
-                  }
-                }
-              } catch (_) {}
-              return false;
-            }
-
-            if (checkDirectRedirectParams()) return;
-
-            function accelerateAndClickShortener() {
-              try {
-                const host = window.location.hostname.toLowerCase();
-                const isKnownShortener = SHORTENER_HOSTS.some(function (d) {
-                  return host === d || host.endsWith("." + d);
-                });
-                if (!isKnownShortener) return;
-
-                const selectors = [
-                  "a#btn-main.btn", "button#btn-main", "#invisibleCaptchaShortlink",
-                  "a.get-link", "button.get-link", "#yuidea-btn", "#btn6",
-                  "a[href*='https://'][class*='btn']", "form#go-link button[type='submit']"
-                ];
-                for (let i = 0; i < selectors.length; i++) {
-                  const el = document.querySelector(selectors[i]);
-                  if (el && !el.disabled) {
-                    const href = el.getAttribute("href");
-                    if (href && /^https?:\/\//i.test(href) && !href.includes(host)) {
-                      window.location.replace(href);
+                if (isShortener) {
+                  const params = new URLSearchParams(loc.search);
+                  const keys = ["url", "dest", "destination", "go", "link", "target", "out", "redirect", "r", "u"];
+                  for (let i = 0; i < keys.length; i++) {
+                    const val = params.get(keys[i]);
+                    if (!val) continue;
+                    if (/^https?:\/\//i.test(val)) {
+                      loc.replace(val);
                       return;
                     }
-                    el.click();
+                    const b64 = tryDecodeBase64Url(val);
+                    if (b64) {
+                      loc.replace(b64);
+                      return;
+                    }
                   }
+                  document.addEventListener("DOMContentLoaded", function () {
+                    const selectors = [
+                      "a#btn-main.btn", "button#btn-main", "#invisibleCaptchaShortlink",
+                      "a.get-link", "button.get-link", "#yuidea-btn", "#btn6",
+                      "form#go-link button[type='submit']"
+                    ];
+                    for (let i = 0; i < selectors.length; i++) {
+                      const el = document.querySelector(selectors[i]);
+                      if (el && !el.disabled) {
+                        const href = el.getAttribute("href");
+                        if (href && /^https?:\/\//i.test(href) && !href.includes(currentHost)) {
+                          loc.replace(href);
+                          return;
+                        }
+                        el.click();
+                      }
+                    }
+                  });
                 }
               } catch (_) {}
             }
 
-            document.addEventListener("DOMContentLoaded", function () {
-              accelerateAndClickShortener();
-              setTimeout(accelerateAndClickShortener, 1200);
-            });
-          })();
-          '''
+            // 2. Escudo Anti-Popup / Anti-Scam en el Main World para sitios de streaming con publicidad
+            if (!isCleanLiveStreamSite) {
+              const injectAntiPopupMainWorld = function () {
+                try {
+                  const s = document.createElement("script");
+                  s.textContent = `(function(){
+                    try {
+                      const dummyWin = {
+                        closed: false,
+                        focus: function(){},
+                        blur: function(){},
+                        close: function(){},
+                        postMessage: function(){},
+                        location: { href: "about:blank", assign: function(){}, replace: function(){} }
+                      };
+                      Object.defineProperty(window, "open", {
+                        value: function(url) {
+                          if (url && typeof url === "string" && url.startsWith(location.origin)) {
+                            location.href = url;
+                          }
+                          return dummyWin;
+                        },
+                        writable: false,
+                        configurable: false
+                      });
+                      if ("Notification" in window) {
+                        Object.defineProperty(window.Notification, "requestPermission", {
+                          value: function() { return Promise.resolve("denied"); },
+                          writable: false,
+                          configurable: false
+                        });
+                      }
+                      window.alert = function() {};
+                    } catch(_) {}
+                  })();`;
+                  (document.head || document.documentElement).appendChild(s);
+                  s.remove();
+                } catch (_) {}
+              };
 
-          with open(os.path.join(vm_dir, "saltarse_enlaces_acortados.user.js"), "w", encoding="utf-8") as sf:
-              sf.write(shortlink_userscript.strip() + "\n")
-
-          preload_bg_js = r'''(function () {
-            "use strict";
-            const SEED_KEY = "battv_shortlink_script_seeded_v7";
-            const SCRIPT_CODE = `''' + shortlink_userscript.strip().replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$") + r'''`;
-
-            async function seedShortlinkScript() {
-              try {
-                if (typeof browser === "undefined" || !browser.storage || !browser.storage.local) return;
-                const data = await browser.storage.local.get([SEED_KEY, "Ids"]);
-                if (data && data[SEED_KEY]) return;
-
-                const now = Date.now();
-                const ids = Array.isArray(data.Ids) ? data.Ids : [];
-                const scriptId = 1;
-                if (!ids.includes(scriptId)) {
-                  ids.push(scriptId);
-                }
-
-                const scriptObj = {
-                  meta: {
-                    name: "Saltarse Todos los Enlaces Acortados",
-                    namespace: "battv.shortlinks.bypass",
-                    version: "2.5.0",
-                    description: "Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.",
-                    author: "BatTV",
-                    runAt: "document-start",
-                    match: ["*://*/*"],
-                    include: [],
-                    exclude: [],
-                    excludeMatch: [],
-                    grant: ["none"],
-                    resources: {}
-                  },
-                  custom: {
-                    origInclude: true,
-                    origExclude: true,
-                    origMatch: true,
-                    origExcludeMatch: true
-                  },
-                  props: {
-                    id: scriptId,
-                    position: 1,
-                    lastModified: now,
-                    lastUpdated: now,
-                    uri: "battv.shortlinks.bypass/Saltarse_Todos_los_Enlaces_Acortados"
-                  },
-                  config: {
-                    enabled: 1,
-                    shouldUpdate: 0,
-                    notifyUpdates: 0
-                  }
-                };
-
-                const payload = {};
-                payload[SEED_KEY] = true;
-                payload["Ids"] = ids;
-                payload["script:" + scriptId] = scriptObj;
-                payload["code:" + scriptId] = SCRIPT_CODE;
-                payload["val:" + scriptId] = {};
-
-                await browser.storage.local.set(payload);
-              } catch (_) {}
+              if (document.documentElement) {
+                injectAntiPopupMainWorld();
+              } else {
+                document.addEventListener("DOMContentLoaded", injectAntiPopupMainWorld, { once: true });
+              }
             }
 
-            seedShortlinkScript();
-          })();
-          '''
-
-          with open(os.path.join(vm_dir, "preload_shortlinks.js"), "w", encoding="utf-8") as pf:
-              pf.write(preload_bg_js.strip() + "\n")
-
-          battv_tv_helper_js = r'''(function () {
-            "use strict";
-            if (window.__battvTvHelperLoaded) return;
-            window.__battvTvHelperLoaded = true;
-
-            const isTopFrame = (window === window.top);
+            // 3. Conexión bajo demanda con MainActivity (puente nativo TV)
             let port = null;
             let activeInputEl = null;
             let inputCounter = 1;
@@ -525,13 +346,14 @@ jobs:
               } catch (_) {}
             }
 
-            function injectFastTvStyles() {
+            // 4. Estilos CSS de aceleración GPU, bloqueo visual de banners flotantes y pantalla completa
+            function injectTvStyles() {
               try {
                 const styleId = "__battv_fullscreen_css";
                 if (document.getElementById(styleId)) return;
                 const style = document.createElement("style");
                 style.id = styleId;
-                style.textContent = `
+                const adHideCss = isCleanLiveStreamSite ? "" : `
                   [id*="vidoomy" i], [class*="vidoomy" i],
                   [id*="viwom" i], [class*="viwom" i],
                   [id*="aniview" i], [class*="aniview" i],
@@ -550,6 +372,8 @@ jobs:
                     width: 0 !important;
                     height: 0 !important;
                   }
+                `;
+                style.textContent = adHideCss + `
                   html.__battv_lock_scroll,
                   html.__battv_lock_scroll body {
                     overflow: hidden !important;
@@ -598,6 +422,43 @@ jobs:
                   }
                 `;
                 (document.head || document.documentElement).appendChild(style);
+              } catch (_) {}
+            }
+
+            // Limpieza puntual al cargar o hacer clic en páginas de series (elimina carteles falsos como "Atención: Haz clic en Más")
+            function cleanAdTrapsOnce() {
+              if (isCleanLiveStreamSite) return;
+              try {
+                const links = document.querySelectorAll('a[target="_blank"]');
+                for (let i = 0; i < links.length; i++) {
+                  const a = links[i];
+                  const href = (a.getAttribute("href") || "").trim();
+                  if (!href || href === "#" || href.startsWith("javascript:")) {
+                    a.remove();
+                    continue;
+                  }
+                  try {
+                    const dest = new URL(href, location.href);
+                    const dstHost = dest.hostname.toLowerCase().replace(/^www\./, "");
+                    if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
+                      a.remove();
+                      continue;
+                    }
+                    a.setAttribute("target", "_self");
+                  } catch (_) {}
+                }
+
+                if (isTopFrame) {
+                  const divs = document.querySelectorAll("div, section, aside");
+                  for (let j = 0; j < divs.length; j++) {
+                    const el = divs[j];
+                    const txt = (el.innerText || "").trim();
+                    if (txt.length > 0 && txt.length < 160 &&
+                        txt.includes("Haz clic en") && (txt.includes("continuar") || txt.includes("Atenci"))) {
+                      el.remove();
+                    }
+                  }
+                }
               } catch (_) {}
             }
 
@@ -661,42 +522,63 @@ jobs:
             document.addEventListener("fullscreenchange", onDomFullscreenChanged, true);
             document.addEventListener("mozfullscreenchange", onDomFullscreenChanged, true);
 
+            // 5. Motor de Fluidez Tipo YouTube para Directos (Chaturbate, Twitch) y Series VOD
             function isLiveOrLongContentVideo(v) {
               if (!v) return false;
               const rect = v.getBoundingClientRect();
               if (rect.width < 180 || rect.height < 100) return false;
               const dur = v.duration;
               if (!Number.isFinite(dur) || dur <= 0) {
-                return v.readyState >= 2 || v.currentTime > 0.2;
+                return v.readyState >= 2 || v.currentTime > 0.1;
               }
               return dur >= 90;
             }
 
-            function attachLiveStreamStabilizer(v) {
+            function attachYouTubeGradeStreamStabilizer(v) {
               if (!v || watchedVideosSet.has(v)) return;
               watchedVideosSet.add(v);
               ensureBridgeConnected();
 
-              const recoverIfStalled = function () {
+              try {
+                v.preload = "auto";
+                v.playsInline = true;
+              } catch (_) {}
+
+              const recoverLiveStream = function () {
                 try {
                   if (Date.now() < userPausedManuallyUntil) return;
-                  const isLive = !Number.isFinite(v.duration) || v.duration > 36000;
+                  const isLive = !Number.isFinite(v.duration) || v.duration <= 0 || v.duration > 36000;
                   if (!isLive) return;
                   if (v.paused && !v.ended) {
                     v.play().catch(function () {});
                   }
                   if (v.buffered && v.buffered.length > 0) {
                     const liveEdge = v.buffered.end(v.buffered.length - 1);
-                    if (liveEdge - v.currentTime > 6.5) {
-                      v.currentTime = Math.max(0, liveEdge - 1.2);
+                    const lag = liveEdge - v.currentTime;
+                    if (lag > 5.0) {
+                      v.currentTime = Math.max(0, liveEdge - 1.0);
+                    } else if (lag > 2.2 && v.playbackRate === 1.0) {
+                      v.playbackRate = 1.04;
+                    } else if (lag <= 1.2 && v.playbackRate !== 1.0) {
+                      v.playbackRate = 1.0;
                     }
                   }
                 } catch (_) {}
               };
 
-              v.addEventListener("stalled", recoverIfStalled);
+              v.addEventListener("stalled", recoverLiveStream);
               v.addEventListener("waiting", function () {
-                setTimeout(recoverIfStalled, 1500);
+                setTimeout(recoverLiveStream, 1100);
+              });
+              v.addEventListener("pause", function () {
+                const isLive = !Number.isFinite(v.duration) || v.duration <= 0 || v.duration > 36000;
+                if (isLive && Date.now() >= userPausedManuallyUntil && !v.ended) {
+                  setTimeout(function () {
+                    if (v.paused && Date.now() >= userPausedManuallyUntil) {
+                      v.play().catch(function () {});
+                    }
+                  }, 450);
+                }
               });
             }
 
@@ -708,7 +590,7 @@ jobs:
               for (let i = 0; i < all.length; i++) {
                 const v = all[i];
                 if (!isLiveOrLongContentVideo(v)) continue;
-                attachLiveStreamStabilizer(v);
+                attachYouTubeGradeStreamStabilizer(v);
                 const r = v.getBoundingClientRect();
                 const score = (r.width * r.height) + (v.paused ? 0 : 500000);
                 if (score > bestScore) {
@@ -751,7 +633,7 @@ jobs:
 
             function enterFullscreenInCurrentFrame() {
               try {
-                injectFastTvStyles();
+                injectTvStyles();
                 enableIframeFullscreenAttrs();
 
                 const v = findActiveVideo();
@@ -886,27 +768,8 @@ jobs:
 
             document.addEventListener("click", function (e) {
               enableIframeFullscreenAttrs();
-
-              const a = e.target && e.target.closest ? e.target.closest("a") : null;
-              if (a && (a.getAttribute("target") || "").toLowerCase() === "_blank") {
-                const href = (a.getAttribute("href") || "").trim();
-                if (!href || href === "#" || href.startsWith("javascript:")) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  return;
-                }
-                try {
-                  const dest = new URL(href, location.href);
-                  const curHost = location.hostname.replace(/^www\./i, "");
-                  const dstHost = dest.hostname.replace(/^www\./i, "");
-                  if (dstHost !== curHost && !dstHost.endsWith("." + curHost)) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    a.remove();
-                    return;
-                  }
-                  a.setAttribute("target", "_self");
-                } catch (_) {}
+              if (!isCleanLiveStreamSite) {
+                cleanAdTrapsOnce();
               }
 
               if (isPlayerFullscreenButton(e.target)) {
@@ -1001,10 +864,9 @@ jobs:
                   });
                 }
               } catch (_) {}
-            }, 1300);
+            }, 1200);
 
             if (isTopFrame) {
-              ensureBridgeConnected();
               function extractMediaMetadata() {
                 try {
                   const h1 = document.querySelector("h1, .Title, .entry-title, .episodiotitle, .anime-title");
@@ -1021,7 +883,13 @@ jobs:
                   }
                 } catch (_) {}
               }
-              window.addEventListener("load", extractMediaMetadata);
+              window.addEventListener("load", function () {
+                ensureBridgeConnected();
+                extractMediaMetadata();
+                if (!isCleanLiveStreamSite) {
+                  cleanAdTrapsOnce();
+                }
+              });
             }
 
             function handleNativeMessage(msg) {
@@ -1077,65 +945,24 @@ jobs:
               }
             }
 
-            injectFastTvStyles();
-            enableIframeFullscreenAttrs();
-            window.addEventListener("load", enableIframeFullscreenAttrs);
+            if (document.readyState === "loading") {
+              document.addEventListener("DOMContentLoaded", function () {
+                injectTvStyles();
+                enableIframeFullscreenAttrs();
+                if (!isCleanLiveStreamSite) cleanAdTrapsOnce();
+              });
+            } else {
+              injectTvStyles();
+              enableIframeFullscreenAttrs();
+              if (!isCleanLiveStreamSite) cleanAdTrapsOnce();
+            }
           })();
           '''
 
-          with open(os.path.join(vm_dir, "battv_tv_helper.js"), "w", encoding="utf-8") as hf:
-              hf.write(battv_tv_helper_js.strip() + "\n")
+          with open(os.path.join(SHIELD_DIR, "content_start.js"), "w", encoding="utf-8") as cf:
+              cf.write(content_start_js.strip() + "\n")
 
-          with open(vm_manifest_path, "r", encoding="utf-8") as mf:
-              vm_manifest = json.load(mf)
-
-          perms = vm_manifest.setdefault("permissions", [])
-          for p in ["<all_urls>", "storage", "nativeMessaging", "nativeMessagingFromContent", "geckoViewAddons"]:
-              if p not in perms:
-                  perms.append(p)
-
-          bg = vm_manifest.setdefault("background", {})
-          if "page" in bg:
-              bg_page_path = os.path.join(vm_dir, bg["page"].lstrip("/"))
-              if os.path.exists(bg_page_path):
-                  with open(bg_page_path, "r", encoding="utf-8") as bf:
-                      html = bf.read()
-                  script_tag = '<script src="/preload_shortlinks.js"></script>'
-                  if script_tag not in html:
-                      if "</body>" in html:
-                          html = html.replace("</body>", script_tag + "\n</body>")
-                      else:
-                          html += "\n" + script_tag
-                      with open(bg_page_path, "w", encoding="utf-8") as bf:
-                          bf.write(html)
-          else:
-              bg_scripts = bg.setdefault("scripts", [])
-              if "preload_shortlinks.js" not in bg_scripts:
-                  bg_scripts.append("preload_shortlinks.js")
-
-          cs_list = vm_manifest.setdefault("content_scripts", [])
-          cs_list.append({
-              "matches": ["<all_urls>"],
-              "js": ["saltarse_enlaces_acortados.user.js"],
-              "run_at": "document_start",
-              "all_frames": False,
-              "match_about_blank": False
-          })
-          cs_list.append({
-              "matches": ["<all_urls>"],
-              "js": ["battv_tv_helper.js"],
-              "run_at": "document_end",
-              "all_frames": True,
-              "match_about_blank": False
-          })
-
-          with open(vm_manifest_path, "w", encoding="utf-8") as mf:
-              json.dump(vm_manifest, mf, indent=2, ensure_ascii=False)
-
-          installed_folders = sorted(os.listdir(EXT_BASE))
-          print("Extensiones preparadas en assets/extensions:", installed_folders)
-          assert installed_folders == ["popup_blocker", "ublock_origin", "violentmonkey"], \
-              f"Error: se encontraron carpetas distintas a las 3 permitidas: {installed_folders}"
+          print("Motor nativo creado en assets/extensions:", os.listdir(EXT_BASE))
           EOF
 
       - name: Instalar Gradle 8.5
@@ -1153,10 +980,10 @@ jobs:
         working-directory: android-geckoview
         run: gradle assembleRelease --no-daemon --no-build-cache --stacktrace
 
-      - name: Verificar APK generado y comprobar tamano
+      - name: Verificar APK generado y mostrar tamano final
         run: |
           ls -lh android-geckoview/app/build/outputs/apk/release/*.apk
-          unzip -l android-geckoview/app/build/outputs/apk/release/*.apk | grep "_locales" | head -n 15
+          du -h android-geckoview/app/build/outputs/apk/release/*.apk
 
       - name: Subir APK generado
         uses: actions/upload-artifact@v4
