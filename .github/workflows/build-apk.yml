@@ -38,7 +38,6 @@ jobs:
       - name: Preparar las 3 extensiones oficiales (Pop-ups Blocker, uBlock Origin, Violentmonkey)
         run: |
           python3 - << 'EOF'
-          import glob
           import json
           import os
           import shutil
@@ -97,6 +96,15 @@ jobs:
                       if os.path.isdir(loc_path) and loc not in KEEP_LOCALES:
                           shutil.rmtree(loc_path)
 
+              # Eliminar mapas de código o documentación innecesaria para reducir tamaño del APK
+              for root_d, _, files in os.walk(dest_dir):
+                  for file_n in files:
+                      if file_n.endswith(".map") or file_n in ("LICENSE.txt", "README.md"):
+                          try:
+                              os.remove(os.path.join(root_d, file_n))
+                          except Exception:
+                              pass
+
               manifest_path = os.path.join(dest_dir, "manifest.json")
               with open(manifest_path, "r", encoding="utf-8") as mf:
                   manifest = json.load(mf)
@@ -112,7 +120,7 @@ jobs:
               with open(manifest_path, "w", encoding="utf-8") as mf:
                   json.dump(manifest, mf, indent=2, ensure_ascii=False)
 
-          # 1. Preconfigurar Pop-ups Blocker (strict) en modo estricto desde el primer arranque
+          # 1. Preconfigurar Pop-ups Blocker (strict) activo desde el primer inicio
           pb_dir = os.path.join(EXT_BASE, "popup_blocker")
           pb_manifest_path = os.path.join(pb_dir, "manifest.json")
           with open(pb_manifest_path, "r", encoding="utf-8") as mf:
@@ -122,14 +130,16 @@ jobs:
               pbf.write("""(function () {
             try {
               if (typeof browser !== "undefined" && browser.storage && browser.storage.local) {
-                browser.storage.local.set({
-                  battv_pb_ready: true,
-                  enabled: true,
-                  immediate: true,
-                  aggressive: true,
-                  badge: false,
-                  "popup-hosts": [],
-                  "block-page-redirection": true
+                browser.storage.local.get("battv_pb_ready").then(function (res) {
+                  if (!res || !res.battv_pb_ready) {
+                    browser.storage.local.set({
+                      battv_pb_ready: true,
+                      enabled: true,
+                      immediate: true,
+                      aggressive: true,
+                      badge: false
+                    });
+                  }
                 });
               }
             } catch (_) {}
@@ -143,100 +153,25 @@ jobs:
                       html = pf.read()
                   tag = '<script src="/battv_pb_init.js"></script>'
                   if tag not in html:
-                      html = html.replace("<script", tag + "\n<script", 1) if "<script" in html else (tag + "\n" + html)
+                      html = html.replace("</body>", tag + "\n</body>") if "</body>" in html else (html + "\n" + tag)
                       with open(pb_page_path, "w", encoding="utf-8") as pf:
                           pf.write(html)
           else:
-              pb_scripts = pb_bg.setdefault("scripts", [])
+              pb_scripts = bg_scripts = pb_bg.setdefault("scripts", [])
               if "battv_pb_init.js" not in pb_scripts:
                   pb_scripts.insert(0, "battv_pb_init.js")
 
           with open(pb_manifest_path, "w", encoding="utf-8") as mf:
               json.dump(pb_manifest, mf, indent=2, ensure_ascii=False)
 
-          # 2. Configurar uBlock Origin con reglas anti-scam, anti-popunder y bloqueo de reproductores flotantes
-          ub_dir = os.path.join(EXT_BASE, "ublock_origin")
-          extra_ublock_rules = """
-          ! Reglas integradas Battv.2 para TV (Bloqueo de Vidoomy, Viwom, Adsterra, Exoclick, Monetag y Redirecciones Scam)
-          ||vidoomy.com^$all
-          ||viwom.com^$all
-          ||wortise.com^$all
-          ||aniview.com^$all
-          ||primis.tech^$all
-          ||adinplay.com^$all
-          ||brid.tv^$all
-          ||exoclick.com^$all
-          ||magsrv.com^$all
-          ||realsrv.com^$all
-          ||adsterra.com^$all
-          ||monetag.com^$all
-          ||acscdn.com^$all
-          ||onclickads.net^$all
-          ||popads.net^$all
-          ||popcash.net^$all
-          ||propellerads.com^$all
-          ||hilltopads.net^$all
-          ||galaksion.com^$all
-          ||clickadu.com^$all
-          ||juicyads.com^$all
-          ||bidgear.com^$all
-          ||optad360.io^$all
-          ||teads.tv^$all
-          ||tsyndicate.com^$all
-          ||trafficjunky.net^$all
-          ||trafficstars.com^$all
-          ||rollerads.com^$all
-          ||evadav.com^$all
-          ||richads.com^$all
-          ||admaven.com^$all
-          ||adcash.com^$all
-          ||pushground.com^$all
-          ||yllix.com^$all
-          ||plugrush.com^$all
-          ||adspyglass.com^$all
-          ||clksite.com^$all
-          ||clkmon.com^$all
-          ||betteradsystem.com^$all
-          ||1xbet.com^$all
-          ||bet365.com^$all
-          ||mostbet.com^$all
-          *##div[id*="vidoomy"]
-          *##div[class*="vidoomy"]
-          *##div[id*="viwom"]
-          *##div[class*="viwom"]
-          *##div[id*="aniview"]
-          *##div[class*="aniview"]
-          *##iframe[src*="vidoomy"]
-          *##iframe[src*="viwom"]
-          *##iframe[src*="exoclick"]
-          """
-          ub_filter_files = glob.glob(os.path.join(ub_dir, "assets", "ublock", "*.txt"))
-          for ff in ub_filter_files:
-              if "filters" in os.path.basename(ff) or "badware" in os.path.basename(ff) or "quick-fixes" in os.path.basename(ff):
-                  with open(ff, "a", encoding="utf-8") as ubf:
-                      ubf.write("\n" + extra_ublock_rules.strip() + "\n")
-
-          ub_assets_json = os.path.join(ub_dir, "assets", "assets.json")
-          if os.path.exists(ub_assets_json):
-              try:
-                  with open(ub_assets_json, "r", encoding="utf-8") as ajf:
-                      assets_data = json.load(ajf)
-                  for key in ["spa-0", "spa-1"]:
-                      if key in assets_data and isinstance(assets_data[key], dict):
-                          assets_data[key]["off"] = False
-                  with open(ub_assets_json, "w", encoding="utf-8") as ajf:
-                      json.dump(assets_data, ajf, indent=2, ensure_ascii=False)
-              except Exception as e:
-                  print("Aviso en assets.json:", e)
-
-          # 3. Integrar «Saltarse Todos los Enlaces Acortados» y el motor ligero de TV en Violentmonkey
+          # 2. Integrar «Saltarse Todos los Enlaces Acortados» y el ayudante ligero de TV en Violentmonkey
           vm_dir = os.path.join(EXT_BASE, "violentmonkey")
           vm_manifest_path = os.path.join(vm_dir, "manifest.json")
 
           shortlink_userscript = r'''// ==UserScript==
           // @name         Saltarse Todos los Enlaces Acortados
           // @namespace    battv.shortlinks.bypass
-          // @version      2.3.0
+          // @version      2.4.0
           // @description  Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.
           // @author       BatTV
           // @run-at       document-start
@@ -343,7 +278,6 @@ jobs:
             document.addEventListener("DOMContentLoaded", function () {
               accelerateAndClickShortener();
               setTimeout(accelerateAndClickShortener, 1200);
-              setTimeout(accelerateAndClickShortener, 2800);
             });
           })();
           '''
@@ -353,7 +287,7 @@ jobs:
 
           preload_bg_js = r'''(function () {
             "use strict";
-            const SEED_KEY = "battv_shortlink_script_seeded_v5";
+            const SEED_KEY = "battv_shortlink_script_seeded_v6";
             const SCRIPT_CODE = `''' + shortlink_userscript.strip().replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$") + r'''`;
 
             async function seedShortlinkScript() {
@@ -373,7 +307,7 @@ jobs:
                   meta: {
                     name: "Saltarse Todos los Enlaces Acortados",
                     namespace: "battv.shortlinks.bypass",
-                    version: "2.3.0",
+                    version: "2.4.0",
                     description: "Salta automaticamente enlaces acortados e intermedios compatibles sin esperas.",
                     author: "BatTV",
                     runAt: "document-start",
@@ -412,20 +346,6 @@ jobs:
                 payload["val:" + scriptId] = {};
 
                 await browser.storage.local.set(payload);
-
-                setTimeout(function () {
-                  try {
-                    browser.runtime.sendMessage({
-                      cmd: "ParseScript",
-                      data: {
-                        code: SCRIPT_CODE,
-                        url: "https://greasyfork.org/scripts/431691/code/bypass.user.js",
-                        from: "battv",
-                        config: { enabled: 1, shouldUpdate: 0 }
-                      }
-                    }).catch(function () {});
-                  } catch (_) {}
-                }, 1500);
               } catch (_) {}
             }
 
@@ -436,7 +356,6 @@ jobs:
           with open(os.path.join(vm_dir, "preload_shortlinks.js"), "w", encoding="utf-8") as pf:
               pf.write(preload_bg_js.strip() + "\n")
 
-          # Script ultra ligero para Android TV: CERO MutationObserver global y CERO getComputedStyle en bucle
           battv_tv_helper_js = r'''(function () {
             "use strict";
             if (window.__battvTvHelperLoaded) return;
@@ -451,72 +370,8 @@ jobs:
             let lastFullscreenPromptMs = 0;
             let userPausedManuallyUntil = 0;
 
-            // 1. Escudo en el Main World (costo cero de CPU): congela window.open, neutraliza
-            //    notificaciones falsas y bloquea enlaces trampa <a target="_blank"> sobre reproductores
-            try {
-              const mainWorldScript = document.createElement("script");
-              mainWorldScript.textContent = `(function(){
-                try {
-                  const dummyWin = {
-                    closed: false,
-                    focus: function(){},
-                    blur: function(){},
-                    close: function(){},
-                    postMessage: function(){},
-                    location: { href: "about:blank", assign: function(){}, replace: function(){} }
-                  };
-                  Object.defineProperty(window, "open", {
-                    value: function(url) {
-                      if (url && typeof url === "string" && url.startsWith(location.origin)) {
-                        location.href = url;
-                      }
-                      return dummyWin;
-                    },
-                    writable: false,
-                    configurable: false
-                  });
-                  if ("Notification" in window) {
-                    Object.defineProperty(window.Notification, "requestPermission", {
-                      value: function() { return Promise.resolve("denied"); },
-                      writable: false,
-                      configurable: false
-                    });
-                  }
-                  window.alert = function() {};
-                  window.confirm = function() { return true; };
-
-                  document.addEventListener("click", function(e) {
-                    const a = e.target && e.target.closest ? e.target.closest("a") : null;
-                    if (!a) return;
-                    const href = (a.getAttribute("href") || "").trim();
-                    const target = (a.getAttribute("target") || "").toLowerCase();
-                    if (target === "_blank") {
-                      if (!href || href === "#" || href.startsWith("javascript:")) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        return;
-                      }
-                      try {
-                        const dest = new URL(href, location.href);
-                        const curHost = location.hostname.replace(/^www\\./i, "");
-                        const dstHost = dest.hostname.replace(/^www\\./i, "");
-                        if (dstHost !== curHost && !dstHost.endsWith("." + curHost)) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          a.remove();
-                          return;
-                        }
-                        a.setAttribute("target", "_self");
-                      } catch (_) {}
-                    }
-                  }, true);
-                } catch(_) {}
-              })();`;
-              (document.head || document.documentElement).appendChild(mainWorldScript);
-              mainWorldScript.remove();
-            } catch (_) {}
-
-            function connectBridge() {
+            function ensureBridgeConnected() {
+              if (port) return port;
               try {
                 if (typeof browser !== "undefined" && browser.runtime && browser.runtime.connectNative) {
                   port = browser.runtime.connectNative("battv_bridge");
@@ -526,16 +381,17 @@ jobs:
                   });
                 }
               } catch (_) {}
+              return port;
             }
 
             function postToNative(obj) {
               try {
-                if (!port) connectBridge();
-                if (port) port.postMessage(obj);
+                const p = ensureBridgeConnected();
+                if (p) p.postMessage(obj);
               } catch (_) {}
             }
 
-            // 2. Bloqueo de anuncios flotantes y ajuste de pantalla completa mediante CSS puro (0% uso de CPU)
+            // 1. Estilos CSS ligeros para ocultar anuncios flotantes (Vidoomy/Viwom) y ajustar pantalla completa
             function injectFastTvStyles() {
               try {
                 const styleId = "__battv_fullscreen_css";
@@ -672,24 +528,22 @@ jobs:
             document.addEventListener("fullscreenchange", onDomFullscreenChanged, true);
             document.addEventListener("mozfullscreenchange", onDomFullscreenChanged, true);
 
-            // 3. Detección y estabilización tanto de vídeos VOD como de Directos en vivo (Chaturbate, Twitch, HLS)
+            // 2. Detección y estabilización de vídeos VOD y Directos en vivo (Chaturbate, Twitch, HLS)
             function isLiveOrLongContentVideo(v) {
               if (!v) return false;
               const rect = v.getBoundingClientRect();
               if (rect.width < 180 || rect.height < 100) return false;
               const dur = v.duration;
-              // Si es un directo en vivo (duration === Infinity o NaN pero ya tiene frames cargados)
               if (!Number.isFinite(dur) || dur <= 0) {
                 return v.readyState >= 2 || v.currentTime > 0.2;
               }
-              // Si es un vídeo VOD, exigir al menos 90 segundos para descartar clips publicitarios
               return dur >= 90;
             }
 
-            // Estabilizador de directos en vivo: evita que el directo se congele o se quede en pausa por microcortes
             function attachLiveStreamStabilizer(v) {
               if (!v || watchedVideosSet.has(v)) return;
               watchedVideosSet.add(v);
+              ensureBridgeConnected();
 
               const recoverIfStalled = function () {
                 try {
@@ -710,7 +564,7 @@ jobs:
 
               v.addEventListener("stalled", recoverIfStalled);
               v.addEventListener("waiting", function () {
-                setTimeout(recoverIfStalled, 1400);
+                setTimeout(recoverIfStalled, 1500);
               });
             }
 
@@ -849,7 +703,7 @@ jobs:
               return !!btn;
             }
 
-            // 4. Gestión de formularios web para control remoto
+            // 3. Gestión de formularios web para control remoto
             function isEditableTextInput(el) {
               if (!el || el.disabled || el.readOnly) return false;
               const tag = (el.tagName || "").toUpperCase();
@@ -901,6 +755,28 @@ jobs:
 
             document.addEventListener("click", function (e) {
               enableIframeFullscreenAttrs();
+
+              const a = e.target && e.target.closest ? e.target.closest("a") : null;
+              if (a && (a.getAttribute("target") || "").toLowerCase() === "_blank") {
+                const href = (a.getAttribute("href") || "").trim();
+                if (!href || href === "#" || href.startsWith("javascript:")) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
+                try {
+                  const dest = new URL(href, location.href);
+                  const curHost = location.hostname.replace(/^www\./i, "");
+                  const dstHost = dest.hostname.replace(/^www\./i, "");
+                  if (dstHost !== curHost && !dstHost.endsWith("." + curHost)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    a.remove();
+                    return;
+                  }
+                  a.setAttribute("target", "_self");
+                } catch (_) {}
+              }
 
               if (isPlayerFullscreenButton(e.target)) {
                 const hasCustomFs = document.querySelector(".__battv_player_fill_frame, .__battv_iframe_fullscreen") !== null;
@@ -960,7 +836,6 @@ jobs:
               } catch (_) {}
             }
 
-            // Sondeo ligero cada 1.2s únicamente cuando existe una etiqueta <video> en el marco actual
             setInterval(function () {
               try {
                 if (document.getElementsByTagName("video").length === 0) return;
@@ -995,9 +870,10 @@ jobs:
                   });
                 }
               } catch (_) {}
-            }, 1200);
+            }, 1300);
 
             if (isTopFrame) {
+              ensureBridgeConnected();
               function extractMediaMetadata() {
                 try {
                   const h1 = document.querySelector("h1, .Title, .entry-title, .episodiotitle, .anime-title");
@@ -1014,8 +890,6 @@ jobs:
                   }
                 } catch (_) {}
               }
-
-              window.addEventListener("DOMContentLoaded", extractMediaMetadata);
               window.addEventListener("load", extractMediaMetadata);
             }
 
@@ -1072,16 +946,8 @@ jobs:
               }
             }
 
-            connectBridge();
             injectFastTvStyles();
-            if (document.readyState === "loading") {
-              document.addEventListener("DOMContentLoaded", function () {
-                injectFastTvStyles();
-                enableIframeFullscreenAttrs();
-              });
-            } else {
-              enableIframeFullscreenAttrs();
-            }
+            enableIframeFullscreenAttrs();
             window.addEventListener("load", enableIframeFullscreenAttrs);
           })();
           '''
@@ -1119,10 +985,17 @@ jobs:
           cs_list = vm_manifest.setdefault("content_scripts", [])
           cs_list.append({
               "matches": ["<all_urls>"],
-              "js": ["saltarse_enlaces_acortados.user.js", "battv_tv_helper.js"],
+              "js": ["saltarse_enlaces_acortados.user.js"],
               "run_at": "document_start",
+              "all_frames": False,
+              "match_about_blank": False
+          })
+          cs_list.append({
+              "matches": ["<all_urls>"],
+              "js": ["battv_tv_helper.js"],
+              "run_at": "document_end",
               "all_frames": True,
-              "match_about_blank": True
+              "match_about_blank": False
           })
 
           with open(vm_manifest_path, "w", encoding="utf-8") as mf:
