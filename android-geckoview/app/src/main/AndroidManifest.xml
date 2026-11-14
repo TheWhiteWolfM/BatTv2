@@ -23,7 +23,7 @@
         android:icon="@drawable/ic_bat_logo"
         android:roundIcon="@drawable/ic_bat_logo"
         android:label="Battv.2"
-        android:largeHeap="false"
+        android:largeHeap="true"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.AppCompat.NoActionBar">
