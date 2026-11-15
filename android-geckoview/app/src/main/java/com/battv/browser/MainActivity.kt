@@ -71,12 +71,13 @@ class MainActivity : AppCompatActivity() {
 
     private const val URL_BAR_INDEX = 2
 
-    private const val BASE_CURSOR_FRAME_SPEED_PX = 7.5f
-    private const val MAX_CURSOR_FRAME_SPEED_PX = 22.0f
-    private const val BASE_SCROLL_FRAME_SPEED_PX = 18.0
-    private const val MAX_SCROLL_FRAME_SPEED_PX = 46.0
-    private const val EDGE_SCROLL_ZONE_PX = 96f
-    private const val CURSOR_AUTO_HIDE_MS = 3000L
+    // Velocidades calibradas por fotograma VSYNC (60 FPS reales sin salto de fotogramas)
+    private const val BASE_CURSOR_FRAME_SPEED_PX = 7.0f
+    private const val MAX_CURSOR_FRAME_SPEED_PX = 20.0f
+    private const val BASE_SCROLL_FRAME_SPEED_PX = 9.5
+    private const val MAX_SCROLL_FRAME_SPEED_PX = 24.0
+    private const val EDGE_SCROLL_ZONE_PX = 104f
+    private const val CURSOR_AUTO_HIDE_MS = 2600L
   }
 
   private lateinit var prefs: SharedPreferences
@@ -156,7 +157,7 @@ class MainActivity : AppCompatActivity() {
   private var dpadHoldStartUptimeMs: Long = 0L
   private var lastDpadEventUptimeMs: Long = 0L
   private var isSmoothDpadLoopRunning: Boolean = false
-  private var scrollFrameParity: Boolean = false
+  private var smoothedScrollStepPx: Double = BASE_SCROLL_FRAME_SPEED_PX
 
   private val smoothDpadFrameCallback = object : Choreographer.FrameCallback {
     override fun doFrame(frameTimeNanos: Long) {
@@ -171,7 +172,7 @@ class MainActivity : AppCompatActivity() {
       }
 
       val heldMs = (now - dpadHoldStartUptimeMs).coerceAtLeast(0L)
-      val accelFactor = (heldMs.toFloat() / 550f).coerceIn(0f, 1f)
+      val accelFactor = (heldMs.toFloat() / 520f).coerceIn(0f, 1f)
       val cursorSpeed = BASE_CURSOR_FRAME_SPEED_PX +
         (MAX_CURSOR_FRAME_SPEED_PX - BASE_CURSOR_FRAME_SPEED_PX) * (accelFactor * accelFactor)
 
@@ -188,20 +189,18 @@ class MainActivity : AppCompatActivity() {
 
       cursorOverlay.moveCursorBy(dx, dy)
 
+      // Desplazamiento continuo en CADA fotograma VSYNC (60 FPS reales, sin saltos de paridad)
       if (!isFullScreenVideo) {
-        scrollFrameParity = !scrollFrameParity
-        if (scrollFrameParity) {
-          val scrollAccel = (heldMs.toDouble() / 600.0).coerceIn(0.0, 1.0)
-          val scrollStep = BASE_SCROLL_FRAME_SPEED_PX +
-            (MAX_SCROLL_FRAME_SPEED_PX - BASE_SCROLL_FRAME_SPEED_PX) * (scrollAccel * scrollAccel)
+        val targetScrollSpeed = BASE_SCROLL_FRAME_SPEED_PX +
+          (MAX_SCROLL_FRAME_SPEED_PX - BASE_SCROLL_FRAME_SPEED_PX) * (accelFactor * accelFactor).toDouble()
+        smoothedScrollStepPx = smoothedScrollStepPx * 0.75 + targetScrollSpeed * 0.25
 
-          if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
-            scrollWebPageNative(-scrollStep)
-          } else if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
-            cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
-          ) {
-            scrollWebPageNative(scrollStep)
-          }
+        if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
+          scrollWebPageNative(-smoothedScrollStepPx)
+        } else if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+          cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
+        ) {
+          scrollWebPageNative(smoothedScrollStepPx)
         }
       }
 
@@ -224,13 +223,13 @@ class MainActivity : AppCompatActivity() {
     videoSeekOverlay.fadeOutAndHide()
   }
 
-  // Envía una única orden de salto rápido (fastSeek) al terminar de pulsar para que el vídeo no recargue dos veces
+  // Sincronización exacta A/V: envía un único salto preciso (sin fastSeek inexacto que desfasa el audio)
   private val commitVideoSeekRunnable = Runnable {
     if (activeWebPorts.isNotEmpty()) {
       sendVideoCommandToWeb("SEEK_TO", vodCurrentTimeSec)
     } else {
       try {
-        activeMediaSession?.seekTo(vodCurrentTimeSec, true)
+        activeMediaSession?.seekTo(vodCurrentTimeSec, false)
       } catch (_: Exception) {}
     }
     isUserSeekingVod = false
@@ -280,7 +279,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   /**
-   * Inicializa exactamente los 7 favoritos solicitados por el usuario:
+   * Inicializa los 7 favoritos definidos:
    * doramasflix.io, doramasflix.co, dramachino.com, tudorama.com, asialiveaction.com, kisskh.do y jkanime.net
    */
   private fun ensureDefaultBookmarksOnFirstInstall() {
@@ -604,7 +603,6 @@ class MainActivity : AppCompatActivity() {
       elevation = 90f
     }
 
-    // Puntero pequeño de 56dp x 56dp acelerado por GPU (cero redibujado de pantalla completa al moverse)
     cursorOverlay = CursorOverlayView(this).apply {
       layoutParams = FrameLayout.LayoutParams(dp(56), dp(56))
       isFocusable = false
@@ -730,7 +728,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     val appTitleView = TextView(this).apply {
-      text = "Battv.2 \u2022 Favoritos"
+      text = "Bat TV \u2022 Favoritos"
       setTextColor(Color.WHITE)
       setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
       setTypeface(typeface, Typeface.BOLD)
@@ -782,7 +780,7 @@ class MainActivity : AppCompatActivity() {
       }
 
       val emptyDesc = TextView(this).apply {
-        text = "Agrega tus sitios favoritos aqu\u00ED para abrirlos directamente al iniciar Battv.2 o escribe una direcci\u00F3n en la barra superior."
+        text = "Agrega tus sitios favoritos aqu\u00ED para abrirlos directamente al iniciar Bat TV o escribe una direcci\u00F3n en la barra superior."
         setTextColor(Color.parseColor("#94A3B8"))
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
         gravity = Gravity.CENTER
@@ -959,7 +957,7 @@ class MainActivity : AppCompatActivity() {
     )
 
     AlertDialog.Builder(this)
-      .setTitle("Selecciona el modo de navegaci\u00F3n de Battv.2")
+      .setTitle("Selecciona el modo de navegaci\u00F3n de Bat TV")
       .setCancelable(false)
       .setItems(options) { d, which ->
         val chooseDesktop = (which == 1)
@@ -1060,11 +1058,11 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    items.add("\u2716  Salir de Battv.2")
+    items.add("\u2716  Salir de Bat TV")
     actions.add { exitBrowserCleanly() }
 
     AlertDialog.Builder(this)
-      .setTitle("\u2630 Men\u00FA de Battv.2")
+      .setTitle("\u2630 Men\u00FA de Bat TV")
       .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
       .setNegativeButton("Cerrar") { d, _ -> d.dismiss() }
       .show()
@@ -1183,8 +1181,8 @@ class MainActivity : AppCompatActivity() {
   }
 
   /**
-   * Diálogo de Favoritos simplificado según lo solicitado:
-   * Únicamente muestra: 1. Agregar, 2. Eliminar y 3. La lista de favoritos.
+   * Diálogo de Favoritos simplificado:
+   * Únicamente muestra: 1. Agregar favorito, 2. Eliminar favorito y 3. La lista de favoritos.
    */
   private fun showBookmarksDialog() {
     stopSmoothDpadMovement()
@@ -1593,6 +1591,13 @@ class MainActivity : AppCompatActivity() {
         activeMediaSession = mediaSession
         runOnUiThread {
           vodIsPlaying = true
+          loadingProgressBar.visibility = View.GONE
+          // Ocultar el puntero rápidamente cuando reproduce fuera de pantalla completa
+          // para evitar composición extra de capas en el televisor
+          if (!isSmoothDpadLoopRunning) {
+            mainHandler.removeCallbacks(hideCursorRunnable)
+            mainHandler.postDelayed(hideCursorRunnable, 1200L)
+          }
           if (vodDurationSec >= 90.0 || isLiveStreamVideo) {
             promptAutoFullscreenIfEligible()
           }
@@ -1773,6 +1778,7 @@ class MainActivity : AppCompatActivity() {
                   isLiveStreamVideo = isLive
                   hasActiveVodVideo = !isLive && dur >= 90.0
                   if (dur > 0.0) vodDurationSec = dur
+                  loadingProgressBar.visibility = View.GONE
                   if (isLive || dur >= 90.0) {
                     promptAutoFullscreenIfEligible()
                   }
@@ -1816,9 +1822,12 @@ class MainActivity : AppCompatActivity() {
                       videoSeekOverlay.updateProgressOnly(vodCurrentTimeSec, vodDurationSec, vodIsPlaying)
                     }
                   }
-                  if (isFullScreenVideo && startedPlayingNow && (hasActiveVodVideo || isLiveStreamVideo)) {
-                    mainHandler.removeCallbacks(hideCursorRunnable)
-                    mainHandler.postDelayed(hideCursorRunnable, 900L)
+                  if (startedPlayingNow && (hasActiveVodVideo || isLiveStreamVideo)) {
+                    loadingProgressBar.visibility = View.GONE
+                    if (!isSmoothDpadLoopRunning) {
+                      mainHandler.removeCallbacks(hideCursorRunnable)
+                      mainHandler.postDelayed(hideCursorRunnable, 900L)
+                    }
                   }
                 }
               }
@@ -2187,24 +2196,25 @@ class MainActivity : AppCompatActivity() {
     scheduleCursorAutoHide()
 
     if (isInitialTap) {
+      smoothedScrollStepPx = BASE_SCROLL_FRAME_SPEED_PX
       val dx = when (keyCode) {
-        KeyEvent.KEYCODE_DPAD_LEFT -> -11f
-        KeyEvent.KEYCODE_DPAD_RIGHT -> 11f
+        KeyEvent.KEYCODE_DPAD_LEFT -> -10f
+        KeyEvent.KEYCODE_DPAD_RIGHT -> 10f
         else -> 0f
       }
       val dy = when (keyCode) {
-        KeyEvent.KEYCODE_DPAD_UP -> -11f
-        KeyEvent.KEYCODE_DPAD_DOWN -> 11f
+        KeyEvent.KEYCODE_DPAD_UP -> -10f
+        KeyEvent.KEYCODE_DPAD_DOWN -> 10f
         else -> 0f
       }
       cursorOverlay.moveCursorBy(dx, dy)
       if (!isFullScreenVideo) {
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
-          scrollWebPageNative(-26.0)
+          scrollWebPageNative(-16.0)
         } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
           cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
         ) {
-          scrollWebPageNative(26.0)
+          scrollWebPageNative(16.0)
         }
       }
     }
@@ -2275,7 +2285,7 @@ class MainActivity : AppCompatActivity() {
     )
 
     mainHandler.removeCallbacks(commitVideoSeekRunnable)
-    mainHandler.postDelayed(commitVideoSeekRunnable, 360L)
+    mainHandler.postDelayed(commitVideoSeekRunnable, 280L)
 
     mainHandler.removeCallbacks(hideVideoSeekRunnable)
     mainHandler.postDelayed(hideVideoSeekRunnable, 2200L)
@@ -2656,7 +2666,7 @@ class MainActivity : AppCompatActivity() {
   private fun showExitConfirmationDialog() {
     stopSmoothDpadMovement()
     AlertDialog.Builder(this)
-      .setTitle("Salir de Battv.2")
+      .setTitle("Salir de Bat TV")
       .setMessage("\u00BFDeseas cerrar el navegador?")
       .setPositiveButton("Salir") { _, _ -> exitBrowserCleanly() }
       .setNegativeButton("Cancelar") { d, _ -> d.dismiss() }
@@ -2793,11 +2803,6 @@ class MainActivity : AppCompatActivity() {
     }
   }
 
-  /**
-   * Puntero ligero en capa de hardware (56dp x 56dp):
-   * Se dibuja una única vez y se desplaza mediante translationX y translationY en la GPU,
-   * eliminando por completo el lag al mover el ratón o desplazarse por las páginas.
-   */
   private inner class CursorOverlayView(context: Context) : View(context) {
     private val hotspotOffsetPx = 16f
 
@@ -2857,7 +2862,6 @@ class MainActivity : AppCompatActivity() {
       cursorX = (cursorX + dx).coerceIn(4f, maxW - 4f)
       cursorY = nextY.coerceIn(2f, maxH - 4f)
 
-      // Movimiento directo en GPU sin redibujar el Canvas
       translationX = cursorX - hotspotOffsetPx
       translationY = cursorY - hotspotOffsetPx
 
