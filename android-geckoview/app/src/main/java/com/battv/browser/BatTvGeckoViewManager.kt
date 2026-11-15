@@ -68,6 +68,7 @@ class BatTvGeckoViewManager(
             "cache2",
             "OfflineCache",
             "thumbnails",
+            "shader-cache",
             "safebrowsing",
             "crashes",
             "minidumps",
@@ -143,7 +144,7 @@ class BatTvGeckoViewManager(
                     }
                 } catch (_: Exception) {}
 
-                val cfgFile = writeStableTvGeckoConfig(appContext)
+                val cfgFile = writeHighPerformanceTvGeckoConfig(appContext)
                 val builder = GeckoRuntimeSettings.Builder()
                     .javaScriptEnabled(true)
                     .consoleOutput(false)
@@ -163,20 +164,23 @@ class BatTvGeckoViewManager(
     }
 
     /**
-     * Búfer multimedia y de red calibrado para carga rápida de páginas y búsqueda (seek)
-     * instantánea al adelantar o atrasar vídeos en Android TV.
+     * Configuración de alto rendimiento para Bat TV:
+     * 1. Caché de disco desactivada en filesDir (evita inflar los 51 MB de "Datos adicionales").
+     * 2. Sincronización exacta A/V: skip-to-next-key-frame = false y ruin-av-sync = false.
+     * 3. Arranque instantáneo de reproductores: media.cache_resume_threshold = 4 (en vez de 25).
+     * 4. Aceleración WebRender y decodificación asíncrona de imágenes para scroll fluido en DramaChino.
      */
-    private fun writeStableTvGeckoConfig(appContext: Context): File? {
+    private fun writeHighPerformanceTvGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.filesDir, "battv_gecko_config.yaml")
             val yamlContent = """
                 prefs:
-                  browser.cache.disk.enable: true
-                  browser.cache.disk.capacity: 16384
+                  browser.cache.disk.enable: false
+                  browser.cache.disk.capacity: 0
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 14336
+                  browser.cache.memory.capacity: 16384
                   browser.sessionhistory.max_total_viewers: 0
                   browser.safebrowsing.malware.enabled: false
                   browser.safebrowsing.phishing.enabled: false
@@ -184,12 +188,20 @@ class BatTvGeckoViewManager(
                   datareporting.policy.dataSubmissionEnabled: false
                   datareporting.healthreport.uploadEnabled: false
                   toolkit.telemetry.enabled: false
+                  gfx.webrender.all: true
+                  gfx.canvas.accelerated: true
+                  layout.frame_rate: 60
+                  layout.css.backdrop-filter.enabled: false
+                  image.mem.decode_bytes_at_a_time: 65536
+                  image.mem.shared: true
+                  apz.overscroll.enabled: false
+                  apz.fling_min_velocity_threshold: "0.4"
                   media.suspend-bkgnd-video.enabled: false
                   media.cache_size: 32768
                   media.memory_cache_max_size: 16384
                   media.memory_caches_combined_limit_kb: 36864
-                  media.cache_readahead_limit: 90
-                  media.cache_resume_threshold: 25
+                  media.cache_readahead_limit: 30
+                  media.cache_resume_threshold: 4
                   media.preload.default: 2
                   media.autoplay.default: 0
                   media.autoplay.blocking_policy: 0
@@ -198,7 +210,9 @@ class BatTvGeckoViewManager(
                   media.android-media-codec.enabled: true
                   media.android-media-codec.preferred: true
                   media.hardware-video-decoding.enabled: true
-                  media.decoder.skip-to-next-key-frame.enabled: true
+                  media.hardware-video-decoding.force-enabled: true
+                  media.decoder.skip-to-next-key-frame.enabled: false
+                  media.ruin-av-sync.enabled: false
                   media.eme.enabled: true
                   media.mediasource.enabled: true
                   dom.disable_open_during_load: true
@@ -400,6 +414,10 @@ class BatTvGeckoViewManager(
             try {
                 deleteDirectoryContents(context.cacheDir)
                 context.externalCacheDir?.let { deleteDirectoryContents(it) }
+                val mozillaDir = File(context.filesDir, "mozilla")
+                if (mozillaDir.exists()) {
+                    cleanDisposableGeckoDirs(mozillaDir)
+                }
             } catch (_: Exception) {}
         }.start()
     }
@@ -443,11 +461,11 @@ class BatTvGeckoViewManager(
                 try {
                     val sanitized = child.readLines().filterNot { line ->
                         line.contains("dom.ipc.processCount") ||
-                            line.contains("gfx.webrender") ||
                             line.contains("layers.acceleration") ||
                             line.contains("network.http.http3") ||
                             line.contains("browser.cache.disk.enable") ||
-                            line.contains("media.preload.default")
+                            line.contains("media.cache_resume_threshold") ||
+                            line.contains("skip-to-next-key-frame")
                     }
                     child.writeText(sanitized.joinToString("\n") + "\n")
                 } catch (_: Exception) {}
