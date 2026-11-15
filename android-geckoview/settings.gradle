@@ -15,5 +15,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = 'Battv.2'
+rootProject.name = 'Bat TV'
 include ':app'
