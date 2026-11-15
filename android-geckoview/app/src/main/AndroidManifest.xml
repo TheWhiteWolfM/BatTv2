@@ -17,12 +17,12 @@
 
     <application
         android:allowBackup="false"
-        android:extractNativeLibs="true"
+        android:extractNativeLibs="false"
         android:banner="@drawable/tv_banner"
         android:hardwareAccelerated="true"
         android:icon="@drawable/ic_bat_logo"
         android:roundIcon="@drawable/ic_bat_logo"
-        android:label="Battv.2"
+        android:label="Bat TV"
         android:largeHeap="false"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
@@ -33,7 +33,7 @@
             android:banner="@drawable/tv_banner"
             android:icon="@drawable/ic_bat_logo"
             android:roundIcon="@drawable/ic_bat_logo"
-            android:label="Battv.2"
+            android:label="Bat TV"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:exported="true"
             android:hardwareAccelerated="true"
