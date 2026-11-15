@@ -71,13 +71,12 @@ class MainActivity : AppCompatActivity() {
 
     private const val URL_BAR_INDEX = 2
 
-    // Velocidades calibradas por fotograma VSYNC (60 FPS reales sin salto de fotogramas)
     private const val BASE_CURSOR_FRAME_SPEED_PX = 7.0f
-    private const val MAX_CURSOR_FRAME_SPEED_PX = 20.0f
-    private const val BASE_SCROLL_FRAME_SPEED_PX = 9.5
-    private const val MAX_SCROLL_FRAME_SPEED_PX = 24.0
-    private const val EDGE_SCROLL_ZONE_PX = 104f
-    private const val CURSOR_AUTO_HIDE_MS = 2600L
+    private const val MAX_CURSOR_FRAME_SPEED_PX = 20.5f
+    private const val BASE_SCROLL_FRAME_SPEED_PX = 10.5
+    private const val MAX_SCROLL_FRAME_SPEED_PX = 26.0
+    private const val EDGE_SCROLL_ZONE_PX = 108f
+    private const val CURSOR_AUTO_HIDE_MS = 2500L
   }
 
   private lateinit var prefs: SharedPreferences
@@ -86,7 +85,6 @@ class MainActivity : AppCompatActivity() {
   private lateinit var rootLayout: LinearLayout
   private lateinit var topBarLayout: LinearLayout
 
-  // Exactamente 6 elementos en la barra superior y en este orden:
   // 1. Menu, 2. Recargar, 3. Campo URL/Busqueda, 4. Favoritos, 5. Historial, 6. Boton X
   private lateinit var btnMenu: Button
   private lateinit var btnReload: Button
@@ -153,58 +151,85 @@ class MainActivity : AppCompatActivity() {
   private var fullscreenPromptDismissedForPage: Boolean = false
   private var lastFullscreenExitUptimeMs: Long = 0L
 
+  // Motor VSYNC con compensación de delta-time (nanosegundos) e inercia suave al soltar el botón
   private var activeDpadKeyCode: Int = 0
   private var dpadHoldStartUptimeMs: Long = 0L
   private var lastDpadEventUptimeMs: Long = 0L
+  private var lastFrameTimeNanos: Long = 0L
   private var isSmoothDpadLoopRunning: Boolean = false
-  private var smoothedScrollStepPx: Double = BASE_SCROLL_FRAME_SPEED_PX
+  private var scrollVelocityYPx: Double = 0.0
 
   private val smoothDpadFrameCallback = object : Choreographer.FrameCallback {
     override fun doFrame(frameTimeNanos: Long) {
       if (!isSmoothDpadLoopRunning || !isCursorModeActive || isHomeScreenVisible) {
         isSmoothDpadLoopRunning = false
+        lastFrameTimeNanos = 0L
+        scrollVelocityYPx = 0.0
         return
       }
+
+      val dtScale = if (lastFrameTimeNanos == 0L) {
+        1.0
+      } else {
+        ((frameTimeNanos - lastFrameTimeNanos) / 16_666_667.0).coerceIn(0.5, 2.2)
+      }
+      lastFrameTimeNanos = frameTimeNanos
+
       val now = SystemClock.uptimeMillis()
-      if (now - lastDpadEventUptimeMs > 220L) {
-        stopSmoothDpadMovement()
-        return
-      }
+      val keyStillHeld = activeDpadKeyCode != 0 && (now - lastDpadEventUptimeMs <= 220L)
 
-      val heldMs = (now - dpadHoldStartUptimeMs).coerceAtLeast(0L)
-      val accelFactor = (heldMs.toFloat() / 520f).coerceIn(0f, 1f)
-      val cursorSpeed = BASE_CURSOR_FRAME_SPEED_PX +
-        (MAX_CURSOR_FRAME_SPEED_PX - BASE_CURSOR_FRAME_SPEED_PX) * (accelFactor * accelFactor)
+      if (keyStillHeld) {
+        val heldMs = (now - dpadHoldStartUptimeMs).coerceAtLeast(0L)
+        val accelFactor = (heldMs.toFloat() / 480f).coerceIn(0f, 1f)
+        val cursorSpeed = (BASE_CURSOR_FRAME_SPEED_PX +
+          (MAX_CURSOR_FRAME_SPEED_PX - BASE_CURSOR_FRAME_SPEED_PX) * (accelFactor * accelFactor)) * dtScale.toFloat()
 
-      val dx = when (activeDpadKeyCode) {
-        KeyEvent.KEYCODE_DPAD_LEFT -> -cursorSpeed
-        KeyEvent.KEYCODE_DPAD_RIGHT -> cursorSpeed
-        else -> 0f
-      }
-      val dy = when (activeDpadKeyCode) {
-        KeyEvent.KEYCODE_DPAD_UP -> -cursorSpeed
-        KeyEvent.KEYCODE_DPAD_DOWN -> cursorSpeed
-        else -> 0f
-      }
+        val dx = when (activeDpadKeyCode) {
+          KeyEvent.KEYCODE_DPAD_LEFT -> -cursorSpeed
+          KeyEvent.KEYCODE_DPAD_RIGHT -> cursorSpeed
+          else -> 0f
+        }
+        val dy = when (activeDpadKeyCode) {
+          KeyEvent.KEYCODE_DPAD_UP -> -cursorSpeed
+          KeyEvent.KEYCODE_DPAD_DOWN -> cursorSpeed
+          else -> 0f
+        }
 
-      cursorOverlay.moveCursorBy(dx, dy)
+        cursorOverlay.moveCursorBy(dx, dy)
 
-      // Desplazamiento continuo en CADA fotograma VSYNC (60 FPS reales, sin saltos de paridad)
-      if (!isFullScreenVideo) {
-        val targetScrollSpeed = BASE_SCROLL_FRAME_SPEED_PX +
-          (MAX_SCROLL_FRAME_SPEED_PX - BASE_SCROLL_FRAME_SPEED_PX) * (accelFactor * accelFactor).toDouble()
-        smoothedScrollStepPx = smoothedScrollStepPx * 0.75 + targetScrollSpeed * 0.25
+        if (!isFullScreenVideo) {
+          val targetSpeed = BASE_SCROLL_FRAME_SPEED_PX +
+            (MAX_SCROLL_FRAME_SPEED_PX - BASE_SCROLL_FRAME_SPEED_PX) * (accelFactor * accelFactor).toDouble()
 
-        if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
-          scrollWebPageNative(-smoothedScrollStepPx)
-        } else if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
-          cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
-        ) {
-          scrollWebPageNative(smoothedScrollStepPx)
+          val dir = when {
+            activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX -> -1.0
+            activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+              cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX) -> 1.0
+            else -> 0.0
+          }
+
+          if (dir != 0.0) {
+            scrollVelocityYPx = scrollVelocityYPx * 0.72 + (dir * targetSpeed) * 0.28
+            scrollWebPageNative(scrollVelocityYPx * dtScale)
+          } else {
+            scrollVelocityYPx = 0.0
+          }
+        }
+        Choreographer.getInstance().postFrameCallback(this)
+      } else {
+        // Deslizamiento con inercia suave al soltar la flecha arriba/abajo (evita frenado seco)
+        activeDpadKeyCode = 0
+        if (!isFullScreenVideo && abs(scrollVelocityYPx) >= 1.2) {
+          scrollVelocityYPx *= 0.82
+          scrollWebPageNative(scrollVelocityYPx * dtScale)
+          Choreographer.getInstance().postFrameCallback(this)
+        } else {
+          scrollVelocityYPx = 0.0
+          isSmoothDpadLoopRunning = false
+          lastFrameTimeNanos = 0L
+          dispatchHoverMoveAtCursor()
         }
       }
-
-      Choreographer.getInstance().postFrameCallback(this)
     }
   }
 
@@ -223,7 +248,6 @@ class MainActivity : AppCompatActivity() {
     videoSeekOverlay.fadeOutAndHide()
   }
 
-  // Sincronización exacta A/V: envía un único salto preciso (sin fastSeek inexacto que desfasa el audio)
   private val commitVideoSeekRunnable = Runnable {
     if (activeWebPorts.isNotEmpty()) {
       sendVideoCommandToWeb("SEEK_TO", vodCurrentTimeSec)
@@ -278,10 +302,6 @@ class MainActivity : AppCompatActivity() {
     }
   }
 
-  /**
-   * Inicializa los 7 favoritos definidos:
-   * doramasflix.io, doramasflix.co, dramachino.com, tudorama.com, asialiveaction.com, kisskh.do y jkanime.net
-   */
   private fun ensureDefaultBookmarksOnFirstInstall() {
     if (!prefs.getBoolean(KEY_BOOKMARKS_SEEDED, false)) {
       val defaults = JSONArray().apply {
@@ -328,15 +348,18 @@ class MainActivity : AppCompatActivity() {
   }
 
   override fun onPause() {
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     super.onPause()
     mainHandler.removeCallbacks(hideCursorRunnable)
     mainHandler.removeCallbacks(hideVideoSeekRunnable)
     geckoSession?.setActive(false)
+    if (::geckoManager.isInitialized) {
+      geckoManager.pruneDisposableStorageNow()
+    }
   }
 
   override fun onDestroy() {
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     dismissFullscreenPromptDialog()
     mainHandler.removeCallbacksAndMessages(null)
     if (::geckoManager.isInitialized) {
@@ -376,12 +399,10 @@ class MainActivity : AppCompatActivity() {
       )
     }
 
-    // 1. Menu
     btnMenu = createTvButton("\u2630 Men\u00FA", dp(80), isAccent = true).apply {
       setOnClickListener { showMainMenuDialog() }
     }
 
-    // 2. Recargar pagina
     btnReload = createTvButton("\u27F3", dp(44)).apply {
       layoutParams = LinearLayout.LayoutParams(dp(44), dp(38)).apply {
         marginStart = dp(6)
@@ -404,7 +425,6 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    // 3. Campo para escribir direcciones web o realizar busquedas
     urlEditText = object : EditText(this) {
       override fun onKeyPreIme(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && event != null) {
@@ -489,12 +509,10 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    // 4. Favoritos
     btnBookmarks = createTvButton("\u2B50", dp(44)).apply {
       setOnClickListener { showBookmarksDialog() }
     }
 
-    // 5. Historial
     btnHistory = createTvButton("\uD83D\uDD52", dp(44)).apply {
       layoutParams = LinearLayout.LayoutParams(dp(44), dp(38)).apply {
         marginStart = dp(6)
@@ -502,7 +520,6 @@ class MainActivity : AppCompatActivity() {
       setOnClickListener { showHistoryDialog() }
     }
 
-    // 6. Boton X para cerrar o salir del navegador
     btnCloseApp = createTvButton("\u2716", dp(44), isDanger = true).apply {
       layoutParams = LinearLayout.LayoutParams(dp(44), dp(38)).apply {
         marginStart = dp(6)
@@ -629,7 +646,7 @@ class MainActivity : AppCompatActivity() {
     if (fullscreenPromptDialog?.isShowing == true) return
     if (SystemClock.uptimeMillis() - lastFullscreenExitUptimeMs < 4000L) return
 
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
 
     val dialog = AlertDialog.Builder(this)
       .setTitle("\uD83C\uDFAC Reproducir en pantalla completa")
@@ -676,7 +693,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun showHomeScreen() {
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     dismissFullscreenPromptDialog()
     if (isFullScreenVideo) {
       exitFullScreenSafely()
@@ -986,7 +1003,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun showMainMenuDialog() {
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     val items = mutableListOf<String>()
     val actions = mutableListOf<() -> Unit>()
 
@@ -1074,7 +1091,7 @@ class MainActivity : AppCompatActivity() {
     val extItems = arrayOf(
       "1. Pop-ups Blocker (strict) + Cerrojo de Dominio \u2014 [$shieldLoaded]",
       "2. Cortafuegos Anti-Ads (Adsterra, Vidoomy, Exoclick, Monetag) \u2014 [$shieldLoaded]",
-      "3. Saltarse Todos los Enlaces Acortados + Motor 60FPS \u2014 [$shieldLoaded]"
+      "3. Saltarse Todos los Enlaces Acortados + Motor MSE 1080p60 \u2014 [$shieldLoaded]"
     )
 
     AlertDialog.Builder(this)
@@ -1082,7 +1099,7 @@ class MainActivity : AppCompatActivity() {
       .setItems(extItems) { _, _ ->
         Toast.makeText(
           this,
-          "El escudo nativo est\u00E1 integrado y funcionando con consumo m\u00EDnimo de RAM.",
+          "El escudo nativo est\u00E1 integrado y operando en cacheDir sin ocupar Datos fijos.",
           Toast.LENGTH_SHORT
         ).show()
       }
@@ -1180,12 +1197,8 @@ class MainActivity : AppCompatActivity() {
       .show()
   }
 
-  /**
-   * Diálogo de Favoritos simplificado:
-   * Únicamente muestra: 1. Agregar favorito, 2. Eliminar favorito y 3. La lista de favoritos.
-   */
   private fun showBookmarksDialog() {
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     val arr = getBookmarksArray()
     val items = mutableListOf<String>()
     val actions = mutableListOf<() -> Unit>()
@@ -1321,7 +1334,7 @@ class MainActivity : AppCompatActivity() {
         .put("url", url)
     )
 
-    for (i in 0 until min(oldArr.length(), 45)) {
+    for (i in 0 until min(oldArr.length(), 30)) {
       val item = oldArr.optJSONObject(i) ?: continue
       if (!item.optString("url").equals(url, ignoreCase = true)) {
         newArr.put(item)
@@ -1331,7 +1344,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun showHistoryDialog() {
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     val raw = prefs.getString(KEY_HISTORY, "[]") ?: "[]"
     val arr = try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
 
@@ -1592,8 +1605,6 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
           vodIsPlaying = true
           loadingProgressBar.visibility = View.GONE
-          // Ocultar el puntero rápidamente cuando reproduce fuera de pantalla completa
-          // para evitar composición extra de capas en el televisor
           if (!isSmoothDpadLoopRunning) {
             mainHandler.removeCallbacks(hideCursorRunnable)
             mainHandler.postDelayed(hideCursorRunnable, 1200L)
@@ -1669,7 +1680,7 @@ class MainActivity : AppCompatActivity() {
 
   private fun applyFullScreenState(fullScreen: Boolean) {
     isFullScreenVideo = fullScreen
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
 
     if (fullScreen) {
       dismissFullscreenPromptDialog()
@@ -1962,7 +1973,7 @@ class MainActivity : AppCompatActivity() {
     initialValue: String? = null,
     placeholderHint: String? = null
   ) {
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     topBarLayout.visibility = View.VISIBLE
     isCursorModeActive = false
     isHomeToolbarFocused = true
@@ -2087,7 +2098,7 @@ class MainActivity : AppCompatActivity() {
 
   private fun loadUrlOrSearch(input: String) {
     val finalUri = geckoManager.resolveInputToUrl(input)
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     dismissFullscreenPromptDialog()
     if (isFullScreenVideo) {
       exitFullScreenSafely()
@@ -2168,7 +2179,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun activateToolbarMode() {
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     if (isFullScreenVideo) {
       exitFullScreenSafely()
     }
@@ -2196,7 +2207,6 @@ class MainActivity : AppCompatActivity() {
     scheduleCursorAutoHide()
 
     if (isInitialTap) {
-      smoothedScrollStepPx = BASE_SCROLL_FRAME_SPEED_PX
       val dx = when (keyCode) {
         KeyEvent.KEYCODE_DPAD_LEFT -> -10f
         KeyEvent.KEYCODE_DPAD_RIGHT -> 10f
@@ -2210,11 +2220,13 @@ class MainActivity : AppCompatActivity() {
       cursorOverlay.moveCursorBy(dx, dy)
       if (!isFullScreenVideo) {
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
-          scrollWebPageNative(-16.0)
+          scrollVelocityYPx = -14.0
+          scrollWebPageNative(scrollVelocityYPx)
         } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
           cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
         ) {
-          scrollWebPageNative(16.0)
+          scrollVelocityYPx = 14.0
+          scrollWebPageNative(scrollVelocityYPx)
         }
       }
     }
@@ -2224,18 +2236,23 @@ class MainActivity : AppCompatActivity() {
       dpadHoldStartUptimeMs = now
       if (!isSmoothDpadLoopRunning) {
         isSmoothDpadLoopRunning = true
+        lastFrameTimeNanos = 0L
         Choreographer.getInstance().postFrameCallback(smoothDpadFrameCallback)
       }
     }
   }
 
-  private fun stopSmoothDpadMovement() {
+  private fun stopSmoothDpadMovement(immediate: Boolean = false) {
     activeDpadKeyCode = 0
-    if (isSmoothDpadLoopRunning) {
-      isSmoothDpadLoopRunning = false
-      try {
-        Choreographer.getInstance().removeFrameCallback(smoothDpadFrameCallback)
-      } catch (_: Exception) {}
+    if (immediate) {
+      scrollVelocityYPx = 0.0
+      lastFrameTimeNanos = 0L
+      if (isSmoothDpadLoopRunning) {
+        isSmoothDpadLoopRunning = false
+        try {
+          Choreographer.getInstance().removeFrameCallback(smoothDpadFrameCallback)
+        } catch (_: Exception) {}
+      }
     }
   }
 
@@ -2295,9 +2312,8 @@ class MainActivity : AppCompatActivity() {
     val keyCode = event.keyCode
     val action = event.action
 
-    // 1. Manejo del boton Atras (KEYCODE_BACK)
     if (keyCode == KeyEvent.KEYCODE_BACK) {
-      stopSmoothDpadMovement()
+      stopSmoothDpadMovement(immediate = true)
       if (action == KeyEvent.ACTION_UP) {
         when {
           isEditingWebInput -> closeNativeWebInputBridge(submit = false)
@@ -2321,7 +2337,6 @@ class MainActivity : AppCompatActivity() {
       return true
     }
 
-    // 2. Controles multimedia dedicados del control remoto
     if (!isHomeScreenVisible && (hasActiveVodVideo || isLiveStreamVideo)) {
       when (keyCode) {
         KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
@@ -2345,7 +2360,6 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    // 3. Si estamos editando texto en el campo superior
     if (isEditingUrlText) {
       if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && action == KeyEvent.ACTION_DOWN) {
         stopEditingUrlTextAndStayOnBar()
@@ -2354,7 +2368,6 @@ class MainActivity : AppCompatActivity() {
       return super.dispatchKeyEvent(event)
     }
 
-    // 4. Navegacion en la pantalla de Inicio (Favoritos)
     if (isHomeScreenVisible) {
       if (isHomeToolbarFocused) {
         when (keyCode) {
@@ -2401,7 +2414,6 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    // 5. Navegacion en la barra superior mientras se navega en una web
     if (!isCursorModeActive) {
       when (keyCode) {
         KeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -2434,7 +2446,6 @@ class MainActivity : AppCompatActivity() {
       return true
     }
 
-    // 6. Controles directos en pantalla completa cuando el puntero esta oculto
     if (isFullScreenVideo && (hasActiveVodVideo || isLiveStreamVideo) && !cursorOverlay.isCursorCurrentlyVisible()) {
       when (keyCode) {
         KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -2479,7 +2490,6 @@ class MainActivity : AppCompatActivity() {
       }
     }
 
-    // 7. Movimiento fluido a 60 FPS del puntero por GPU y del scroll con las flechas del D-pad
     when (keyCode) {
       KeyEvent.KEYCODE_DPAD_UP,
       KeyEvent.KEYCODE_DPAD_DOWN,
@@ -2496,15 +2506,15 @@ class MainActivity : AppCompatActivity() {
           }
           startSmoothDpadMovement(keyCode, isInitialTap = (event.repeatCount == 0))
         } else if (action == KeyEvent.ACTION_UP) {
-          stopSmoothDpadMovement()
-          dispatchHoverMoveAtCursor()
+          // Permite que el bucle termine con inercia suave si estaba haciendo scroll
+          stopSmoothDpadMovement(immediate = false)
           scheduleCursorAutoHide()
         }
         return true
       }
 
       KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-        stopSmoothDpadMovement()
+        stopSmoothDpadMovement(immediate = true)
         if (action == KeyEvent.ACTION_UP) {
           simulateTapAtCursor()
         }
@@ -2664,7 +2674,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun showExitConfirmationDialog() {
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     AlertDialog.Builder(this)
       .setTitle("Salir de Bat TV")
       .setMessage("\u00BFDeseas cerrar el navegador?")
@@ -2674,7 +2684,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun exitBrowserCleanly() {
-    stopSmoothDpadMovement()
+    stopSmoothDpadMovement(immediate = true)
     dismissFullscreenPromptDialog()
     if (::geckoManager.isInitialized) {
       geckoManager.closeSessionCleanly()
