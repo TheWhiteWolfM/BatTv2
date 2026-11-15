@@ -14,8 +14,7 @@ android {
         versionCode 5
         versionName "3.0"
 
-        // Arquitectura nativa de Android TV (Chromecast / ONN / Google TV) y compatible con móviles ARM:
-        // Elimina ~140 MB de binarios duplicados arm64 que no usa el sistema de 32 bits del televisor.
+        // Empaqueta únicamente la arquitectura nativa de Android TV (ahorra ~140 MB en el APK)
         ndk {
             abiFilters "armeabi-v7a"
         }
@@ -28,17 +27,16 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Desactivado para evitar el fallo de R8 con SnakeYAML (java.beans.*) dentro de GeckoView
+            minifyEnabled false
+            shrinkResources false
             signingConfig signingConfigs.debug
         }
     }
 
     packagingOptions {
         jniLibs {
-            // Permite que Android cargue libxul.so directamente desde el APK (mmap)
-            // sin descomprimir una segunda copia de 140 MB en el almacenamiento interno del TV.
+            // Evita descomprimir una copia duplicada de libxul.so en el almacenamiento interno del TV
             useLegacyPackaging = false
         }
         resources {
