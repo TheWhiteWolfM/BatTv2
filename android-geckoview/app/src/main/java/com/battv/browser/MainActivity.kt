@@ -71,7 +71,6 @@ class MainActivity : AppCompatActivity() {
 
     private const val URL_BAR_INDEX = 2
 
-    // Velocidades por fotograma VSYNC (60 FPS continuos)
     private const val BASE_CURSOR_FRAME_SPEED_PX = 6.8f
     private const val MAX_CURSOR_FRAME_SPEED_PX = 19.5f
     private const val BASE_SCROLL_FRAME_SPEED_PX = 11.5
@@ -80,8 +79,6 @@ class MainActivity : AppCompatActivity() {
     private const val EDGE_SCROLL_ZONE_PX = 116f
     private const val CURSOR_AUTO_HIDE_MS = 2500L
 
-    // Margen superior al retardo inicial de repetición de Android TV (~500 ms)
-    // para que al mantener presionado nunca se detenga entre el primer toque y la repetición.
     private const val DPAD_HOLD_WATCHDOG_MS = 750L
   }
 
@@ -157,7 +154,6 @@ class MainActivity : AppCompatActivity() {
   private var fullscreenPromptDismissedForPage: Boolean = false
   private var lastFullscreenExitUptimeMs: Long = 0L
 
-  // Estado del motor VSYNC a 60 FPS para toque corto suave y presión continua sin pausas
   private var activeDpadKeyCode: Int = 0
   private var isDpadPhysicallyHeld: Boolean = false
   private var dpadHoldStartUptimeMs: Long = 0L
@@ -189,8 +185,6 @@ class MainActivity : AppCompatActivity() {
 
       val now = SystemClock.uptimeMillis()
 
-      // Si el botón sigue físicamente presionado (con margen de 750 ms para cubrir el delay
-      // inicial de repetición de Android TV sin congelarse nunca a mitad del movimiento):
       if (isDpadPhysicallyHeld && activeDpadKeyCode != 0 && (now - lastDpadEventUptimeMs <= DPAD_HOLD_WATCHDOG_MS)) {
         val heldMs = (now - dpadHoldStartUptimeMs).coerceAtLeast(0L)
         val accelFactor = (heldMs.toFloat() / 520f).coerceIn(0f, 1f)
@@ -230,8 +224,6 @@ class MainActivity : AppCompatActivity() {
         return
       }
 
-      // Si el usuario ya soltó el botón tras un TOQUE CORTO (< 190 ms),
-      // completar suavemente los píxeles restantes de ese toque corto para que no sea un salto seco.
       isDpadPhysicallyHeld = false
       activeDpadKeyCode = 0
 
@@ -1126,7 +1118,7 @@ class MainActivity : AppCompatActivity() {
     val extItems = arrayOf(
       "1. Pop-ups Blocker (strict) + Cerrojo de Dominio \u2014 [$shieldLoaded]",
       "2. Cortafuegos Anti-Ads (Adsterra, Vidoomy, Exoclick, Monetag) \u2014 [$shieldLoaded]",
-      "3. Saltarse Todos los Enlaces Acortados + Motor MSE 1080p60 \u2014 [$shieldLoaded]"
+      "3. Saltarse Todos los Enlaces Acortados + Motor 60FPS \u2014 [$shieldLoaded]"
     )
 
     AlertDialog.Builder(this)
@@ -1134,7 +1126,7 @@ class MainActivity : AppCompatActivity() {
       .setItems(extItems) { _, _ ->
         Toast.makeText(
           this,
-          "El escudo nativo est\u00E1 integrado y operando en cacheDir sin ocupar Datos fijos.",
+          "El escudo nativo v8.0 est\u00E1 integrado sin bloquear reproductores.",
           Toast.LENGTH_SHORT
         ).show()
       }
@@ -1474,6 +1466,7 @@ class MainActivity : AppCompatActivity() {
 
         val now = SystemClock.uptimeMillis()
 
+        // Bloquear siempre pestañas emergentes (TARGET_WINDOW_NEW) que intentan abrir los reproductores al dar Play
         if (request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
           if (request.hasUserGesture && geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
             allowTopDomainChangeUntilUptimeMs = now + 5000L
@@ -1486,6 +1479,8 @@ class MainActivity : AppCompatActivity() {
           (now <= allowTopDomainChangeUntilUptimeMs) ||
           request.isDirectNavigation
 
+        // Mientras el usuario está viendo una página (ej. JKAnime o Doramasflix), impedir que un clic
+        // sobre el reproductor redirija la pestaña principal hacia un dominio publicitario externo
         if (!isHomeScreenVisible && !isUserInitiatedNavigation && currentUrl.startsWith("http", ignoreCase = true)) {
           if (!geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
             return GeckoResult.deny()
@@ -1495,6 +1490,8 @@ class MainActivity : AppCompatActivity() {
         return GeckoResult.allow()
       }
 
+      // En subframes (iframes), permitir TODOS los reproductores de vídeo (Desu, Primeload, Dood, Voe, Streamtape, etc.)
+      // bloqueando únicamente dominios publicitarios confirmados.
       override fun onSubframeLoadRequest(
         session: GeckoSession,
         request: GeckoSession.NavigationDelegate.LoadRequest
@@ -2264,9 +2261,6 @@ class MainActivity : AppCompatActivity() {
     isDpadPhysicallyHeld = false
     activeDpadKeyCode = 0
 
-    // Si fue un TOQUE CORTO (< 195 ms), programar un deslizamiento suave de corta distancia
-    // para que la página y el cursor se muevan con animación fluida en lugar de un salto seco.
-    // Si estaba MANTENIENDO PRESIONADO (>= 195 ms), se detiene en el acto al soltar.
     if (heldDurationMs < 195L) {
       when (releasedKeyCode) {
         KeyEvent.KEYCODE_DPAD_UP -> {
