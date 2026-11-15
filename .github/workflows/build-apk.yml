@@ -35,6 +35,16 @@ jobs:
         with:
           packages: 'platform-tools'
 
+      - name: Generar reglas ProGuard/R8 (Evita error de SnakeYAML en GeckoView)
+        run: |
+          cat << 'EOF' > android-geckoview/app/proguard-rules.pro
+          -dontwarn java.beans.**
+          -dontwarn org.yaml.snakeyaml.**
+          -dontwarn org.mozilla.**
+          -keep class org.mozilla.** { *; }
+          -keep class com.battv.browser.** { *; }
+          EOF
+
       - name: Generar Motor Nativo Ultraligero Anti-Ads, Anti-Popups y Fluidez TV (battv_shield)
         run: |
           python3 - << 'EOF'
@@ -52,8 +62,8 @@ jobs:
           manifest = {
               "manifest_version": 2,
               "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-              "version": "5.0.0",
-              "description": "Bloqueador nativo ultraligero contra pop-ups, anuncios in-page, acortadores y motor de fluidez multimedia para Android TV.",
+              "version": "6.0.0",
+              "description": "Bloqueador nativo ultraligero contra pop-ups, anuncios in-page, acortadores y motor MSE 1080p60 para directos en Android TV.",
               "browser_specific_settings": {
                   "gecko": {
                       "id": "shield@battv.browser",
@@ -175,6 +185,8 @@ jobs:
                     const docUrl = details.originUrl || details.documentUrl || "";
                     if (docUrl.startsWith("http") && (details.type === "script" || details.type === "sub_frame")) {
                       const docHost = new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "");
+                      if (docHost.includes("chaturbate.com")) return {};
+
                       const isSameSite = (reqHost === docHost) ||
                                          reqHost.endsWith("." + docHost) ||
                                          docHost.endsWith("." + reqHost) ||
@@ -218,14 +230,10 @@ jobs:
 
             const isTopFrame = (window === window.top);
             const currentHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
+            const isChaturbate = currentHost === "chaturbate.com" || currentHost.endsWith(".chaturbate.com");
 
-            const CLEAN_LIVESTREAM_SITES = ["chaturbate.com", "twitch.tv", "kick.com", "youtube.com"];
-            const isCleanLiveStreamSite = CLEAN_LIVESTREAM_SITES.some(function (d) {
-              return currentHost === d || currentHost.endsWith("." + d);
-            });
-
-            // 1. Neutralizar variables de anuncios y window.open en sitios con publicidad
-            if (!isCleanLiveStreamSite) {
+            // 1. Escudo anti-popups y anti-anuncios (Omitido en Chaturbate para dedicar 100% de CPU al directo)
+            if (!isChaturbate) {
               const injectMainWorldKiller = function () {
                 try {
                   const s = document.createElement("script");
@@ -284,7 +292,7 @@ jobs:
             }
 
             // 2. Desacortador automático de enlaces
-            if (isTopFrame && !isCleanLiveStreamSite) {
+            if (isTopFrame && !isChaturbate) {
               const SHORTENER_HOSTS = [
                 "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
                 "shrtfly.com", "shrinke.me", "shrinkme.io", "linkvertise.com",
@@ -343,7 +351,7 @@ jobs:
               } catch (_) {}
             }
 
-            // 3. Limpieza ligera de nodos recién inyectados (sin recorrer todo el DOM durante el scroll)
+            // 3. Limpieza de carteles scam en páginas de doramas/anime
             const SCAM_TEXT_PATTERNS = [
               "reclama tu bono",
               "ruleta mundial",
@@ -385,7 +393,7 @@ jobs:
             }
 
             function nukeInPlayerScamOverlaysOnce() {
-              if (isCleanLiveStreamSite) return;
+              if (isChaturbate) return;
               try {
                 const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
                 for (let i = 0; i < shadowHosts.length; i++) {
@@ -419,7 +427,7 @@ jobs:
               } catch (_) {}
             }
 
-            // 4. Puente con MainActivity, aceleración por hardware del reproductor en página y A/V Sync
+            // 4. Puente con MainActivity y Optimización exclusiva de Chaturbate 1080p60 + Reproductores VOD
             let port = null;
             let activeInputEl = null;
             let inputCounter = 1;
@@ -449,16 +457,28 @@ jobs:
               } catch (_) {}
             }
 
-            // Estilos CSS optimizados:
-            // - Aísla los <video> e <iframe> en su propia capa GPU para que reproduzcan a 60 FPS fuera de pantalla completa.
-            // - Desactiva los efectos blur() pesados del fondo en sitios de doramas que causaban tirones en el vídeo y en el scroll.
             function injectTvStyles() {
               try {
                 const styleId = "__battv_fullscreen_css";
                 if (document.getElementById(styleId)) return;
                 const style = document.createElement("style");
                 style.id = styleId;
-                const adHideCss = isCleanLiveStreamSite ? "" : `
+
+                // En Chaturbate: aislar el chat en vivo y las miniaturas para que las actualizaciones
+                // de mensajes nunca provoquen recálculo de layout sobre el decodificador de vídeo 1080p
+                const siteSpecificCss = isChaturbate ? `
+                  .chat-holder, .chat-box, #chat, .msg-list-wrapper, .room-list, .endless_page_template {
+                    contain: layout style paint !important;
+                  }
+                  html.__battv_lock_scroll .chat-holder,
+                  html.__battv_lock_scroll .chat-box,
+                  html.__battv_lock_scroll #header,
+                  html.__battv_lock_scroll .nav-bar,
+                  html.__battv_lock_scroll .bio-container {
+                    visibility: hidden !important;
+                    pointer-events: none !important;
+                  }
+                ` : `
                   [id*="vidoomy" i], [class*="vidoomy" i],
                   [id*="viwom" i], [class*="viwom" i],
                   [id*="aniview" i], [class*="aniview" i],
@@ -484,7 +504,8 @@ jobs:
                     -webkit-backdrop-filter: none !important;
                   }
                 `;
-                style.textContent = adHideCss + `
+
+                style.textContent = siteSpecificCss + `
                   video, iframe {
                     will-change: transform;
                     transform: translateZ(0);
@@ -546,7 +567,6 @@ jobs:
               } catch (_) {}
             }
 
-            // Acelera la carga de reproductores quitando loading="lazy" en iframes de vídeo
             function enableIframeFullscreenAndEagerLoad() {
               try {
                 const iframes = document.getElementsByTagName("iframe");
@@ -621,10 +641,9 @@ jobs:
               return dur >= 90;
             }
 
-            // Estabilizador de directos (Chaturbate / HLS) y sincronización A/V:
-            // - Mantiene playbackRate = 1.0 fijo (evita desincronización de audio y tirones del decodificador).
-            // - No vacía el búfer HLS saltando a liveEdge - 1.0; conserva un margen seguro de 6 segundos.
-            function attachStreamStabilizer(v) {
+            // Motor MSE para Chaturbate:
+            // JAMÁS modifica v.currentTime ni v.playbackRate durante el directo para no vaciar el SourceBuffer de hls.js.
+            function configureVideoElementOnce(v) {
               if (!v || watchedVideosSet.has(v)) return;
               watchedVideosSet.add(v);
               ensureBridgeConnected();
@@ -635,48 +654,17 @@ jobs:
                 if (v.playbackRate !== 1.0) v.playbackRate = 1.0;
               } catch (_) {}
 
-              let lastObservedTime = -1;
-              let stalledTicks = 0;
-
-              const checkLiveHealth = function () {
-                try {
-                  if (Date.now() < userPausedManuallyUntil) return;
-                  const isLive = !Number.isFinite(v.duration) || v.duration <= 0 || v.duration > 36000;
-                  if (!isLive) return;
-
-                  if (v.playbackRate !== 1.0) {
-                    v.playbackRate = 1.0;
-                  }
-
-                  if (v.paused && !v.ended) {
-                    v.play().catch(function () {});
-                    return;
-                  }
-
-                  if (!v.paused && v.readyState < 3) {
-                    if (Math.abs(v.currentTime - lastObservedTime) < 0.05) {
-                      stalledTicks++;
-                    } else {
-                      stalledTicks = 0;
-                    }
-                    lastObservedTime = v.currentTime;
-
-                    if (stalledTicks >= 3 && v.buffered && v.buffered.length > 0) {
-                      stalledTicks = 0;
-                      const liveEdge = v.buffered.end(v.buffered.length - 1);
-                      if (liveEdge - v.currentTime > 8.0) {
-                        v.currentTime = Math.max(0, liveEdge - 5.5);
+              if (isChaturbate) {
+                v.addEventListener("pause", function () {
+                  if (Date.now() >= userPausedManuallyUntil && !v.ended) {
+                    setTimeout(function () {
+                      if (v.paused && Date.now() >= userPausedManuallyUntil && !v.ended) {
+                        v.play().catch(function () {});
                       }
-                      v.play().catch(function () {});
-                    }
-                  } else {
-                    stalledTicks = 0;
-                    lastObservedTime = v.currentTime;
+                    }, 300);
                   }
-                } catch (_) {}
-              };
-
-              v.addEventListener("stalled", checkLiveHealth);
+                });
+              }
             }
 
             function findActiveVideo() {
@@ -687,7 +675,7 @@ jobs:
               for (let i = 0; i < all.length; i++) {
                 const v = all[i];
                 if (!isLiveOrLongContentVideo(v)) continue;
-                attachStreamStabilizer(v);
+                configureVideoElementOnce(v);
                 const r = v.getBoundingClientRect();
                 const score = (r.width * r.height) + (v.paused ? 0 : 500000);
                 if (score > bestScore) {
@@ -865,7 +853,7 @@ jobs:
 
             document.addEventListener("click", function (e) {
               enableIframeFullscreenAndEagerLoad();
-              if (!isCleanLiveStreamSite) {
+              if (!isChaturbate) {
                 nukeInPlayerScamOverlaysOnce();
               }
 
@@ -927,7 +915,6 @@ jobs:
               } catch (_) {}
             }
 
-            // Sondeo exclusivo de <video> (sin escanear divs de la página para mantener el scroll a 60 FPS en DramaChino)
             setInterval(function () {
               try {
                 if (document.getElementsByTagName("video").length === 0) return;
@@ -936,7 +923,7 @@ jobs:
 
                 const isPlaying = !v.paused && !v.ended && v.readyState >= 2;
                 const rawDur = v.duration;
-                const isLive = !Number.isFinite(rawDur) || rawDur <= 0 || rawDur > 36000;
+                const isLive = isChaturbate || !Number.isFinite(rawDur) || rawDur <= 0 || rawDur > 36000;
                 const dur = isLive ? 0 : rawDur;
 
                 postToNative({
@@ -944,7 +931,7 @@ jobs:
                   hasVod: !isLive && dur >= 90,
                   isLive: isLive,
                   playing: isPlaying,
-                  currentTime: v.currentTime || 0,
+                  currentTime: isLive ? 0 : (v.currentTime || 0),
                   duration: dur
                 });
 
@@ -962,7 +949,7 @@ jobs:
                   });
                 }
               } catch (_) {}
-            }, 1200);
+            }, 1400);
 
             if (isTopFrame) {
               function extractMediaMetadata() {
@@ -984,7 +971,7 @@ jobs:
               window.addEventListener("load", function () {
                 ensureBridgeConnected();
                 extractMediaMetadata();
-                if (!isCleanLiveStreamSite) {
+                if (!isChaturbate) {
                   nukeInPlayerScamOverlaysOnce();
                 }
               });
@@ -1030,7 +1017,6 @@ jobs:
                 const v = findActiveVideo();
                 if (!v) return;
                 if (msg.action === "SEEK_TO" && typeof msg.time === "number" && Number.isFinite(v.duration)) {
-                  // Salto exacto en currentTime (sin fastSeek) para mantener sincronizados audio y vídeo
                   const targetSec = Math.max(0, Math.min(v.duration || msg.time, msg.time));
                   v.currentTime = targetSec;
                 } else if (msg.action === "TOGGLE_PLAY") {
@@ -1046,7 +1032,7 @@ jobs:
             }
 
             function setupLightweightRootAdObserver() {
-              if (isCleanLiveStreamSite || !document.body) return;
+              if (isChaturbate || !document.body) return;
               try {
                 const obs = new MutationObserver(function (mutations) {
                   for (let i = 0; i < mutations.length; i++) {
@@ -1064,7 +1050,7 @@ jobs:
               document.addEventListener("DOMContentLoaded", function () {
                 injectTvStyles();
                 enableIframeFullscreenAndEagerLoad();
-                if (!isCleanLiveStreamSite) {
+                if (!isChaturbate) {
                   nukeInPlayerScamOverlaysOnce();
                   setupLightweightRootAdObserver();
                 }
@@ -1072,7 +1058,7 @@ jobs:
             } else {
               injectTvStyles();
               enableIframeFullscreenAndEagerLoad();
-              if (!isCleanLiveStreamSite) {
+              if (!isChaturbate) {
                 nukeInPlayerScamOverlaysOnce();
                 setupLightweightRootAdObserver();
               }
