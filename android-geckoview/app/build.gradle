@@ -11,10 +11,9 @@ android {
         applicationId "com.battv.browser"
         minSdk 23
         targetSdk 34
-        versionCode 5
-        versionName "3.0"
+        versionCode 6
+        versionName "3.1"
 
-        // Empaqueta únicamente la arquitectura nativa de Android TV (ahorra ~140 MB en el APK)
         ndk {
             abiFilters "armeabi-v7a"
         }
@@ -27,16 +26,15 @@ android {
 
     buildTypes {
         release {
-            // Desactivado para evitar el fallo de R8 con SnakeYAML (java.beans.*) dentro de GeckoView
-            minifyEnabled false
-            shrinkResources false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.debug
         }
     }
 
     packagingOptions {
         jniLibs {
-            // Evita descomprimir una copia duplicada de libxul.so en el almacenamiento interno del TV
             useLegacyPackaging = false
         }
         resources {
