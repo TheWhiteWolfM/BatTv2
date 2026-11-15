@@ -172,6 +172,14 @@ class BatTvGeckoViewManager(
         }
     }
 
+    /**
+     * Configuración optimizada para compatibilidad total de reproductores (JKAnime, Doramasflix,
+     * DramaChino, TuDorama, AsiaLiveAction, KissKH), Chaturbate 1080p y coexistencia Wi-Fi + Bluetooth:
+     * - network.cookie.cookieBehavior: 0 (permite que todos los iframes de vídeo como Dood, Desu,
+     *   Primeload, Voe y Streamtape carguen sin quedarse en negro ni en blanco).
+     * - network.http.max-connections: 32 y max-persistent-connections-per-server: 6 (evita saturar
+     *   la antena compartida Wi-Fi 2.4GHz / Bluetooth cuando usas audífonos inalámbricos).
+     */
     private fun writeHighPerformanceTvGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.cacheDir, "battv_gecko_config.yaml")
@@ -182,7 +190,7 @@ class BatTvGeckoViewManager(
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 14336
+                  browser.cache.memory.capacity: 16384
                   browser.sessionhistory.max_total_viewers: 0
                   places.history.enabled: false
                   browser.chrome.site_icons: false
@@ -205,7 +213,7 @@ class BatTvGeckoViewManager(
                   media.cache_size: 32768
                   media.memory_cache_max_size: 16384
                   media.memory_caches_combined_limit_kb: 36864
-                  media.cache_readahead_limit: 45
+                  media.cache_readahead_limit: 40
                   media.cache_resume_threshold: 4
                   media.preload.default: 2
                   media.autoplay.default: 0
@@ -216,6 +224,7 @@ class BatTvGeckoViewManager(
                   media.android-media-codec.preferred: true
                   media.hardware-video-decoding.enabled: true
                   media.hardware-video-decoding.force-enabled: true
+                  media.navigator.mediacapabilities.enabled: true
                   media.decoder.recycle.enabled: true
                   media.decoder.skip-to-next-key-frame.enabled: false
                   media.ruin-av-sync.enabled: false
@@ -231,14 +240,16 @@ class BatTvGeckoViewManager(
                   full-screen-api.warning.timeout: 0
                   nglayout.initialpaint.delay: 0
                   network.http.http3.enable: false
-                  network.http.max-connections: 64
-                  network.http.max-persistent-connections-per-server: 10
+                  network.http.max-connections: 32
+                  network.http.max-persistent-connections-per-server: 6
                   network.http.pacing.requests.enabled: false
                   network.http.sendRefererHeader: 2
                   network.dns.disablePrefetch: false
                   network.dns.disablePrefetchFromHTTPS: false
                   network.predictor.enabled: true
-                  network.cookie.cookieBehavior: 4
+                  network.cookie.cookieBehavior: 0
+                  network.cookie.sameSite.laxByDefault: false
+                  network.cookie.sameSite.noneRequiresSecure: false
                   security.mixed_content.block_active_content: false
                   security.mixed_content.block_display_content: false
                   dom.security.https_only_mode: false
@@ -486,6 +497,7 @@ class BatTvGeckoViewManager(
                     val sanitized = child.readLines().filterNot { line ->
                         line.contains("media.hls.enabled") ||
                             line.contains("network.cookie.cookieBehavior") ||
+                            line.contains("network.http.max-connections") ||
                             line.contains("browser.cache.disk.enable") ||
                             line.contains("media.cache_resume_threshold") ||
                             line.contains("skip-to-next-key-frame")
