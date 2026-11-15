@@ -1,0 +1,5 @@
+-dontwarn java.beans.**
+-dontwarn org.yaml.snakeyaml.**
+-dontwarn org.mozilla.**
+-keep class org.mozilla.** { *; }
+-keep class com.battv.browser.** { *; }
