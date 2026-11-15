@@ -55,7 +55,7 @@ class BatTvGeckoViewManager(
             "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
             "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk",
             "wpadmngr.com", "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
-            "highperformanceformat.com", "surfe.pro"
+            "highperformanceformat.com", "surfe.pro", "bebi.com", "adsbyvli.com", "vlitag.com"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
@@ -136,7 +136,6 @@ class BatTvGeckoViewManager(
     private fun getOrCreateRuntime(appContext: Context): GeckoRuntime {
         return sharedRuntime ?: synchronized(Companion) {
             sharedRuntime ?: run {
-                // 1. Eliminar la carpeta antigua filesDir/mozilla que causaba los 39.80 MB de "Datos"
                 try {
                     val legacyMozillaDir = File(appContext.filesDir, "mozilla")
                     if (legacyMozillaDir.exists()) {
@@ -148,7 +147,6 @@ class BatTvGeckoViewManager(
                     }
                 } catch (_: Exception) {}
 
-                // 2. Ubicar el perfil de Gecko dentro de cacheDir para que "Datos" pese < 1 MB
                 val cacheProfileDir = File(appContext.cacheDir, "gv_profile").apply {
                     if (!exists()) mkdirs()
                     cleanDisposableGeckoDirs(this)
@@ -174,12 +172,6 @@ class BatTvGeckoViewManager(
         }
     }
 
-    /**
-     * Configuración calibrada para:
-     * - Cero inflación de "Datos" (places.history.enabled = false, site_icons = false, disk.enable = false).
-     * - Directos de Chaturbate a 1080p60 sin cortes: media.hls.enabled = false fuerza el motor MSE (hls.js)
-     *   acelerado por hardware MediaCodec con 48 MB de búfer dedicado en RAM.
-     */
     private fun writeHighPerformanceTvGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.cacheDir, "battv_gecko_config.yaml")
@@ -190,12 +182,11 @@ class BatTvGeckoViewManager(
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 16384
+                  browser.cache.memory.capacity: 14336
                   browser.sessionhistory.max_total_viewers: 0
                   places.history.enabled: false
                   browser.chrome.site_icons: false
                   browser.chrome.favicons: false
-                  dom.storage.default_quota: 2048
                   browser.safebrowsing.malware.enabled: false
                   browser.safebrowsing.phishing.enabled: false
                   browser.safebrowsing.downloads.enabled: false
@@ -211,20 +202,21 @@ class BatTvGeckoViewManager(
                   apz.overscroll.enabled: false
                   apz.fling_min_velocity_threshold: "0.3"
                   media.suspend-bkgnd-video.enabled: false
-                  media.cache_size: 49152
-                  media.memory_cache_max_size: 24576
-                  media.memory_caches_combined_limit_kb: 49152
-                  media.cache_readahead_limit: 60
+                  media.cache_size: 32768
+                  media.memory_cache_max_size: 16384
+                  media.memory_caches_combined_limit_kb: 36864
+                  media.cache_readahead_limit: 45
                   media.cache_resume_threshold: 4
                   media.preload.default: 2
                   media.autoplay.default: 0
                   media.autoplay.blocking_policy: 0
-                  media.hls.enabled: false
+                  media.hls.enabled: true
                   media.av1.enabled: false
                   media.android-media-codec.enabled: true
                   media.android-media-codec.preferred: true
                   media.hardware-video-decoding.enabled: true
                   media.hardware-video-decoding.force-enabled: true
+                  media.decoder.recycle.enabled: true
                   media.decoder.skip-to-next-key-frame.enabled: false
                   media.ruin-av-sync.enabled: false
                   media.eme.enabled: true
@@ -240,10 +232,9 @@ class BatTvGeckoViewManager(
                   nglayout.initialpaint.delay: 0
                   network.http.http3.enable: false
                   network.http.max-connections: 64
-                  network.http.max-persistent-connections-per-server: 12
+                  network.http.max-persistent-connections-per-server: 10
                   network.http.pacing.requests.enabled: false
-                  network.buffer.cache.size: 32768
-                  network.buffer.cache.count: 32
+                  network.http.sendRefererHeader: 2
                   network.dns.disablePrefetch: false
                   network.dns.disablePrefetchFromHTTPS: false
                   network.predictor.enabled: true
@@ -324,7 +315,8 @@ class BatTvGeckoViewManager(
                 session.webExtensionController.setMessageDelegate(
                     extension,
                     delegate,
-                    NATIVE_BRIDGE_NAME)
+                    NATIVE_BRIDGE_NAME
+                )
             }
         } catch (_: Exception) {}
     }
@@ -478,13 +470,12 @@ class BatTvGeckoViewManager(
                 if (GECKO_DISPOSABLE_CACHE_DIRS.contains(child.name)) {
                     bytes += getFolderSize(child)
                     child.deleteRecursively()
-                } else if (child.name != "extensions") {
+                } else if (child.name != "storage" && child.name != "extensions") {
                     bytes += cleanDisposableGeckoDirs(child)
                 }
             } else if (child.isFile && (
                     child.name.startsWith("places.sqlite") ||
                         child.name.startsWith("favicons.sqlite") ||
-                        child.name.startsWith("webappsstore.sqlite") ||
                         child.name.endsWith(".tmp")
                     )
             ) {
@@ -494,6 +485,7 @@ class BatTvGeckoViewManager(
                 try {
                     val sanitized = child.readLines().filterNot { line ->
                         line.contains("media.hls.enabled") ||
+                            line.contains("network.cookie.cookieBehavior") ||
                             line.contains("browser.cache.disk.enable") ||
                             line.contains("media.cache_resume_threshold") ||
                             line.contains("skip-to-next-key-frame")
