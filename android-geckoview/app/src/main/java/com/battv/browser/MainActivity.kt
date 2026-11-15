@@ -71,12 +71,18 @@ class MainActivity : AppCompatActivity() {
 
     private const val URL_BAR_INDEX = 2
 
-    private const val BASE_CURSOR_FRAME_SPEED_PX = 7.0f
-    private const val MAX_CURSOR_FRAME_SPEED_PX = 20.5f
-    private const val BASE_SCROLL_FRAME_SPEED_PX = 10.5
-    private const val MAX_SCROLL_FRAME_SPEED_PX = 26.0
-    private const val EDGE_SCROLL_ZONE_PX = 108f
+    // Velocidades por fotograma VSYNC (60 FPS continuos)
+    private const val BASE_CURSOR_FRAME_SPEED_PX = 6.8f
+    private const val MAX_CURSOR_FRAME_SPEED_PX = 19.5f
+    private const val BASE_SCROLL_FRAME_SPEED_PX = 11.5
+    private const val MAX_SCROLL_FRAME_SPEED_PX = 27.0
+    private const val SHORT_TAP_GLIDE_DISTANCE_PX = 76.0
+    private const val EDGE_SCROLL_ZONE_PX = 116f
     private const val CURSOR_AUTO_HIDE_MS = 2500L
+
+    // Margen superior al retardo inicial de repetición de Android TV (~500 ms)
+    // para que al mantener presionado nunca se detenga entre el primer toque y la repetición.
+    private const val DPAD_HOLD_WATCHDOG_MS = 750L
   }
 
   private lateinit var prefs: SharedPreferences
@@ -151,20 +157,26 @@ class MainActivity : AppCompatActivity() {
   private var fullscreenPromptDismissedForPage: Boolean = false
   private var lastFullscreenExitUptimeMs: Long = 0L
 
-  // Motor VSYNC con compensación de delta-time (nanosegundos) e inercia suave al soltar el botón
+  // Estado del motor VSYNC a 60 FPS para toque corto suave y presión continua sin pausas
   private var activeDpadKeyCode: Int = 0
+  private var isDpadPhysicallyHeld: Boolean = false
   private var dpadHoldStartUptimeMs: Long = 0L
   private var lastDpadEventUptimeMs: Long = 0L
   private var lastFrameTimeNanos: Long = 0L
   private var isSmoothDpadLoopRunning: Boolean = false
-  private var scrollVelocityYPx: Double = 0.0
+  private var currentScrollSpeedPx: Double = BASE_SCROLL_FRAME_SPEED_PX
+  private var remainingShortTapScrollPx: Double = 0.0
+  private var remainingShortTapCursorX: Float = 0f
+  private var remainingShortTapCursorY: Float = 0f
 
   private val smoothDpadFrameCallback = object : Choreographer.FrameCallback {
     override fun doFrame(frameTimeNanos: Long) {
       if (!isSmoothDpadLoopRunning || !isCursorModeActive || isHomeScreenVisible) {
         isSmoothDpadLoopRunning = false
         lastFrameTimeNanos = 0L
-        scrollVelocityYPx = 0.0
+        remainingShortTapScrollPx = 0.0
+        remainingShortTapCursorX = 0f
+        remainingShortTapCursorY = 0f
         return
       }
 
@@ -176,11 +188,12 @@ class MainActivity : AppCompatActivity() {
       lastFrameTimeNanos = frameTimeNanos
 
       val now = SystemClock.uptimeMillis()
-      val keyStillHeld = activeDpadKeyCode != 0 && (now - lastDpadEventUptimeMs <= 220L)
 
-      if (keyStillHeld) {
+      // Si el botón sigue físicamente presionado (con margen de 750 ms para cubrir el delay
+      // inicial de repetición de Android TV sin congelarse nunca a mitad del movimiento):
+      if (isDpadPhysicallyHeld && activeDpadKeyCode != 0 && (now - lastDpadEventUptimeMs <= DPAD_HOLD_WATCHDOG_MS)) {
         val heldMs = (now - dpadHoldStartUptimeMs).coerceAtLeast(0L)
-        val accelFactor = (heldMs.toFloat() / 480f).coerceIn(0f, 1f)
+        val accelFactor = (heldMs.toFloat() / 520f).coerceIn(0f, 1f)
         val cursorSpeed = (BASE_CURSOR_FRAME_SPEED_PX +
           (MAX_CURSOR_FRAME_SPEED_PX - BASE_CURSOR_FRAME_SPEED_PX) * (accelFactor * accelFactor)) * dtScale.toFloat()
 
@@ -198,37 +211,59 @@ class MainActivity : AppCompatActivity() {
         cursorOverlay.moveCursorBy(dx, dy)
 
         if (!isFullScreenVideo) {
-          val targetSpeed = BASE_SCROLL_FRAME_SPEED_PX +
+          val targetScrollSpeed = BASE_SCROLL_FRAME_SPEED_PX +
             (MAX_SCROLL_FRAME_SPEED_PX - BASE_SCROLL_FRAME_SPEED_PX) * (accelFactor * accelFactor).toDouble()
+          currentScrollSpeedPx = currentScrollSpeedPx * 0.75 + targetScrollSpeed * 0.25
 
-          val dir = when {
-            activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX -> -1.0
-            activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
-              cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX) -> 1.0
-            else -> 0.0
-          }
-
-          if (dir != 0.0) {
-            scrollVelocityYPx = scrollVelocityYPx * 0.72 + (dir * targetSpeed) * 0.28
-            scrollWebPageNative(scrollVelocityYPx * dtScale)
-          } else {
-            scrollVelocityYPx = 0.0
+          if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
+            remainingShortTapScrollPx = 0.0
+            scrollWebPageNative(-currentScrollSpeedPx * dtScale)
+          } else if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+            cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
+          ) {
+            remainingShortTapScrollPx = 0.0
+            scrollWebPageNative(currentScrollSpeedPx * dtScale)
           }
         }
+
+        Choreographer.getInstance().postFrameCallback(this)
+        return
+      }
+
+      // Si el usuario ya soltó el botón tras un TOQUE CORTO (< 190 ms),
+      // completar suavemente los píxeles restantes de ese toque corto para que no sea un salto seco.
+      isDpadPhysicallyHeld = false
+      activeDpadKeyCode = 0
+
+      var keepAnimatingShortTap = false
+
+      if (abs(remainingShortTapCursorX) >= 0.4f || abs(remainingShortTapCursorY) >= 0.4f) {
+        val stepX = remainingShortTapCursorX * 0.32f
+        val stepY = remainingShortTapCursorY * 0.32f
+        remainingShortTapCursorX -= stepX
+        remainingShortTapCursorY -= stepY
+        cursorOverlay.moveCursorBy(stepX, stepY)
+        keepAnimatingShortTap = true
+      } else {
+        remainingShortTapCursorX = 0f
+        remainingShortTapCursorY = 0f
+      }
+
+      if (!isFullScreenVideo && abs(remainingShortTapScrollPx) >= 0.8) {
+        val stepScroll = remainingShortTapScrollPx * 0.28 * dtScale.coerceAtMost(1.3)
+        remainingShortTapScrollPx -= stepScroll
+        scrollWebPageNative(stepScroll)
+        keepAnimatingShortTap = true
+      } else {
+        remainingShortTapScrollPx = 0.0
+      }
+
+      if (keepAnimatingShortTap) {
         Choreographer.getInstance().postFrameCallback(this)
       } else {
-        // Deslizamiento con inercia suave al soltar la flecha arriba/abajo (evita frenado seco)
-        activeDpadKeyCode = 0
-        if (!isFullScreenVideo && abs(scrollVelocityYPx) >= 1.2) {
-          scrollVelocityYPx *= 0.82
-          scrollWebPageNative(scrollVelocityYPx * dtScale)
-          Choreographer.getInstance().postFrameCallback(this)
-        } else {
-          scrollVelocityYPx = 0.0
-          isSmoothDpadLoopRunning = false
-          lastFrameTimeNanos = 0L
-          dispatchHoverMoveAtCursor()
-        }
+        isSmoothDpadLoopRunning = false
+        lastFrameTimeNanos = 0L
+        dispatchHoverMoveAtCursor()
       }
     }
   }
@@ -2203,49 +2238,70 @@ class MainActivity : AppCompatActivity() {
   private fun startSmoothDpadMovement(keyCode: Int, isInitialTap: Boolean) {
     val now = SystemClock.uptimeMillis()
     lastDpadEventUptimeMs = now
+    isDpadPhysicallyHeld = true
     cursorOverlay.showCursorAndScheduleFade()
     scheduleCursorAutoHide()
 
-    if (isInitialTap) {
-      val dx = when (keyCode) {
-        KeyEvent.KEYCODE_DPAD_LEFT -> -10f
-        KeyEvent.KEYCODE_DPAD_RIGHT -> 10f
-        else -> 0f
-      }
-      val dy = when (keyCode) {
-        KeyEvent.KEYCODE_DPAD_UP -> -10f
-        KeyEvent.KEYCODE_DPAD_DOWN -> 10f
-        else -> 0f
-      }
-      cursorOverlay.moveCursorBy(dx, dy)
-      if (!isFullScreenVideo) {
-        if (keyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {
-          scrollVelocityYPx = -14.0
-          scrollWebPageNative(scrollVelocityYPx)
-        } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
-          cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)
-        ) {
-          scrollVelocityYPx = 14.0
-          scrollWebPageNative(scrollVelocityYPx)
-        }
-      }
-    }
-
-    if (activeDpadKeyCode != keyCode || !isSmoothDpadLoopRunning) {
+    if (isInitialTap || activeDpadKeyCode != keyCode) {
       activeDpadKeyCode = keyCode
       dpadHoldStartUptimeMs = now
+      currentScrollSpeedPx = BASE_SCROLL_FRAME_SPEED_PX
+      remainingShortTapScrollPx = 0.0
+      remainingShortTapCursorX = 0f
+      remainingShortTapCursorY = 0f
+    }
+
+    if (!isSmoothDpadLoopRunning) {
+      isSmoothDpadLoopRunning = true
+      lastFrameTimeNanos = 0L
+      Choreographer.getInstance().postFrameCallback(smoothDpadFrameCallback)
+    }
+  }
+
+  private fun handleDpadKeyRelease(releasedKeyCode: Int) {
+    val now = SystemClock.uptimeMillis()
+    val heldDurationMs = (now - dpadHoldStartUptimeMs).coerceAtLeast(0L)
+    isDpadPhysicallyHeld = false
+    activeDpadKeyCode = 0
+
+    // Si fue un TOQUE CORTO (< 195 ms), programar un deslizamiento suave de corta distancia
+    // para que la página y el cursor se muevan con animación fluida en lugar de un salto seco.
+    // Si estaba MANTENIENDO PRESIONADO (>= 195 ms), se detiene en el acto al soltar.
+    if (heldDurationMs < 195L) {
+      when (releasedKeyCode) {
+        KeyEvent.KEYCODE_DPAD_UP -> {
+          remainingShortTapCursorY = -12f
+          if (!isFullScreenVideo && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX + 24f) {
+            remainingShortTapScrollPx = -SHORT_TAP_GLIDE_DISTANCE_PX
+          }
+        }
+        KeyEvent.KEYCODE_DPAD_DOWN -> {
+          remainingShortTapCursorY = 12f
+          if (!isFullScreenVideo && cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX - 24f)) {
+            remainingShortTapScrollPx = SHORT_TAP_GLIDE_DISTANCE_PX
+          }
+        }
+        KeyEvent.KEYCODE_DPAD_LEFT -> remainingShortTapCursorX = -12f
+        KeyEvent.KEYCODE_DPAD_RIGHT -> remainingShortTapCursorX = 12f
+      }
       if (!isSmoothDpadLoopRunning) {
         isSmoothDpadLoopRunning = true
         lastFrameTimeNanos = 0L
         Choreographer.getInstance().postFrameCallback(smoothDpadFrameCallback)
       }
+    } else {
+      stopSmoothDpadMovement(immediate = true)
+      dispatchHoverMoveAtCursor()
     }
   }
 
-  private fun stopSmoothDpadMovement(immediate: Boolean = false) {
+  private fun stopSmoothDpadMovement(immediate: Boolean = true) {
+    isDpadPhysicallyHeld = false
     activeDpadKeyCode = 0
     if (immediate) {
-      scrollVelocityYPx = 0.0
+      remainingShortTapScrollPx = 0.0
+      remainingShortTapCursorX = 0f
+      remainingShortTapCursorY = 0f
       lastFrameTimeNanos = 0L
       if (isSmoothDpadLoopRunning) {
         isSmoothDpadLoopRunning = false
@@ -2506,8 +2562,7 @@ class MainActivity : AppCompatActivity() {
           }
           startSmoothDpadMovement(keyCode, isInitialTap = (event.repeatCount == 0))
         } else if (action == KeyEvent.ACTION_UP) {
-          // Permite que el bucle termine con inercia suave si estaba haciendo scroll
-          stopSmoothDpadMovement(immediate = false)
+          handleDpadKeyRelease(keyCode)
           scheduleCursorAutoHide()
         }
         return true
@@ -2550,27 +2605,37 @@ class MainActivity : AppCompatActivity() {
   private fun simulateTapAtCursor() {
     val x = cursorOverlay.cursorX
     val y = cursorOverlay.cursorY
-    val now = SystemClock.uptimeMillis()
-    lastUserWebClickTime = now
+    val downTime = SystemClock.uptimeMillis()
+    lastUserWebClickTime = downTime
     isSyntheticDpadTap = true
 
     geckoView.requestFocus()
     geckoSession?.setActive(true)
     geckoSession?.setFocused(true)
 
+    dispatchHoverMoveAtCursor()
+
     try {
-      val downEvent = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0).apply {
-        source = InputDevice.SOURCE_TOUCHSCREEN
-      }
-      val upEvent = MotionEvent.obtain(now, now + 35L, MotionEvent.ACTION_UP, x, y, 0).apply {
+      val downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0).apply {
         source = InputDevice.SOURCE_TOUCHSCREEN
       }
       geckoView.dispatchTouchEvent(downEvent)
-      geckoView.dispatchTouchEvent(upEvent)
       downEvent.recycle()
-      upEvent.recycle()
+
+      mainHandler.postDelayed({
+        val upTime = SystemClock.uptimeMillis()
+        try {
+          val upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, x, y, 0).apply {
+            source = InputDevice.SOURCE_TOUCHSCREEN
+          }
+          geckoView.dispatchTouchEvent(upEvent)
+          upEvent.recycle()
+        } catch (_: Exception) {
+        } finally {
+          isSyntheticDpadTap = false
+        }
+      }, 24L)
     } catch (_: Exception) {
-    } finally {
       isSyntheticDpadTap = false
     }
 
