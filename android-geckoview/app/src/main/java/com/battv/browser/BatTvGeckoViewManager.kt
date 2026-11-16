@@ -24,6 +24,8 @@ class BatTvGeckoViewManager(
 
     companion object {
         private const val TAG = "BatTvGeckoManager"
+        private const val PREFS_NAME = "battv_browser_prefs"
+        private const val KEY_PROFILE_RESET_V13 = "profile_clean_reset_v13"
 
         const val BATTV_SHIELD_ID = "shield@battv.browser"
         const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield/"
@@ -143,21 +145,27 @@ class BatTvGeckoViewManager(
         return sharedRuntime ?: synchronized(Companion) {
             sharedRuntime ?: run {
                 try {
-                    val legacyMozillaDir = File(appContext.filesDir, "mozilla")
-                    if (legacyMozillaDir.exists()) {
-                        legacyMozillaDir.deleteRecursively()
-                    }
-                    val legacyCfg = File(appContext.filesDir, "battv_gecko_config.yaml")
-                    if (legacyCfg.exists()) {
-                        legacyCfg.delete()
+                    // 1. Borrar cualquier resto del antiguo perfil en cacheDir que bloqueaba el sandbox de Doramasflix
+                    deleteDirectoryContents(appContext.cacheDir)
+                    appContext.externalCacheDir?.let { deleteDirectoryContents(it) }
+
+                    val mozillaDir = File(appContext.filesDir, "mozilla")
+                    val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+                    // 2. Limpieza única al actualizar a v13 para borrar cachés corruptas de pruebas previas
+                    //    (conservando intactos Favoritos, Historial y Ajustes en SharedPreferences)
+                    if (!prefs.getBoolean(KEY_PROFILE_RESET_V13, false)) {
+                        if (mozillaDir.exists()) {
+                            mozillaDir.deleteRecursively()
+                        }
+                        prefs.edit().putBoolean(KEY_PROFILE_RESET_V13, true).apply()
+                    } else if (mozillaDir.exists()) {
+                        cleanDisposableGeckoDirs(mozillaDir)
                     }
                 } catch (_: Exception) {}
 
-                val cacheProfileDir = File(appContext.cacheDir, "gv_profile").apply {
-                    if (!exists()) mkdirs()
-                    cleanDisposableGeckoDirs(this)
-                }
-
+                // 3. Usar el perfil nativo de GeckoView (sin pasar "-profile") para que IndexedDB y Next.js
+                //    en Doramasflix tengan permisos completos en el proceso de contenido de Android
                 val cfgFile = writeHighPerformanceTvGeckoConfig(appContext)
                 val builder = GeckoRuntimeSettings.Builder()
                     .javaScriptEnabled(true)
@@ -165,7 +173,6 @@ class BatTvGeckoViewManager(
                     .aboutConfigEnabled(false)
                     .doubleTapZoomingEnabled(false)
                     .automaticFontSizeAdjustment(false)
-                    .arguments(arrayOf("-profile", cacheProfileDir.absolutePath))
 
                 if (cfgFile != null) {
                     builder.configFilePath(cfgFile.absolutePath)
@@ -183,12 +190,12 @@ class BatTvGeckoViewManager(
             val cfgFile = File(appContext.cacheDir, "battv_gecko_config.yaml")
             val yamlContent = """
                 prefs:
-                  browser.cache.disk.enable: true
-                  browser.cache.disk.capacity: 20480
+                  browser.cache.disk.enable: false
+                  browser.cache.disk.capacity: 0
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 16384
+                  browser.cache.memory.capacity: 18432
                   browser.sessionhistory.max_total_viewers: 0
                   places.history.enabled: false
                   browser.chrome.site_icons: false
@@ -238,7 +245,7 @@ class BatTvGeckoViewManager(
                   full-screen-api.warning.timeout: 0
                   nglayout.initialpaint.delay: 0
                   network.http.http3.enable: false
-                  network.http.max-connections: 36
+                  network.http.max-connections: 40
                   network.http.max-persistent-connections-per-server: 8
                   network.http.pacing.requests.enabled: false
                   network.http.sendRefererHeader: 2
@@ -430,38 +437,44 @@ class BatTvGeckoViewManager(
     fun pruneDisposableStorageNow() {
         Thread {
             try {
-                val legacyMozillaDir = File(context.filesDir, "mozilla")
-                if (legacyMozillaDir.exists()) {
-                    legacyMozillaDir.deleteRecursively()
-                }
-                val cacheProfileDir = File(context.cacheDir, "gv_profile")
-                if (cacheProfileDir.exists()) {
-                    cleanDisposableGeckoDirs(cacheProfileDir)
-                }
+                deleteDirectoryContents(context.cacheDir)
                 context.externalCacheDir?.let { deleteDirectoryContents(it) }
+                val mozillaDir = File(context.filesDir, "mozilla")
+                if (mozillaDir.exists()) {
+                    cleanDisposableGeckoDirs(mozillaDir)
+                }
             } catch (_: Exception) {}
         }.start()
     }
 
     fun clearSafeCaches(onComplete: (Long) -> Unit) {
+        if (::runtime.isInitialized) {
+            try {
+                runtime.storageController.clearData(
+                    StorageController.ClearFlags.IMAGE_CACHE or
+                        StorageController.ClearFlags.NETWORK_CACHE
+                )
+            } catch (_: Exception) {}
+        }
+
         Thread {
             var freedBytes = 0L
             try {
-                val legacyMozillaDir = File(context.filesDir, "mozilla")
-                if (legacyMozillaDir.exists()) {
-                    freedBytes += getFolderSize(legacyMozillaDir)
-                    legacyMozillaDir.deleteRecursively()
-                }
-                val cacheProfileDir = File(context.cacheDir, "gv_profile")
-                if (cacheProfileDir.exists()) {
-                    freedBytes += cleanDisposableGeckoDirs(cacheProfileDir)
-                }
+                freedBytes += deleteDirectoryContents(context.cacheDir)
                 context.externalCacheDir?.let { freedBytes += deleteDirectoryContents(it) }
+                val mozillaDir = File(context.filesDir, "mozilla")
+                if (mozillaDir.exists()) {
+                    freedBytes += cleanDisposableGeckoDirs(mozillaDir)
+                }
             } catch (_: Exception) {}
             onComplete(freedBytes)
         }.start()
     }
 
+    /**
+     * Limpia únicamente cachés desechables (cache2, startupCache, shader-cache, thumbnails)
+     * SIN tocar jamás la carpeta "storage" para no corromper IndexedDB/QuotaManager en Doramasflix.
+     */
     private fun cleanDisposableGeckoDirs(dir: File): Long {
         var bytes = 0L
         val children = dir.listFiles() ?: return 0L
@@ -470,16 +483,14 @@ class BatTvGeckoViewManager(
                 if (GECKO_DISPOSABLE_CACHE_DIRS.contains(child.name)) {
                     bytes += getFolderSize(child)
                     child.deleteRecursively()
-                } else if (child.name == "storage") {
-                    bytes += cleanServiceWorkerCachesInStorage(child)
-                } else if (child.name != "extensions") {
+                } else if (child.name != "storage" && child.name != "extensions") {
                     bytes += cleanDisposableGeckoDirs(child)
                 }
             } else if (child.isFile && (
                     child.name.startsWith("places.sqlite") ||
                         child.name.startsWith("favicons.sqlite") ||
-                        child.name.startsWith("serviceworker.txt") ||
-                        child.name.endsWith(".tmp")
+                        child.name.endsWith(".tmp") ||
+                        child.name.endsWith(".bak")
                     )
             ) {
                 bytes += child.length()
@@ -501,22 +512,6 @@ class BatTvGeckoViewManager(
         return bytes
     }
 
-    private fun cleanServiceWorkerCachesInStorage(storageDir: File): Long {
-        var freed = 0L
-        val files = storageDir.listFiles() ?: return 0L
-        for (f in files) {
-            if (f.isDirectory) {
-                if (f.name == "cache" || f.name == "morgue") {
-                    freed += getFolderSize(f)
-                    f.deleteRecursively()
-                } else {
-                    freed += cleanServiceWorkerCachesInStorage(f)
-                }
-            }
-        }
-        return freed
-    }
-
     private fun deleteDirectoryContents(dir: File?): Long {
         if (dir == null || !dir.exists()) return 0L
         var bytes = 0L
@@ -525,10 +520,8 @@ class BatTvGeckoViewManager(
             bytes += getFolderSize(f)
             f.deleteRecursively()
         }
-        return totalBytes(dir) // fallback
+        return bytes
     }
-
-    private fun totalBytes(dir: File): Long = getFolderSize(dir)
 
     private fun getFolderSize(file: File): Long {
         if (!file.exists()) return 0L
