@@ -40,7 +40,6 @@ class BatTvGeckoViewManager(
         const val PC_MODE_USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
 
-        // Incluye redes publicitarias + tiendas y casas de apuestas que secuestran iframes al pulsar Play (AliExpress, etc.)
         private val AD_AND_POPUP_DOMAINS = listOf(
             "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
             "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
@@ -104,6 +103,15 @@ class BatTvGeckoViewManager(
     ): GeckoSession {
         bridgeMessageDelegate = messageDelegate
         runtime = getOrCreateRuntime(context.applicationContext)
+
+        // Limpiar caché de red e imágenes al iniciar para asegurar que Doramasflix
+        // cargue todas sus miniaturas y scripts limpios sin restos de bloqueos previos
+        try {
+            runtime.storageController.clearData(
+                StorageController.ClearFlags.NETWORK_CACHE or
+                    StorageController.ClearFlags.IMAGE_CACHE
+            )
+        } catch (_: Exception) {}
 
         val sessionSettings = GeckoSessionSettings.Builder()
             .usePrivateMode(false)
@@ -239,8 +247,8 @@ class BatTvGeckoViewManager(
                   full-screen-api.warning.timeout: 0
                   nglayout.initialpaint.delay: 0
                   network.http.http3.enable: false
-                  network.http.max-connections: 32
-                  network.http.max-persistent-connections-per-server: 6
+                  network.http.max-connections: 36
+                  network.http.max-persistent-connections-per-server: 8
                   network.http.pacing.requests.enabled: false
                   network.http.sendRefererHeader: 2
                   network.dns.disablePrefetch: false
@@ -480,12 +488,17 @@ class BatTvGeckoViewManager(
                 if (GECKO_DISPOSABLE_CACHE_DIRS.contains(child.name)) {
                     bytes += getFolderSize(child)
                     child.deleteRecursively()
-                } else if (child.name != "storage" && child.name != "extensions") {
+                } else if (child.name == "storage") {
+                    // Limpiar únicamente cachés de ServiceWorkers (cache/morgue) que hayan guardado
+                    // respuestas rotas en Doramasflix, conservando localStorage
+                    bytes += cleanServiceWorkerCachesInStorage(child)
+                } else if (child.name != "extensions") {
                     bytes += cleanDisposableGeckoDirs(child)
                 }
             } else if (child.isFile && (
                     child.name.startsWith("places.sqlite") ||
                         child.name.startsWith("favicons.sqlite") ||
+                        child.name.startsWith("serviceworker.txt") ||
                         child.name.endsWith(".tmp")
                     )
             ) {
@@ -506,6 +519,22 @@ class BatTvGeckoViewManager(
             }
         }
         return bytes
+    }
+
+    private fun cleanServiceWorkerCachesInStorage(storageDir: File): Long {
+        var freed = 0L
+        val files = storageDir.listFiles() ?: return 0L
+        for (f in files) {
+            if (f.isDirectory) {
+                if (f.name == "cache" || f.name == "morgue") {
+                    freed += getFolderSize(f)
+                    f.deleteRecursively()
+                } else {
+                    freed += cleanServiceWorkerCachesInStorage(f)
+                }
+            }
+        }
+        return freed
     }
 
     private fun deleteDirectoryContents(dir: File?): Long {
