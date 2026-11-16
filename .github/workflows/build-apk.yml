@@ -45,14 +45,12 @@ jobs:
           -keep class com.battv.browser.** { *; }
           EOF
 
-      - name: Generar Motor Nativo v13.0 (Doramasflix 100%, Anti-Robot/Casino 777 en DramaChino y JKAnime)
+      - name: Generar Motor Nativo v14.0 (Doramasflix Next.js Intacto, Cortafuegos BYSE/DramaChino y JKAnime)
         run: |
           python3 - << 'EOF'
           import json
           import os
-          import re
           import shutil
-          import urllib.request
 
           EXT_BASE = "android-geckoview/app/src/main/assets/extensions"
           if os.path.exists(EXT_BASE):
@@ -61,79 +59,11 @@ jobs:
           SHIELD_DIR = os.path.join(EXT_BASE, "battv_shield")
           os.makedirs(SHIELD_DIR, exist_ok=True)
 
-          compiled_domains = {
-              "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
-              "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
-              "googleadservices.com", "google-analytics.com", "googletagmanager.com",
-              "googletagservices.com", "popads.net", "popcash.net", "propellerads.com",
-              "exoclick.com", "magsrv.com", "realsrv.com", "juicyads.com", "adsterra.com",
-              "monetag.com", "acscdn.com", "onclickads.net", "hilltopads.net",
-              "galaksion.com", "clickadu.com", "adcash.com", "richads.com",
-              "admaven.com", "bidgear.com", "trafficjunky.net", "trafficstars.com",
-              "tsyndicate.com", "rollerads.com", "evadav.com", "optad360.io",
-              "teads.tv", "taboola.com", "outbrain.com", "mgid.com", "revcontent.com",
-              "criteo.com", "pubmatic.com", "rubiconproject.com", "openx.net",
-              "smartadserver.com", "1xbet.com", "1xstavka.ru", "bet365.com", "mostbet.com",
-              "caliente.mx", "codere.mx", "betano.com", "bwin.com", "pin-up.bet",
-              "pin-up.casino", "20bet.com", "22bet.com", "melbet.com", "parimatch.com",
-              "stake.com", "leon.bet", "1win.pro", "1win.com", "apuestasroyal.com",
-              "pushground.com", "yllix.com", "plugrush.com", "adspyglass.com",
-              "clksite.com", "clkmon.com", "betteradsystem.com", "blurtsbrerd.com",
-              "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
-              "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk",
-              "wpadmngr.com", "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
-              "highperformanceformat.com", "surfe.pro", "histats.com", "yandex.ru",
-              "mc.yandex.ru", "clarity.ms", "bebi.com", "adsbyvli.com", "vlitag.com",
-              "adtng.com", "ero-advertising.com", "adform.net", "quantserve.com",
-              "scorecardresearch.com", "dtscout.com", "acint.net", "adkernel.com",
-              "aliexpress.com", "aliexpress.us", "aliexpress.ru", "alibaba.com",
-              "mmstat.com", "aliapp.org", "temu.com", "shein.com", "shopee.com", "lazada.com"
-          }
-
-          PROTECTED_KEYWORDS = (
-              "jkanime", "jkdesu", "doramasflix", "dramachino", "tudorama",
-              "asialiveaction", "kisskh", "chaturbate", "mmcdn", "highwebmedia",
-              "google.", "gstatic", "googleapis", "youtube", "ytimg", "cloudflare",
-              "jsdelivr", "unpkg", "jquery", "bootstrap", "fontawesome", "jwplayer",
-              "jwpcdn", "jwpsrv", "plyr", "videojs", "zencdn", "vimeocdn", "vimeo",
-              "dailymotion", "dmcdn", "voe.", "streamtape", "dood", "d000d", "ds2play",
-              "filemoon", "streamwish", "wishembed", "vidhide", "mp4upload", "ok.ru",
-              "mycdn", "mixdrop", "yourupload", "primeload", "embedshortener",
-              "fembed", "uqload", "upstream", "vudeo", "netu", "waaw", "hqq",
-              "mega.nz", "mediafire", "akamaized", "akamaihd", "cloudfront", "fastly",
-              "fbcdn", "twimg", "imgur", "tmdb", "themoviedb", "github", "gitlab",
-              "wp.com", "wordpress", "disqus", "recaptcha", "sweet", "sweetalert",
-              "amazonaws", "bunnycdn", "b-cdn", "sibnet", "sendvid", "vk.com",
-              "byse", "do7go", "n1mwq", "pkaa"
-          )
-
-          def is_safe_to_block(domain):
-              if not domain or len(domain) < 4 or "." not in domain:
-                  return False
-              for kw in PROTECTED_KEYWORDS:
-                  if kw in domain:
-                      return False
-              return True
-
-          plain_domain_re = re.compile(r"^[a-z0-9.-]+\.[a-z]{2,}$")
-          try:
-              req = urllib.request.Request(
-                  "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=nohtml&showintro=0&mimetype=plaintext",
-                  headers={"User-Agent": "Mozilla/5.0"}
-              )
-              with urllib.request.urlopen(req, timeout=15) as resp:
-                  for raw_line in resp.read().decode("utf-8", errors="ignore").splitlines():
-                      line = raw_line.strip().lower()
-                      if plain_domain_re.match(line) and is_safe_to_block(line):
-                          compiled_domains.add(line)
-          except Exception as e:
-              print("Aviso descargando lista Peter Lowe:", e)
-
           manifest = {
               "manifest_version": 2,
               "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-              "version": "13.0.0",
-              "description": "Destructor de modales Robot/Casino 777 en DramaChino, soporte completo Next.js en Doramasflix y JKAnime.",
+              "version": "14.0.0",
+              "description": "Hidratación limpia Next.js en Doramasflix, cortafuegos de scripts en BYSE/DramaChino y soporte JKAnime.",
               "browser_specific_settings": {
                   "gecko": {
                       "id": "shield@battv.browser",
@@ -167,23 +97,79 @@ jobs:
           with open(os.path.join(SHIELD_DIR, "manifest.json"), "w", encoding="utf-8") as mf:
               json.dump(manifest, mf, indent=2, ensure_ascii=False)
 
-          domains_json_array = json.dumps(sorted(list(compiled_domains)))
-
-          background_js_template = r'''(function () {
+          # background.js basado en la arquitectura probada de codigo_battv_2.txt:
+          # 1. Desacorta automáticamente embedshortener.co/e/<jwt> para Doramasflix.
+          # 2. Aplica el cortafuegos de scripts de terceros sobre DramaChino y sobre TODOS los reproductores
+          #    embebidos (/e/, /embed, byse, voe, streamtape, primeload, dood, filemoon, streamwish),
+          #    bloqueando de raíz el script que inyecta "CONFIRMA QUE NO ERES UN ROBOT" y "777 ¡Felicitaciones!".
+          # 3. Deja las páginas principales de doramasflix.io, doramasflix.co y jkanime.net libres de bloqueos
+          #    ciegos para que Next.js y los selectores de servidores carguen al 100%.
+          background_js = r'''(function () {
             "use strict";
 
-            const COMPILED_AD_DOMAINS = new Set(__DOMAINS_JSON__);
+            const BLOCKED_AD_DOMAINS = [
+              "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
+              "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
+              "googleadservices.com", "google-analytics.com", "googletagmanager.com",
+              "googletagservices.com", "popads.net", "popcash.net", "propellerads.com",
+              "exoclick.com", "magsrv.com", "realsrv.com", "juicyads.com", "adsterra.com",
+              "monetag.com", "acscdn.com", "onclickads.net", "hilltopads.net",
+              "galaksion.com", "clickadu.com", "adcash.com", "richads.com",
+              "admaven.com", "bidgear.com", "trafficjunky.net", "trafficstars.com",
+              "tsyndicate.com", "rollerads.com", "evadav.com", "optad360.io",
+              "teads.tv", "taboola.com", "outbrain.com", "mgid.com", "revcontent.com",
+              "criteo.com", "pubmatic.com", "rubiconproject.com", "openx.net",
+              "smartadserver.com", "1xbet.com", "1xstavka.ru", "bet365.com", "mostbet.com",
+              "caliente.mx", "codere.mx", "betano.com", "bwin.com", "pin-up.bet",
+              "pin-up.casino", "20bet.com", "22bet.com", "melbet.com", "parimatch.com",
+              "stake.com", "leon.bet", "1win.pro", "1win.com", "apuestasroyal.com",
+              "pushground.com", "yllix.com", "plugrush.com", "adspyglass.com",
+              "clksite.com", "clkmon.com", "betteradsystem.com", "blurtsbrerd.com",
+              "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
+              "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk",
+              "wpadmngr.com", "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
+              "highperformanceformat.com", "surfe.pro", "histats.com", "yandex.ru",
+              "mc.yandex.ru", "clarity.ms", "bebi.com", "adsbyvli.com", "vlitag.com",
+              "adtng.com", "ero-advertising.com", "adform.net", "quantserve.com",
+              "scorecardresearch.com", "dtscout.com", "acint.net", "adkernel.com",
+              "aliexpress.com", "aliexpress.us", "aliexpress.ru", "alibaba.com",
+              "mmstat.com", "aliapp.org", "temu.com", "shein.com", "shopee.com", "lazada.com"
+            ];
 
-            // Firmas exactas de scripts de popunders, Adsterra Social Bar (32-hex), In-Page Push y banners de apuestas
-            const AD_URL_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js\?|\/(popunder|tabunder|clickunder|socialbar|inpagepush|adframe|adscript|pop\.js|pop2\.js)([\/._?-]|$)|\/(apu|afu)\.php(\?|$)|[?&](utm_source=pop|ad_type=pop|ali_trackid=|aff_fcid=|aff_fsk=|clickid=)|1xbet|mostbet|bet365|apuestasroyal)/i;
+            // Sitios y reproductores donde bloqueamos cualquier <script> de dominios externos desconocidos
+            // (incluye DramaChino y todos los servidores BYSE, Primeload, Voe, Streamtape, Filemoon, Streamwish)
+            const PROTECTED_STREAMING_AND_PLAYERS = [
+              "dramachino.com", "tudorama.com", "asialiveaction.com", "kisskh.do", "kisskh.co",
+              "hdfull.one", "primeload.co", "voe.sx", "streamtape.com",
+              "filemoon.sx", "streamwish.to", "wishembed.pro", "vidhidevip.com", "do7go.com",
+              "byse.sx", "bysebuho.com", "bysefujedu.com", "bysetayico.com", "bysevepoin.com",
+              "f16px.com", "n1mwq.org", "pkaa.top", "dood.watch", "dood.to", "dood.la", "d000d.com", "ds2play.com"
+            ];
 
-            function isDomainBlocked(hostname) {
-              let curr = (hostname || "").toLowerCase().replace(/^www\./, "");
-              while (curr && curr.includes(".")) {
-                if (COMPILED_AD_DOMAINS.has(curr)) return true;
-                const dotIdx = curr.indexOf(".");
-                if (dotIdx === -1) break;
-                curr = curr.slice(dotIdx + 1);
+            const ALLOWED_TECH_CDNS = [
+              "cloudflare.com", "cdnjs.cloudflare.com", "cloudflareinsights.com",
+              "jsdelivr.net", "unpkg.com", "gstatic.com", "googleapis.com",
+              "google.com", "recaptcha.net", "jquery.com", "bootstrapcdn.com",
+              "fontawesome.com", "jwpsrv.com", "jwpcdn.com", "jwplayer.com",
+              "vimeocdn.com", "plyr.io", "vjs.zencdn.net", "zencdn.net", "videojs.com",
+              "tmdb.org", "themoviedb.org", "imgur.com", "wp.com", "gitlab.io", "github.io",
+              "akamaihd.net", "akamaized.net", "fastly.net", "cloudfront.net",
+              "jkanime.net", "jkanime.bz", "doramasflix.io", "doramasflix.co",
+              "ok.ru", "mycdn.me", "vk.com", "mp4upload.com", "mixdrop.co", "mixdrop.ag", "yourupload.com"
+            ];
+
+            const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/popunder|\/tabunder|\/clickunder|\/apu\.php|\/afu\.php|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta)/i;
+
+            function getBaseBrand(hostname) {
+              const clean = (hostname || "").toLowerCase().replace(/^www\./, "");
+              const parts = clean.split(".");
+              return parts.length >= 2 ? parts[parts.length - 2] : clean;
+            }
+
+            function isHostInList(host, list) {
+              for (let i = 0; i < list.length; i++) {
+                const item = list[i];
+                if (host === item || host.endsWith("." + item)) return true;
               }
               return false;
             }
@@ -195,22 +181,59 @@ jobs:
                     const rawUrl = details.url || "";
                     if (!rawUrl.startsWith("http")) return {};
 
-                    // Proteger siempre imágenes, fuentes, hojas de estilo y peticiones fetch/XHR de las páginas
-                    if (details.type === "image" || details.type === "imageset" ||
-                        details.type === "font" || details.type === "stylesheet" ||
-                        details.type === "xmlhttprequest") {
-                      if (/1xbet|mostbet|bet365|apuestasroyal|exoclick|adsterra|juicyads/i.test(rawUrl)) {
-                        return { cancel: true };
-                      }
-                      return {};
-                    }
-
                     const parsed = new URL(rawUrl);
                     const reqHost = parsed.hostname.toLowerCase().replace(/^www\./, "");
 
-                    // Usar { cancel: true } limpio (sin redirectUrl data: que dispara errores CSP en Next.js)
-                    if (isDomainBlocked(reqHost) || AD_URL_REGEX.test(rawUrl)) {
+                    // 1. Desacortar automáticamente embedshortener.co/e/<jwt> (usado por Doramasflix)
+                    if (reqHost.includes("embedshortener.co") && parsed.pathname.startsWith("/e/")) {
+                      const token = parsed.pathname.slice(3).split(".")[1];
+                      if (token) {
+                        const payload = JSON.parse(atob(token.replace(/-/g, "+").replace(/_/g, "/")));
+                        if (payload && payload.link) {
+                          const decodedUrl = atob(payload.link).trim();
+                          if (/^https?:\/\//i.test(decodedUrl)) {
+                            return { redirectUrl: decodedUrl };
+                          }
+                        }
+                      }
+                    }
+
+                    // 2. Bloquear dominios publicitarios conocidos y firmas de Adsterra / PopAds
+                    if (isHostInList(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl)) {
                       return { cancel: true };
+                    }
+
+                    // 3. Cortafuegos de scripts de terceros en DramaChino y en TODOS los reproductores (/e/, /embed, byse, etc.):
+                    //    Cancela cualquier <script> de dominios rotativos desconocidos que inyectan
+                    //    "CONFIRMA QUE NO ERES UN ROBOT" o "777 ¡Felicitaciones! ¡Reclama tu bono!".
+                    const docUrl = details.originUrl || details.documentUrl || "";
+                    if (docUrl.startsWith("http") && details.type === "script") {
+                      const docHost = new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "");
+
+                      // Dejar las páginas raíz (frameId === 0) de doramasflix.io, doramasflix.co, jkanime.net y chaturbate.com
+                      // libres de este filtro para que Next.js y los selectores de servidores carguen siempre al 100%
+                      if (docHost.includes("chaturbate.com")) return {};
+                      if (details.frameId === 0 && (docHost.includes("doramasflix.") || docHost.includes("jkanime."))) {
+                        return {};
+                      }
+
+                      const isSameSite = (reqHost === docHost) ||
+                                         reqHost.endsWith("." + docHost) ||
+                                         docHost.endsWith("." + reqHost) ||
+                                         (getBaseBrand(reqHost) === getBaseBrand(docHost));
+
+                      if (!isSameSite) {
+                        const onProtectedSiteOrPlayer = isHostInList(docHost, PROTECTED_STREAMING_AND_PLAYERS) ||
+                                                        docHost.includes("byse") ||
+                                                        details.frameId > 0 ||
+                                                        docUrl.includes("/e/") ||
+                                                        docUrl.includes("/embed");
+                        if (onProtectedSiteOrPlayer &&
+                            !isHostInList(reqHost, ALLOWED_TECH_CDNS) &&
+                            !isHostInList(reqHost, PROTECTED_STREAMING_AND_PLAYERS)) {
+                          return { cancel: true };
+                        }
+                      }
                     }
                   } catch (_) {}
                   return {};
@@ -230,7 +253,6 @@ jobs:
           })();
           '''
 
-          background_js = background_js_template.replace("__DOMAINS_JSON__", domains_json_array)
           with open(os.path.join(SHIELD_DIR, "background.js"), "w", encoding="utf-8") as bf:
               bf.write(background_js.strip() + "\n")
 
@@ -242,13 +264,13 @@ jobs:
             const isTopFrame = (window === window.top);
             const currentHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
             const isChaturbate = currentHost === "chaturbate.com" || currentHost.endsWith(".chaturbate.com");
+            const isDoramasflixTop = isTopFrame && (currentHost.includes("doramasflix.io") || currentHost.includes("doramasflix.co"));
 
             // 1. Inyección en el Main World:
-            //    - En Chaturbate: fuerza MSE (hls.js) para directos 1080p sin cortes.
-            //    - En el resto de páginas: bloquea window.open, bloquea clics sintéticos a.click() hacia
-            //      dominios externos y abre todos los Shadow DOMs cerrados (data-battv-shadow="1")
-            //      donde se esconden los carteles de "777 ¡Felicitaciones!" y "CONFIRMA QUE NO ERES UN ROBOT".
-            const injectMainWorldEngine = function () {
+            //    IMPORTANTE: En la página principal de Doramasflix (isDoramasflixTop) esperamos a DOMContentLoaded
+            //    para NO insertar etiquetas <script> ni <style> antes de que Next.js / React 18 termine de hidratar
+            //    las miniaturas y la lista de reproductores.
+            const injectMainWorldKiller = function () {
               try {
                 const s = document.createElement("script");
                 if (isChaturbate) {
@@ -264,59 +286,31 @@ jobs:
                 } else {
                   s.textContent = `(function(){
                     try {
-                      function createDummyPopupWindow(targetUrl) {
-                        const resolvedUrl = (typeof targetUrl === "string" && targetUrl.length > 0) ? targetUrl : "https://localhost/";
-                        const fakeLoc = {
-                          href: resolvedUrl,
-                          assign: function(u) { this.href = u; },
-                          replace: function(u) { this.href = u; },
-                          reload: function() {},
-                          toString: function() { return this.href; }
-                        };
-                        const winObj = {
-                          closed: false,
-                          opener: window,
-                          location: fakeLoc,
-                          document: {
-                            write: function() {},
-                            writeln: function() {},
-                            open: function() { return this; },
-                            close: function() {},
-                            body: { appendChild: function() {}, style: {} }
-                          },
-                          focus: function() {},
-                          blur: function() {},
-                          close: function() { this.closed = true; },
-                          postMessage: function() {},
-                          addEventListener: function() {},
-                          removeEventListener: function() {},
-                          setTimeout: function() { return 1; },
-                          clearTimeout: function() {}
-                        };
-                        winObj.window = winObj;
-                        winObj.self = winObj;
-                        winObj.top = winObj;
-                        return winObj;
-                      }
-
+                      const dummyWin = {
+                        closed: false,
+                        focus: function(){},
+                        blur: function(){},
+                        close: function(){},
+                        postMessage: function(){},
+                        location: { href: "about:blank", assign: function(){}, replace: function(){} }
+                      };
                       window.open = function(url) {
                         if (url && typeof url === "string" && url.startsWith(location.origin) && window === window.top) {
                           location.href = url;
                         }
-                        return createDummyPopupWindow(url);
+                        return dummyWin;
                       };
 
-                      const origAnchorClick = HTMLAnchorElement.prototype.click;
-                      HTMLAnchorElement.prototype.click = function() {
+                      const adGlobals = ["atOptions", "_pop", "popns", "exoOpts", "adsbyvidoomy", "pJSDom"];
+                      for (let i = 0; i < adGlobals.length; i++) {
                         try {
-                          const href = (this.getAttribute("href") || "").trim();
-                          const target = (this.getAttribute("target") || "").toLowerCase();
-                          if (window !== window.top || target === "_blank" || (href.startsWith("http") && !href.includes(location.hostname))) {
-                            return;
-                          }
+                          Object.defineProperty(window, adGlobals[i], {
+                            get: function() { return undefined; },
+                            set: function() {},
+                            configurable: false
+                          });
                         } catch (_) {}
-                        return origAnchorClick.apply(this, arguments);
-                      };
+                      }
 
                       const origAttachShadow = Element.prototype.attachShadow;
                       if (origAttachShadow) {
@@ -334,65 +328,110 @@ jobs:
               } catch (_) {}
             };
 
-            if (document.documentElement) {
-              injectMainWorldEngine();
+            if (isDoramasflixTop) {
+              window.addEventListener("load", injectMainWorldKiller, { once: true });
+            } else if (document.documentElement) {
+              injectMainWorldKiller();
             } else {
-              document.addEventListener("DOMContentLoaded", injectMainWorldEngine, { once: true });
+              document.addEventListener("DOMContentLoaded", injectMainWorldKiller, { once: true });
             }
 
-            // 2. Comunicación entre iframes para destruir iframes publicitarios que muestren
-            //    "CONFIRMA QUE NO ERES UN ROBOT" o "777 ¡Felicitaciones! ¡Reclama tu bono!"
-            window.addEventListener("message", function (e) {
-              if (e && e.data && e.data.__battvNukeFrame === true) {
+            // 2. Desacortador automático (incluye embedshortener.co/e/<jwt> para que los reproductores de Doramasflix abran al instante)
+            if (!isChaturbate) {
+              const SHORTENER_HOSTS = [
+                "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
+                "shrtfly.com", "shrinke.me", "shrinkme.io", "linkvertise.com",
+                "adfoc.us", "bc.vc", "shorte.st", "gestyy.com", "destyy.com",
+                "corneey.com", "clk.sh", "clk.asia", "oko.sh", "za.gl",
+                "cuty.io", "cety.app", "gplinks.co", "droplink.co", "tnshort.net",
+                "rekonise.com", "sub2unlock.com", "boost.ink", "mboost.me",
+                "embedshortener.co", "short-jambo.com", "uii.io", "mitly.us"
+              ];
+
+              function tryDecodeBase64Url(str) {
                 try {
-                  const iframes = document.getElementsByTagName("iframe");
-                  for (let i = iframes.length - 1; i >= 0; i--) {
-                    const f = iframes[i];
-                    if (f.contentWindow === e.source && !f.querySelector("video")) {
-                      f.style.setProperty("display", "none", "important");
-                      f.remove();
+                  const clean = decodeURIComponent(str).trim().replace(/-/g, "+").replace(/_/g, "/");
+                  const decoded = atob(clean).trim();
+                  if (/^https?:\/\/[^\s"']+$/i.test(decoded)) return decoded;
+                } catch (_) {}
+                return null;
+              }
+
+              try {
+                const loc = window.location;
+                if (currentHost.includes("embedshortener.co") && loc.pathname.startsWith("/e/")) {
+                  const parts = loc.pathname.slice(3).split(".");
+                  if (parts.length > 1) {
+                    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+                    if (payload && payload.link) {
+                      const target = tryDecodeBase64Url(payload.link);
+                      if (target) {
+                        loc.replace(target);
+                        return;
+                      }
                     }
                   }
-                } catch (_) {}
-              }
-            });
+                }
 
-            // 3. Destructor continuo (cada 400 ms + en cada clic) de:
-            //    - "CONFIRMA QUE NO ERES UN ROBOT / Haz clic en el botón / I'm not a robot"
-            //    - "777 ¡Felicitaciones! 01:00 ¡Reclama tu bono!" (con confeti)
-            //    - "¡Felicidades! BONUS Disponible €1500 / Transferir Dinero / Retirar Dinero"
-            const EXACT_SCAM_PHRASES = [
+                if (isTopFrame) {
+                  const isShortener = SHORTENER_HOSTS.some(function (d) {
+                    return currentHost === d || currentHost.endsWith("." + d);
+                  });
+                  if (isShortener) {
+                    const params = new URLSearchParams(loc.search);
+                    const keys = ["url", "dest", "destination", "go", "link", "target", "out", "redirect", "r", "u"];
+                    for (let i = 0; i < keys.length; i++) {
+                      const val = params.get(keys[i]);
+                      if (!val) continue;
+                      if (/^https?:\/\//i.test(val)) {
+                        loc.replace(val);
+                        return;
+                      }
+                      const b64 = tryDecodeBase64Url(val);
+                      if (b64) {
+                        loc.replace(b64);
+                        return;
+                      }
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+
+            // 3. Limpiador quirúrgico de "CONFIRMA QUE NO ERES UN ROBOT", "777 ¡Felicitaciones! ¡Reclama tu bono!" y "BONUS €1500"
+            //    - NUNCA oculta ni borra el iframe del reproductor BYSE.
+            //    - NUNCA oculta [data-battv-shadow] por CSS a ciegas (solo si su shadowRoot tiene texto scam).
+            //    - NUNCA toca el árbol #__next de Doramasflix.
+            const SCAM_TEXT_PATTERNS = [
               "confirma que no eres un robot",
               "haz clic en el botón",
-              "haz clic en \"más\"",
-              "haz clic en 'más'",
-              "i'm not a robot",
               "reclama tu bono",
               "¡felicitaciones!",
-              "transferir dinero",
-              "retirar dinero",
-              "disponible €",
-              "€1500",
               "ruleta mundial",
               "empieza a ganar",
               "donde juegan los grandes",
               "apuestas royal",
-              "bono de bienvenida",
-              "primeros 4 depósitos",
-              "cada apuesta, mil emociones"
+              "transferir dinero",
+              "retirar dinero",
+              "disponible €",
+              "€1500",
+              "limpia tu",
+              "haz clic en \"más\"",
+              "haz clic en 'más'",
+              "bono de bienvenida"
             ];
 
-            function hasExactScamPhrase(str) {
+            function containsScamText(str) {
               if (!str) return false;
               const lower = str.toLowerCase();
-              for (let i = 0; i < EXACT_SCAM_PHRASES.length; i++) {
-                if (lower.includes(EXACT_SCAM_PHRASES[i])) return true;
+              for (let i = 0; i < SCAM_TEXT_PATTERNS.length; i++) {
+                if (lower.includes(SCAM_TEXT_PATTERNS[i])) return true;
               }
               return false;
             }
 
-            function containsRealVideoPlayer(el) {
-              if (!el || !el.tagName) return false;
+            function isProtectedPlayerOrAppContainer(el) {
+              if (!el || !el.tagName) return true;
               const tag = el.tagName.toUpperCase();
               if (tag === "VIDEO" || tag === "BODY" || tag === "HTML" || tag === "MAIN" || tag === "HEADER" || tag === "NAV") {
                 return true;
@@ -402,113 +441,89 @@ jobs:
                   id === "pframe" || id === "player" || id === "main_video_container" || id === "episodes-content") {
                 return true;
               }
-              if (el.classList && (el.classList.contains("servers") || el.classList.contains("bg-servers") || el.classList.contains("player_conte"))) {
+              const nextRoot = document.getElementById("__next");
+              if (nextRoot && (el === nextRoot || el.contains(nextRoot) || nextRoot.contains(el))) {
                 return true;
               }
-              if (el.querySelector && el.querySelector(
-                  "video, #__next, #video_box, #pframe, .player_conte, .servers, .bg-servers, " +
-                  "iframe[src*='embed'], iframe[src*='jkplayer'], iframe[src*='um.php'], " +
-                  "iframe[src*='nozomi'], iframe[src*='desu'], iframe[src*='primeload'], " +
-                  "iframe[src*='voe'], iframe[src*='dood'], iframe[src*='streamtape'], " +
-                  "iframe[src*='streamwish'], iframe[src*='vidhide'], iframe[src*='filemoon'], " +
-                  "iframe[src*='byse'], iframe[src*='do7go']"
-              )) {
+              const cls = (typeof el.className === "string") ? el.className.toLowerCase() : "";
+              if (cls.includes("servers") || cls.includes("player") || cls.includes("jw-") ||
+                  cls.includes("vjs-") || cls.includes("plyr")) {
+                return true;
+              }
+              if (el.querySelector && el.querySelector("video, iframe, #video_box, #pframe, .servers, .bg-servers, .player_conte")) {
+                return true;
+              }
+              // Proteger el botón azul "Reproducir" del reproductor BYSE
+              const txt = (el.textContent || "").trim().toLowerCase();
+              if (txt === "reproducir" || (txt.includes("reproducir") && !containsScamText(txt))) {
                 return true;
               }
               return false;
             }
 
-            function sweepAdModalsAndRobotOverlays() {
-              if (isChaturbate || !document.body) return;
+            function nukeInPlayerScamOverlays() {
+              if (isChaturbate || isDoramasflixTop) return;
               try {
-                // A. Si este documento es un iframe publicitario sin <video> que contiene
-                //    "CONFIRMA QUE NO ERES UN ROBOT" o "777 ¡Felicitaciones! ¡Reclama tu bono!", autodestruirse
-                if (!isTopFrame && !document.querySelector("video")) {
-                  const bodyTxt = (document.body.textContent || "").trim();
-                  if (bodyTxt.length >= 6 && bodyTxt.length <= 500 && hasExactScamPhrase(bodyTxt)) {
-                    document.documentElement.style.cssText = "display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;background:transparent!important;";
-                    try {
-                      if (window.frameElement) {
-                        window.frameElement.style.setProperty("display", "none", "important");
-                        window.frameElement.remove();
-                      }
-                    } catch (_) {}
-                    try { window.parent.postMessage({ __battvNukeFrame: true }, "*"); } catch (_) {}
-                    try { window.top.postMessage({ __battvNukeFrame: true }, "*"); } catch (_) {}
-                    return;
-                  }
-                }
-
-                // B. Destruir cualquier Shadow DOM abierto que contenga anuncios o carezca de <video>
+                // 1. Revisar Shadow DOMs creados por Adsterra Social Bar / In-Page Push
                 const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
-                for (let i = shadowHosts.length - 1; i >= 0; i--) {
+                for (let i = 0; i < shadowHosts.length; i++) {
                   const host = shadowHosts[i];
-                  if (containsRealVideoPlayer(host)) continue;
                   const sr = host.shadowRoot;
-                  if (sr && !sr.querySelector("video")) {
-                    host.style.setProperty("display", "none", "important");
+                  if (sr && !sr.querySelector("video") && containsScamText((sr.textContent || "") + " " + (sr.innerHTML || ""))) {
                     host.remove();
                   }
                 }
 
-                // C. Buscar desde los nodos de texto internos ("CONFIRMA QUE NO ERES UN ROBOT",
-                //    "¡Reclama tu bono!", "¡Felicitaciones!") y subir hasta el contenedor del modal
-                //    para borrarlo completo aunque tenga 50 elementos de confeti o imágenes dentro
-                const textNodes = document.querySelectorAll("h1, h2, h3, h4, p, span, b, strong, button, a, div");
-                for (let j = textNodes.length - 1; j >= 0; j--) {
-                  const node = textNodes[j];
-                  if (!node || !node.isConnected || containsRealVideoPlayer(node)) continue;
-                  const txt = (node.textContent || "").trim();
-                  if (txt.length >= 8 && txt.length <= 280 && hasExactScamPhrase(txt)) {
-                    let modalRoot = node;
-                    while (
-                      modalRoot.parentElement &&
-                      modalRoot.parentElement !== document.body &&
-                      modalRoot.parentElement !== document.documentElement &&
-                      !containsRealVideoPlayer(modalRoot.parentElement) &&
-                      (modalRoot.parentElement.textContent || "").trim().length <= 550
-                    ) {
-                      modalRoot = modalRoot.parentElement;
-                    }
-                    if (!containsRealVideoPlayer(modalRoot)) {
-                      modalRoot.style.setProperty("display", "none", "important");
-                      modalRoot.remove();
-                    }
-                  }
-                }
+                // 2. Eliminar contenedores de anuncios superpuestos ("CONFIRMA QUE NO ERES UN ROBOT" / "777 ¡Felicitaciones!")
+                const candidates = document.querySelectorAll(
+                  "div, aside, section, ins, a[target='_blank'], [class*='social-bar' i]"
+                );
+                for (let j = 0; j < candidates.length; j++) {
+                  const el = candidates[j];
+                  if (!el || !el.parentElement || isProtectedPlayerOrAppContainer(el)) continue;
 
-                // D. Limpiar enlaces trampa <a target="_blank"> colocados sobre el botón Play
-                const blankLinks = document.querySelectorAll("a[target='_blank']");
-                for (let k = blankLinks.length - 1; k >= 0; k--) {
-                  const a = blankLinks[k];
-                  if (a.classList.contains("servers") || a.closest(".servers, .bg-servers, .dropdown-menu, #episodes-content")) {
-                    a.removeAttribute("target");
-                    continue;
-                  }
-                  const href = (a.getAttribute("href") || "").trim();
-                  if (!isTopFrame) {
-                    a.style.setProperty("display", "none", "important");
-                    a.remove();
-                    continue;
-                  }
-                  if (href.startsWith("http")) {
+                  if (el.tagName === "A" && (el.getAttribute("target") || "").toLowerCase() === "_blank") {
+                    if (el.classList.contains("servers") || el.closest(".servers, .bg-servers, .dropdown-menu")) {
+                      el.removeAttribute("target");
+                      continue;
+                    }
+                    const href = (el.getAttribute("href") || "").trim();
+                    if (!href || href === "#" || href.startsWith("javascript:")) {
+                      el.removeAttribute("target");
+                      continue;
+                    }
                     try {
                       const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
                       if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
-                        if ((a.textContent || "").trim().length === 0) {
-                          a.style.setProperty("display", "none", "important");
-                          a.remove();
+                        if (!isTopFrame || (el.textContent || "").trim().length === 0) {
+                          el.remove();
+                        } else {
+                          el.removeAttribute("href");
+                          el.removeAttribute("target");
                         }
+                        continue;
                       }
                     } catch (_) {}
                   }
+
+                  const txt = (el.textContent || "").trim();
+                  if (txt.length > 6 && txt.length < 380 && containsScamText(txt)) {
+                    let toRemove = el;
+                    while (
+                      toRemove.parentElement &&
+                      toRemove.parentElement !== document.body &&
+                      toRemove.parentElement !== document.documentElement &&
+                      !isProtectedPlayerOrAppContainer(toRemove.parentElement) &&
+                      (toRemove.parentElement.textContent || "").trim().length < 480
+                    ) {
+                      toRemove = toRemove.parentElement;
+                    }
+                    if (!isProtectedPlayerOrAppContainer(toRemove)) {
+                      toRemove.remove();
+                    }
+                  }
                 }
               } catch (_) {}
-            }
-
-            // Ejecutar barrido rápido cada 450 ms para eliminar al instante cualquier modal de Robot o Casino 777
-            if (!isChaturbate) {
-              setInterval(sweepAdModalsAndRobotOverlays, 450);
             }
 
             // 4. Puente con MainActivity, aceleración por hardware 60 FPS y control remoto
@@ -548,6 +563,8 @@ jobs:
                 const style = document.createElement("style");
                 style.id = styleId;
 
+                // NOTA CRÍTICA: JAMÁS incluir [data-battv-shadow] aquí porque ocultaría los controles
+                // de reproductores que usan Shadow DOM legítimo (como BYSE / Plyr / Vidstack).
                 const siteSpecificCss = isChaturbate ? `
                   .chat-holder, .chat-box, #chat, .msg-list-wrapper, .room-list, .endless_page_template {
                     contain: layout style paint !important;
@@ -563,18 +580,14 @@ jobs:
                 ` : `
                   [id*="vidoomy" i], [class*="vidoomy" i],
                   [id*="viwom" i], [class*="viwom" i],
+                  [id*="aniview" i], [class*="aniview" i],
                   [id*="primis" i], [class*="primis" i],
                   [id*="adinplay" i], [class*="adinplay" i],
-                  [id*="adsterra" i], [class*="adsterra" i],
-                  [id*="floating-ad" i], [class*="floating-ad" i],
-                  [id*="sticky-ad" i], [class*="sticky-ad" i],
-                  [data-battv-shadow],
                   iframe[src*="vidoomy" i], iframe[src*="viwom" i],
                   iframe[src*="exoclick" i], iframe[src*="adsterra" i],
                   iframe[src*="magsrv" i], iframe[src*="realsrv" i],
                   iframe[src*="doubleclick" i], iframe[src*="googlesyndication" i],
                   iframe[src*="popads" i], iframe[src*="propellerads" i],
-                  iframe[src*="adcash" i], iframe[src*="clickadu" i],
                   iframe[src*="1xbet" i], iframe[src*="aliexpress" i],
                   a[href*="1xbet" i], a[href*="mostbet" i], a[href*="bet365" i],
                   ins.eas6a97888e, ins.adsbygoogle,
@@ -912,26 +925,11 @@ jobs:
               });
             }
 
-            document.addEventListener("pointerdown", function () {
-              if (!isChaturbate) sweepAdModalsAndRobotOverlays();
-            }, true);
-
             document.addEventListener("click", function (e) {
-              if (!isChaturbate) {
-                sweepAdModalsAndRobotOverlays();
-                const a = e.target && e.target.closest ? e.target.closest("a") : null;
-                if (a && !a.classList.contains("servers") && !a.closest(".servers, .bg-servers, .dropdown-menu, #episodes-content")) {
-                  const target = (a.getAttribute("target") || "").toLowerCase();
-                  if (target === "_blank") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    a.remove();
-                    return;
-                  }
-                }
-              }
-
               enableIframeFullscreenAttrs();
+              if (!isChaturbate && !isDoramasflixTop) {
+                nukeInPlayerScamOverlays();
+              }
 
               if (isPlayerFullscreenButton(e.target)) {
                 setTimeout(function () {
@@ -989,6 +987,9 @@ jobs:
 
             setInterval(function () {
               try {
+                if (!isChaturbate && !isDoramasflixTop) {
+                  nukeInPlayerScamOverlays();
+                }
                 if (document.getElementsByTagName("video").length === 0) return;
                 const v = findActiveVideo();
                 if (!v) return;
@@ -1004,7 +1005,7 @@ jobs:
                   duration: isLive ? 0 : rawDur
                 });
               } catch (_) {}
-            }, 1300);
+            }, 1100);
 
             if (isTopFrame) {
               function extractMediaMetadata() {
@@ -1027,7 +1028,13 @@ jobs:
                 ensureBridgeConnected();
                 extractMediaMetadata();
                 enableIframeFullscreenAttrs();
-                if (!isChaturbate) sweepAdModalsAndRobotOverlays();
+                if (isDoramasflixTop) {
+                  // En Doramasflix inyectamos el CSS de pantalla completa 1 segundo después de load
+                  // cuando Next.js ya hidrató todas las portadas y reproductores
+                  setTimeout(injectTvStyles, 1000);
+                } else if (!isChaturbate) {
+                  nukeInPlayerScamOverlays();
+                }
               });
             }
 
@@ -1085,16 +1092,18 @@ jobs:
               }
             }
 
-            if (document.readyState === "loading") {
-              document.addEventListener("DOMContentLoaded", function () {
+            if (!isDoramasflixTop) {
+              if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", function () {
+                  injectTvStyles();
+                  enableIframeFullscreenAttrs();
+                  if (!isChaturbate) nukeInPlayerScamOverlays();
+                });
+              } else {
                 injectTvStyles();
                 enableIframeFullscreenAttrs();
-                if (!isChaturbate) sweepAdModalsAndRobotOverlays();
-              });
-            } else {
-              injectTvStyles();
-              enableIframeFullscreenAttrs();
-              if (!isChaturbate) sweepAdModalsAndRobotOverlays();
+                if (!isChaturbate) nukeInPlayerScamOverlays();
+              }
             }
           })();
           '''
@@ -1102,7 +1111,7 @@ jobs:
           with open(os.path.join(SHIELD_DIR, "content_start.js"), "w", encoding="utf-8") as cf:
               cf.write(content_start_js.strip() + "\n")
 
-          print("Escudo nativo v13.0 creado correctamente")
+          print("Escudo nativo v14.0 creado correctamente")
           EOF
 
       - name: Instalar Gradle 8.5
