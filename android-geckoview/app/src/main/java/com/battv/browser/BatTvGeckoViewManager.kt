@@ -25,7 +25,7 @@ class BatTvGeckoViewManager(
     companion object {
         private const val TAG = "BatTvGeckoManager"
         private const val PREFS_NAME = "battv_browser_prefs"
-        private const val KEY_PROFILE_RESET_V13 = "profile_clean_reset_v13"
+        private const val KEY_CLEAN_PROFILE_V14 = "profile_clean_reset_v14"
 
         const val BATTV_SHIELD_ID = "shield@battv.browser"
         const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield/"
@@ -144,28 +144,23 @@ class BatTvGeckoViewManager(
     private fun getOrCreateRuntime(appContext: Context): GeckoRuntime {
         return sharedRuntime ?: synchronized(Companion) {
             sharedRuntime ?: run {
+                val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val needsCleanReset = !prefs.getBoolean(KEY_CLEAN_PROFILE_V14, false)
+
                 try {
-                    // 1. Borrar cualquier resto del antiguo perfil en cacheDir que bloqueaba el sandbox de Doramasflix
                     deleteDirectoryContents(appContext.cacheDir)
                     appContext.externalCacheDir?.let { deleteDirectoryContents(it) }
-
                     val mozillaDir = File(appContext.filesDir, "mozilla")
-                    val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-                    // 2. Limpieza única al actualizar a v13 para borrar cachés corruptas de pruebas previas
-                    //    (conservando intactos Favoritos, Historial y Ajustes en SharedPreferences)
-                    if (!prefs.getBoolean(KEY_PROFILE_RESET_V13, false)) {
+                    if (needsCleanReset) {
                         if (mozillaDir.exists()) {
                             mozillaDir.deleteRecursively()
                         }
-                        prefs.edit().putBoolean(KEY_PROFILE_RESET_V13, true).apply()
+                        prefs.edit().putBoolean(KEY_CLEAN_PROFILE_V14, true).apply()
                     } else if (mozillaDir.exists()) {
                         cleanDisposableGeckoDirs(mozillaDir)
                     }
                 } catch (_: Exception) {}
 
-                // 3. Usar el perfil nativo de GeckoView (sin pasar "-profile") para que IndexedDB y Next.js
-                //    en Doramasflix tengan permisos completos en el proceso de contenido de Android
                 val cfgFile = writeHighPerformanceTvGeckoConfig(appContext)
                 val builder = GeckoRuntimeSettings.Builder()
                     .javaScriptEnabled(true)
@@ -178,16 +173,27 @@ class BatTvGeckoViewManager(
                     builder.configFilePath(cfgFile.absolutePath)
                 }
 
-                GeckoRuntime.create(appContext, builder.build()).also {
-                    sharedRuntime = it
+                GeckoRuntime.create(appContext, builder.build()).also { rt ->
+                    sharedRuntime = rt
+                    if (needsCleanReset) {
+                        try {
+                            rt.storageController.clearData(StorageController.ClearFlags.ALL_CACHES)
+                        } catch (_: Exception) {}
+                    }
                 }
             }
         }
     }
 
+    /**
+     * Configuración exacta probada en codigo_battv_2.txt donde Doramasflix, DramaChino y JKAnime
+     * cargan todas sus miniaturas, rutas Next.js y reproductores sin bloqueos:
+     * - Sin places.history.enabled: false (que bloqueaba el enrutador de Next.js en Doramasflix).
+     * - Escrita en filesDir para acceso inmediato de los procesos de contenido de GeckoView.
+     */
     private fun writeHighPerformanceTvGeckoConfig(appContext: Context): File? {
         return try {
-            val cfgFile = File(appContext.cacheDir, "battv_gecko_config.yaml")
+            val cfgFile = File(appContext.filesDir, "battv_gecko_config.yaml")
             val yamlContent = """
                 prefs:
                   browser.cache.disk.enable: false
@@ -195,11 +201,8 @@ class BatTvGeckoViewManager(
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 18432
+                  browser.cache.memory.capacity: 16384
                   browser.sessionhistory.max_total_viewers: 0
-                  places.history.enabled: false
-                  browser.chrome.site_icons: false
-                  browser.chrome.favicons: false
                   browser.safebrowsing.malware.enabled: false
                   browser.safebrowsing.phishing.enabled: false
                   browser.safebrowsing.downloads.enabled: false
@@ -213,12 +216,12 @@ class BatTvGeckoViewManager(
                   image.mem.decode_bytes_at_a_time: 65536
                   image.mem.shared: true
                   apz.overscroll.enabled: false
-                  apz.fling_min_velocity_threshold: "0.3"
+                  apz.fling_min_velocity_threshold: "0.4"
                   media.suspend-bkgnd-video.enabled: false
                   media.cache_size: 32768
                   media.memory_cache_max_size: 16384
                   media.memory_caches_combined_limit_kb: 36864
-                  media.cache_readahead_limit: 40
+                  media.cache_readahead_limit: 30
                   media.cache_resume_threshold: 4
                   media.preload.default: 2
                   media.autoplay.default: 0
@@ -229,14 +232,10 @@ class BatTvGeckoViewManager(
                   media.android-media-codec.preferred: true
                   media.hardware-video-decoding.enabled: true
                   media.hardware-video-decoding.force-enabled: true
-                  media.navigator.mediacapabilities.enabled: true
-                  media.decoder.recycle.enabled: true
                   media.decoder.skip-to-next-key-frame.enabled: false
                   media.ruin-av-sync.enabled: false
                   media.eme.enabled: true
                   media.mediasource.enabled: true
-                  media.mediasource.mp4.enabled: true
-                  media.mediasource.webm.enabled: true
                   dom.disable_open_during_load: true
                   dom.popup_maximum: 0
                   full-screen-api.enabled: true
@@ -245,16 +244,13 @@ class BatTvGeckoViewManager(
                   full-screen-api.warning.timeout: 0
                   nglayout.initialpaint.delay: 0
                   network.http.http3.enable: false
-                  network.http.max-connections: 40
+                  network.http.max-connections: 48
                   network.http.max-persistent-connections-per-server: 8
                   network.http.pacing.requests.enabled: false
-                  network.http.sendRefererHeader: 2
                   network.dns.disablePrefetch: false
                   network.dns.disablePrefetchFromHTTPS: false
                   network.predictor.enabled: true
-                  network.cookie.cookieBehavior: 0
-                  network.cookie.sameSite.laxByDefault: false
-                  network.cookie.sameSite.noneRequiresSecure: false
+                  network.cookie.cookieBehavior: 4
                   security.mixed_content.block_active_content: false
                   security.mixed_content.block_display_content: false
                   dom.security.https_only_mode: false
@@ -299,14 +295,7 @@ class BatTvGeckoViewManager(
             }
         }
 
-        controller.list().accept({ existingList ->
-            existingList?.forEach { ext ->
-                if (ext.id != BATTV_SHIELD_ID) {
-                    controller.uninstall(ext)
-                }
-            }
-        }, {})
-
+        // Forzar actualización limpia del escudo nativo desde los assets del nuevo APK
         controller.ensureBuiltIn(BATTV_SHIELD_URI, BATTV_SHIELD_ID).accept(
             { extension ->
                 if (extension != null) {
@@ -471,10 +460,6 @@ class BatTvGeckoViewManager(
         }.start()
     }
 
-    /**
-     * Limpia únicamente cachés desechables (cache2, startupCache, shader-cache, thumbnails)
-     * SIN tocar jamás la carpeta "storage" para no corromper IndexedDB/QuotaManager en Doramasflix.
-     */
     private fun cleanDisposableGeckoDirs(dir: File): Long {
         var bytes = 0L
         val children = dir.listFiles() ?: return 0L
@@ -486,21 +471,17 @@ class BatTvGeckoViewManager(
                 } else if (child.name != "storage" && child.name != "extensions") {
                     bytes += cleanDisposableGeckoDirs(child)
                 }
-            } else if (child.isFile && (
-                    child.name.startsWith("places.sqlite") ||
-                        child.name.startsWith("favicons.sqlite") ||
-                        child.name.endsWith(".tmp") ||
-                        child.name.endsWith(".bak")
-                    )
-            ) {
+            } else if (child.isFile && child.name == "addonStartup.json.lz4") {
+                // Borrar caché de arranque de extensiones para obligar a cargar siempre el nuevo battv_shield
                 bytes += child.length()
                 child.delete()
             } else if (child.isFile && child.name == "prefs.js") {
                 try {
                     val sanitized = child.readLines().filterNot { line ->
-                        line.contains("media.hls.enabled") ||
+                        line.contains("places.history.enabled") ||
+                            line.contains("browser.chrome.site_icons") ||
+                            line.contains("browser.chrome.favicons") ||
                             line.contains("network.cookie.cookieBehavior") ||
-                            line.contains("network.http.max-connections") ||
                             line.contains("browser.cache.disk.enable") ||
                             line.contains("media.cache_resume_threshold") ||
                             line.contains("skip-to-next-key-frame")
