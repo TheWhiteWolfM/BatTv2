@@ -62,8 +62,8 @@ jobs:
           manifest = {
               "manifest_version": 2,
               "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-              "version": "9.0.0",
-              "description": "Bloqueador anti-hijack de iframes (AliExpress/Scam), destructor de In-Page Push (Bonus 1500) y motor 60FPS para Android TV.",
+              "version": "9.5.0",
+              "description": "Filtro tipo uBlock Origin para JKAnime, Doramasflix y DramaChino: bloquea popups, AliExpress y Bonus 1500 sin ocultar reproductores.",
               "browser_specific_settings": {
                   "gecko": {
                       "id": "shield@battv.browser",
@@ -97,10 +97,12 @@ jobs:
           with open(os.path.join(SHIELD_DIR, "manifest.json"), "w", encoding="utf-8") as mf:
               json.dump(manifest, mf, indent=2, ensure_ascii=False)
 
+          # background.js: Funciona exactamente como las listas de filtros de uBlock Origin:
+          # Cancela únicamente dominios publicitarios/scam confirmados y firmas de scripts de anuncios.
+          # JAMÁS bloquea librerías ni scripts de terceros legítimos en jkanime.net o doramasflix.
           background_js = r'''(function () {
             "use strict";
 
-            // 1. Dominios publicitarios, redes de popups, casas de apuestas y tiendas que secuestran iframes (AliExpress, etc.)
             const BLOCKED_AD_AND_HIJACK_DOMAINS = [
               "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
               "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
@@ -130,33 +132,9 @@ jobs:
               "mmstat.com", "aliapp.org", "temu.com", "shein.com", "shopee.com", "lazada.com"
             ];
 
-            // 2. Sitios principales donde protegemos el documento raíz (frameId === 0) contra scripts de dominios aleatorios
-            const TOP_LEVEL_PROTECTED_SITES = [
-              "jkanime.net", "jkanime.bz", "doramasflix.io", "doramasflix.co",
-              "dramachino.com", "tudorama.com", "asialiveaction.com", "kisskh.do", "kisskh.co"
-            ];
-
-            // 3. Librerías y CDNs legítimos permitidos en el documento raíz (frameId === 0)
-            const ALLOWED_TOP_LEVEL_SCRIPT_DOMAINS = [
-              "jkanime.net", "jkanime.bz", "doramasflix.io", "doramasflix.co",
-              "dramachino.com", "tudorama.com", "asialiveaction.com", "kisskh.do", "kisskh.co",
-              "cloudflare.com", "cdnjs.cloudflare.com", "cloudflareinsights.com",
-              "jsdelivr.net", "unpkg.com", "gstatic.com", "googleapis.com",
-              "google.com", "recaptcha.net", "jquery.com", "bootstrapcdn.com",
-              "fontawesome.com", "jwpsrv.com", "jwpcdn.com", "jwplayer.com",
-              "vimeocdn.com", "plyr.io", "zencdn.net", "videojs.com",
-              "tmdb.org", "imgur.com", "wp.com", "gitlab.io", "github.io",
-              "akamaihd.net", "fastly.net", "cloudfront.net", "disqus.com", "disquscdn.com"
-            ];
-
-            // 4. Patrones exactos de scripts de Adsterra Social Bar ("¡Felicidades! BONUS €1500"), PopAds y redirecciones de afiliados
+            // Firmas exactas de Adsterra Social Bar ("¡Felicidades! BONUS €1500" / "Ruleta Mundial"),
+            // PopAds y redirecciones de afiliados
             const AD_URL_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js\?|\/(popunder|tabunder|clickunder|socialbar|inpagepush)([\/._?-]|$)|\/(apu|afu)\.php(\?|$)|[?&](utm_source=pop|ad_type=pop|ali_trackid=|aff_fcid=|aff_fsk=|clickid=))/i;
-
-            function getBaseBrand(hostname) {
-              const clean = (hostname || "").toLowerCase().replace(/^www\./, "");
-              const parts = clean.split(".");
-              return parts.length >= 2 ? parts[parts.length - 2] : clean;
-            }
 
             function isHostInList(host, list) {
               for (let i = 0; i < list.length; i++) {
@@ -176,30 +154,13 @@ jobs:
                     const parsed = new URL(rawUrl);
                     const reqHost = parsed.hostname.toLowerCase().replace(/^www\./, "");
 
-                    // A. Bloquear en cualquier nivel todos los dominios de anuncios/tiendas/apuestas y firmas de Adsterra
                     if (isHostInList(reqHost, BLOCKED_AD_AND_HIJACK_DOMAINS) || AD_URL_REGEX.test(rawUrl)) {
-                      return { cancel: true };
-                    }
-
-                    const docUrl = details.originUrl || details.documentUrl || "";
-                    if (!docUrl.startsWith("http")) return {};
-                    const docHost = new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "");
-
-                    if (docHost.includes("chaturbate.com")) return {};
-
-                    const isSameSite = (reqHost === docHost) ||
-                                       reqHost.endsWith("." + docHost) ||
-                                       docHost.endsWith("." + reqHost) ||
-                                       (getBaseBrand(reqHost) === getBaseBrand(docHost));
-
-                    // B. En la página principal (frameId === 0) de JKAnime, Doramasflix, DramaChino, etc.:
-                    //    Bloquear scripts de terceros desconocidos (que inyectan el cartel de BONUS €1500 y popups),
-                    //    SIN bloquear jamás los iframes (sub_frame) ni los scripts internos de los reproductores (frameId > 0).
-                    if (details.type === "script" && details.frameId === 0 && !isSameSite) {
-                      if (isHostInList(docHost, TOP_LEVEL_PROTECTED_SITES) &&
-                          !isHostInList(reqHost, ALLOWED_TOP_LEVEL_SCRIPT_DOMAINS)) {
-                        return { cancel: true };
+                      // Si es un script publicitario, redirigir a un JS vacío (como noopjs de uBlock Origin)
+                      // para no disparar eventos script.onerror de detección anti-adblock en JKAnime.
+                      if (details.type === "script") {
+                        return { redirectUrl: "data:text/javascript;charset=utf-8," };
                       }
+                      return { cancel: true };
                     }
                   } catch (_) {}
                   return {};
@@ -232,10 +193,9 @@ jobs:
             const isChaturbate = currentHost === "chaturbate.com" || currentHost.endsWith(".chaturbate.com");
 
             // 1. Inyección en el Main World:
-            //    - Simula que window.open() abrió la URL publicitaria con éxito (devolviendo fakeLocation.href = url)
-            //      para que el reproductor NUNCA active su plan de respaldo de redirigir el propio iframe a AliExpress.
-            //    - Abre cualquier Shadow DOM cerrado para poder destruir la tarjeta "¡Felicidades! BONUS €1500".
-            //    - En iframes de reproductores (!isTopFrame), impide que un clic sobre el vídeo cambie window.location.
+            //    - En Chaturbate: activa MSE (hls.js) para directos 1080p sin cortes.
+            //    - En el resto de sitios: neutraliza window.open() devolviendo una ventana simulada
+            //      y bloquea clics sintéticos (a.click()) en enlaces con target="_blank" o dominio externo.
             const injectMainWorldEngine = function () {
               try {
                 const s = document.createElement("script");
@@ -252,7 +212,7 @@ jobs:
                 } else {
                   s.textContent = `(function(){
                     try {
-                      function createConvincingDummyWindow(targetUrl) {
+                      function createDummyPopupWindow(targetUrl) {
                         const resolvedUrl = (typeof targetUrl === "string" && targetUrl.length > 0) ? targetUrl : "https://localhost/";
                         const fakeLoc = {
                           href: resolvedUrl,
@@ -291,7 +251,7 @@ jobs:
                         if (url && typeof url === "string" && url.startsWith(location.origin) && window === window.top) {
                           location.href = url;
                         }
-                        return createConvincingDummyWindow(url);
+                        return createDummyPopupWindow(url);
                       };
 
                       const origAnchorClick = HTMLAnchorElement.prototype.click;
@@ -299,7 +259,7 @@ jobs:
                         try {
                           const href = (this.getAttribute("href") || "").trim();
                           const target = (this.getAttribute("target") || "").toLowerCase();
-                          if (window !== window.top || target === "_blank" || (href.startsWith("http") && !href.includes(location.hostname))) {
+                          if (target === "_blank" || (href.startsWith("http") && !href.includes(location.hostname))) {
                             return;
                           }
                         } catch (_) {}
@@ -328,7 +288,7 @@ jobs:
               document.addEventListener("DOMContentLoaded", injectMainWorldEngine, { once: true });
             }
 
-            // 2. Desacortador automático (Exclusivo para acortadores externos, sin tocar embedshortener.co)
+            // 2. Desacortador automático (Exclusivo para dominios acortadores externos)
             if (isTopFrame && !isChaturbate) {
               const SHORTENER_HOSTS = [
                 "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
@@ -373,14 +333,14 @@ jobs:
               } catch (_) {}
             }
 
-            // 3. Destructor de la tarjeta "¡Felicidades! BONUS €1500 / Transferir Dinero / Retirar Dinero"
-            //    y de enlaces trampa dentro de los reproductores (que abrían AliExpress dentro del cuadro del vídeo)
-            const SCAM_TEXT_PATTERNS = [
-              "felicidades",
+            // 3. Limpieza quirúrgica de las tarjetas "¡Felicidades! BONUS €1500" y "¡Reclama tu bono AHORA! Ruleta Mundial"
+            //    y de capas transparentes <a target="_blank"> sobre los reproductores.
+            //    REGLA DE ORO: JAMÁS cambiar target="_blank" a target="_self" (eso metía AliExpress en el reproductor)
+            //    y JAMÁS borrar contenedores grandes de la página.
+            const EXACT_SCAM_PHRASES = [
               "transferir dinero",
               "retirar dinero",
               "disponible €",
-              "disponible $",
               "€1500",
               "reclama tu bono",
               "ruleta mundial",
@@ -388,90 +348,79 @@ jobs:
               "donde juegan los grandes",
               "apuestas royal",
               "bono de bienvenida",
-              "limpia tu"
+              "limpia tu unknown"
             ];
 
-            function containsScamText(str) {
+            function hasExactScamPhrase(str) {
               if (!str) return false;
               const lower = str.toLowerCase();
-              for (let i = 0; i < SCAM_TEXT_PATTERNS.length; i++) {
-                if (lower.includes(SCAM_TEXT_PATTERNS[i])) return true;
+              for (let i = 0; i < EXACT_SCAM_PHRASES.length; i++) {
+                if (lower.includes(EXACT_SCAM_PHRASES[i])) return true;
               }
               return false;
             }
 
-            function cleanPopupTrapsAndBonusCards() {
+            function cleanBonusCardsAndBlankTraps() {
               if (isChaturbate) return;
               try {
-                // A. Revisar todos los Shadow DOM abiertos por nuestro hook y destruir tarjetas de BONUS / Felicidades
+                // A. Destruir Shadow DOMs que contengan la tarjeta de BONUS €1500 / Ruleta Mundial
                 const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
                 for (let i = 0; i < shadowHosts.length; i++) {
                   const host = shadowHosts[i];
                   const sr = host.shadowRoot;
-                  if (sr && !sr.querySelector("video")) {
-                    const shadowText = (sr.textContent || "") + " " + (sr.innerHTML || "");
-                    if (containsScamText(shadowText)) {
+                  if (sr && !sr.querySelector("video, iframe")) {
+                    const shadowDump = (sr.textContent || "") + " " + (sr.innerHTML || "");
+                    if (hasExactScamPhrase(shadowDump)) {
                       host.remove();
                     }
                   }
                 }
 
-                // B. Neutralizar enlaces trampa <a>:
-                //    CRÍTICO: JAMÁS cambiar target="_blank" a target="_self" en enlaces externos,
-                //    porque eso hace que AliExpress se abra dentro del cuadro del reproductor.
-                const allLinks = document.getElementsByTagName("a");
-                for (let j = allLinks.length - 1; j >= 0; j--) {
-                  const a = allLinks[j];
-                  if (a.classList.contains("servers") || a.closest(".servers, .bg-servers")) {
+                // B. Eliminar capas invisibles <a target="_blank"> colocadas encima del reproductor
+                //    SIN convertir jamás ningún enlace en target="_self"
+                const blankLinks = document.querySelectorAll("a[target='_blank']");
+                for (let j = blankLinks.length - 1; j >= 0; j--) {
+                  const a = blankLinks[j];
+                  if (a.classList.contains("servers") || a.closest(".servers, .bg-servers, .dropdown-menu")) {
                     a.removeAttribute("target");
                     continue;
                   }
                   const href = (a.getAttribute("href") || "").trim();
-                  const target = (a.getAttribute("target") || "").toLowerCase();
-
-                  // Dentro de un iframe de reproductor (!isTopFrame), ningún enlace <a> debe navegar hacia otra web
-                  if (!isTopFrame) {
-                    if (target === "_blank" || (href && !href.startsWith("#") && !href.startsWith("javascript:"))) {
-                      a.removeAttribute("href");
-                      a.removeAttribute("target");
-                      if ((a.textContent || "").trim().length === 0 && !a.querySelector("video, button")) {
-                        a.style.setProperty("pointer-events", "none", "important");
-                        a.style.setProperty("display", "none", "important");
-                      }
-                    }
+                  if (!href || href.startsWith("#") || href.startsWith("javascript:")) {
+                    a.removeAttribute("target");
                     continue;
                   }
-
-                  // En la página principal (isTopFrame), desactivar cualquier enlace que apunte a otro dominio distinto
-                  if (target === "_blank" || href.startsWith("http") || href.startsWith("//")) {
-                    if (!href || href.startsWith("#") || href.startsWith("javascript:")) {
-                      a.removeAttribute("target");
-                      continue;
-                    }
-                    try {
-                      const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
-                      if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
-                        a.removeAttribute("href");
-                        a.removeAttribute("target");
-                        if ((a.textContent || "").trim().length === 0) {
-                          a.remove();
-                        }
-                      } else {
-                        a.removeAttribute("target");
-                      }
-                    } catch (_) {}
+                  // Si estamos dentro de un iframe de vídeo (!isTopFrame), cualquier <a target="_blank"> es publicidad
+                  if (!isTopFrame) {
+                    a.remove();
+                    continue;
                   }
+                  // En la página principal, si el enlace apunta a un dominio externo y es una capa vacía sobre el reproductor, quitarlo
+                  try {
+                    const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
+                    if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
+                      if ((a.textContent || "").trim().length === 0 && !a.querySelector("img")) {
+                        a.remove();
+                      }
+                    }
+                  } catch (_) {}
                 }
 
-                // C. Eliminar tarjetas flotantes en el DOM ("¡Felicidades! / Disponible €1500 / Transferir Dinero")
+                // C. Eliminar únicamente tarjetas flotantes pequeñas (< 260 caracteres y < 650x480 px)
+                //    que contengan las frases exactas del cartel de Bono / Ruleta
                 if (document.body) {
-                  const nodes = document.querySelectorAll("div, aside, section, ins");
-                  for (let k = nodes.length - 1; k >= 0; k--) {
-                    const el = nodes[k];
-                    if (!el || el.children.length > 15) continue;
-                    if (el.querySelector("video, iframe, select, #video_box, .servers, .bg-servers")) continue;
+                  const cards = document.querySelectorAll("div, aside, ins");
+                  for (let k = cards.length - 1; k >= 0; k--) {
+                    const el = cards[k];
+                    if (!el || el.children.length > 8) continue;
+                    const w = el.clientWidth || 0;
+                    const h = el.clientHeight || 0;
+                    if (w > 650 || h > 480) continue;
+                    if (el.querySelector("video, iframe, select, input, #video_box, #pframe, .player_conte, .servers, .bg-servers, h1, h2")) {
+                      continue;
+                    }
                     const txt = (el.textContent || "").trim();
-                    if (txt.length > 6 && txt.length < 320 && containsScamText(txt)) {
+                    if (txt.length > 8 && txt.length < 260 && hasExactScamPhrase(txt)) {
                       el.remove();
                     }
                   }
@@ -900,43 +849,34 @@ jobs:
               });
             }
 
-            // Interceptor en fase de captura para bloquear redirecciones de clic en el botón Play
-            function guardClickAndPointerDown(e) {
-              if (isChaturbate) return;
-              cleanPopupTrapsAndBonusCards();
-
-              const a = e.target && e.target.closest ? e.target.closest("a") : null;
-              if (a && !a.classList.contains("servers") && !a.closest(".servers, .bg-servers")) {
-                const href = (a.getAttribute("href") || "").trim();
-                // Si estamos dentro de un iframe de reproductor, bloquear cualquier clic en un <a> con URL externa
-                if (!isTopFrame && href && !href.startsWith("#") && !href.startsWith("javascript:")) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.stopImmediatePropagation();
-                  a.removeAttribute("href");
-                  return;
-                }
-                if (href.startsWith("http") || href.startsWith("//")) {
-                  try {
-                    const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
-                    if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.stopImmediatePropagation();
-                      a.removeAttribute("href");
-                      return;
-                    }
-                  } catch (_) {}
+            // Interceptor de clic: bloquea únicamente enlaces con target="_blank" o hacia dominios externos
+            // sin tocar jamás los selectores de servidor ni redirigir el iframe en _self
+            document.addEventListener("click", function (e) {
+              if (!isChaturbate) {
+                cleanBonusCardsAndBlankTraps();
+                const a = e.target && e.target.closest ? e.target.closest("a") : null;
+                if (a && !a.classList.contains("servers") && !a.closest(".servers, .bg-servers, .dropdown-menu")) {
+                  const href = (a.getAttribute("href") || "").trim();
+                  const target = (a.getAttribute("target") || "").toLowerCase();
+                  if (target === "_blank") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    a.remove();
+                    return;
+                  }
+                  if (href.startsWith("http") || href.startsWith("//")) {
+                    try {
+                      const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
+                      if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                      }
+                    } catch (_) {}
+                  }
                 }
               }
-            }
 
-            document.addEventListener("pointerdown", guardClickAndPointerDown, true);
-            document.addEventListener("mousedown", guardClickAndPointerDown, true);
-            document.addEventListener("touchstart", guardClickAndPointerDown, true);
-
-            document.addEventListener("click", function (e) {
-              guardClickAndPointerDown(e);
               enableIframeFullscreenAttrs();
               setTimeout(enableIframeFullscreenAttrs, 300);
 
@@ -1001,7 +941,7 @@ jobs:
             setInterval(function () {
               try {
                 if (!isChaturbate) {
-                  cleanPopupTrapsAndBonusCards();
+                  cleanBonusCardsAndBlankTraps();
                 }
                 if (document.getElementsByTagName("video").length === 0) return;
                 const v = findActiveVideo();
@@ -1035,7 +975,7 @@ jobs:
                   });
                 }
               } catch (_) {}
-            }, 1500);
+            }, 1400);
 
             if (isTopFrame) {
               function extractMediaMetadata() {
@@ -1059,7 +999,7 @@ jobs:
                 extractMediaMetadata();
                 enableIframeFullscreenAttrs();
                 if (!isChaturbate) {
-                  cleanPopupTrapsAndBonusCards();
+                  cleanBonusCardsAndBlankTraps();
                 }
               });
             }
@@ -1123,14 +1063,14 @@ jobs:
                 injectTvStyles();
                 enableIframeFullscreenAttrs();
                 if (!isChaturbate) {
-                  cleanPopupTrapsAndBonusCards();
+                  cleanBonusCardsAndBlankTraps();
                 }
               });
             } else {
               injectTvStyles();
               enableIframeFullscreenAttrs();
               if (!isChaturbate) {
-                cleanPopupTrapsAndBonusCards();
+                cleanBonusCardsAndBlankTraps();
               }
             }
           })();
@@ -1139,7 +1079,7 @@ jobs:
           with open(os.path.join(SHIELD_DIR, "content_start.js"), "w", encoding="utf-8") as cf:
               cf.write(content_start_js.strip() + "\n")
 
-          print("Escudo nativo v9.0 creado correctamente:", os.listdir(EXT_BASE))
+          print("Escudo nativo v9.5 creado correctamente:", os.listdir(EXT_BASE))
           EOF
 
       - name: Instalar Gradle 8.5
