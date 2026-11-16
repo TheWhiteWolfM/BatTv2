@@ -104,15 +104,6 @@ class BatTvGeckoViewManager(
         bridgeMessageDelegate = messageDelegate
         runtime = getOrCreateRuntime(context.applicationContext)
 
-        // Limpiar caché de red e imágenes al iniciar para asegurar que Doramasflix
-        // cargue todas sus miniaturas y scripts limpios sin restos de bloqueos previos
-        try {
-            runtime.storageController.clearData(
-                StorageController.ClearFlags.NETWORK_CACHE or
-                    StorageController.ClearFlags.IMAGE_CACHE
-            )
-        } catch (_: Exception) {}
-
         val sessionSettings = GeckoSessionSettings.Builder()
             .usePrivateMode(false)
             .useTrackingProtection(false)
@@ -192,8 +183,8 @@ class BatTvGeckoViewManager(
             val cfgFile = File(appContext.cacheDir, "battv_gecko_config.yaml")
             val yamlContent = """
                 prefs:
-                  browser.cache.disk.enable: false
-                  browser.cache.disk.capacity: 0
+                  browser.cache.disk.enable: true
+                  browser.cache.disk.capacity: 20480
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
@@ -453,15 +444,6 @@ class BatTvGeckoViewManager(
     }
 
     fun clearSafeCaches(onComplete: (Long) -> Unit) {
-        if (::runtime.isInitialized) {
-            try {
-                runtime.storageController.clearData(
-                    StorageController.ClearFlags.IMAGE_CACHE or
-                        StorageController.ClearFlags.NETWORK_CACHE
-                )
-            } catch (_: Exception) {}
-        }
-
         Thread {
             var freedBytes = 0L
             try {
@@ -489,8 +471,6 @@ class BatTvGeckoViewManager(
                     bytes += getFolderSize(child)
                     child.deleteRecursively()
                 } else if (child.name == "storage") {
-                    // Limpiar únicamente cachés de ServiceWorkers (cache/morgue) que hayan guardado
-                    // respuestas rotas en Doramasflix, conservando localStorage
                     bytes += cleanServiceWorkerCachesInStorage(child)
                 } else if (child.name != "extensions") {
                     bytes += cleanDisposableGeckoDirs(child)
@@ -545,8 +525,10 @@ class BatTvGeckoViewManager(
             bytes += getFolderSize(f)
             f.deleteRecursively()
         }
-        return bytes
+        return totalBytes(dir) // fallback
     }
+
+    private fun totalBytes(dir: File): Long = getFolderSize(dir)
 
     private fun getFolderSize(file: File): Long {
         if (!file.exists()) return 0L
