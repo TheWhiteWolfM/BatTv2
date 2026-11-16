@@ -45,7 +45,7 @@ jobs:
           -keep class com.battv.browser.** { *; }
           EOF
 
-      - name: Compilar Listas Oficiales uBlock/AdGuard/EasyList y Motor Nativo v10.0 (battv_shield)
+      - name: Generar Motor Nativo v11.0 (Play en 1 Clic, 0ms Flash de Anuncios y Soporte Doramasflix/JKAnime)
         run: |
           python3 - << 'EOF'
           import json
@@ -61,19 +61,9 @@ jobs:
           SHIELD_DIR = os.path.join(EXT_BASE, "battv_shield")
           os.makedirs(SHIELD_DIR, exist_ok=True)
 
-          # 1. Descargar y compilar en tiempo de build las listas reales de uBlock Origin,
-          #    EasyList Spanish, AdGuard Popups/Spanish y Peter Lowe (0 MB de IndexedDB en la TV)
-          FILTER_URLS = [
-              "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=nohtml&showintro=0&mimetype=plaintext",
-              "https://easylist-downloads.adblockplus.org/easylistspanish.txt",
-              "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/filters.txt",
-              "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/badware.txt",
-              "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/annoyances-others.txt",
-              "https://filters.adtidy.org/extension/ublock/filters/2_without_easylist.txt",
-              "https://filters.adtidy.org/extension/ublock/filters/17.txt"
-          ]
-
-          # Dominios base que siempre deben estar bloqueados
+          # Descargar únicamente la lista verificada de servidores de anuncios puros (Peter Lowe)
+          # + nuestra lista curada de redes de popups/scam en sitios de anime y doramas,
+          # evitando falsos positivos que bloqueen miniaturas o scripts de Doramasflix.
           compiled_domains = {
               "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
               "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
@@ -103,7 +93,6 @@ jobs:
               "mmstat.com", "aliapp.org", "temu.com", "shein.com", "shopee.com", "lazada.com"
           }
 
-          # Palabras clave protegidas: JAMÁS bloquear dominios de tus páginas, reproductores de vídeo o CDNs técnicos
           PROTECTED_KEYWORDS = (
               "jkanime", "jkdesu", "doramasflix", "dramachino", "tudorama",
               "asialiveaction", "kisskh", "chaturbate", "mmcdn", "highwebmedia",
@@ -116,7 +105,8 @@ jobs:
               "fembed", "uqload", "upstream", "vudeo", "netu", "waaw", "hqq",
               "mega.nz", "mediafire", "akamaized", "akamaihd", "cloudfront", "fastly",
               "fbcdn", "twimg", "imgur", "tmdb", "themoviedb", "github", "gitlab",
-              "wp.com", "wordpress", "disqus", "recaptcha", "sweet", "sweetalert"
+              "wp.com", "wordpress", "disqus", "recaptcha", "sweet", "sweetalert",
+              "amazonaws", "bunnycdn", "b-cdn", "sibnet", "sendvid", "vk.com"
           )
 
           def is_safe_to_block(domain):
@@ -127,38 +117,27 @@ jobs:
                       return False
               return True
 
-          adblock_domain_re = re.compile(
-              r"^\|\|([a-z0-9.-]+\.[a-z]{2,})\^(\$(third-party|popup|all|doc|document|script|subdocument)(,(third-party|popup|all|doc|document|script|subdocument))*)?$"
-          )
           plain_domain_re = re.compile(r"^[a-z0-9.-]+\.[a-z]{2,}$")
+          try:
+              req = urllib.request.Request(
+                  "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=nohtml&showintro=0&mimetype=plaintext",
+                  headers={"User-Agent": "Mozilla/5.0"}
+              )
+              with urllib.request.urlopen(req, timeout=15) as resp:
+                  for raw_line in resp.read().decode("utf-8", errors="ignore").splitlines():
+                      line = raw_line.strip().lower()
+                      if plain_domain_re.match(line) and is_safe_to_block(line):
+                          compiled_domains.add(line)
+          except Exception as e:
+              print("Aviso descargando lista Peter Lowe:", e)
 
-          for url in FILTER_URLS:
-              try:
-                  req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                  with urllib.request.urlopen(req, timeout=15) as resp:
-                      text = resp.read().decode("utf-8", errors="ignore")
-                      for raw_line in text.splitlines():
-                          line = raw_line.strip().lower()
-                          if not line or line.startswith("!") or line.startswith("#") or line.startswith("@@"):
-                              continue
-                          m = adblock_domain_re.match(line)
-                          if m:
-                              d = m.group(1).lstrip(".")
-                              if is_safe_to_block(d):
-                                  compiled_domains.add(d)
-                          elif plain_domain_re.match(line):
-                              if is_safe_to_block(line):
-                                  compiled_domains.add(line)
-              except Exception as e:
-                  print("Aviso descargando lista:", url, e)
-
-          print(f"Total de dominios publicitarios compilados en O(1) Set: {len(compiled_domains)}")
+          print(f"Dominios de anuncios verificados: {len(compiled_domains)}")
 
           manifest = {
               "manifest_version": 2,
               "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-              "version": "10.0.0",
-              "description": "Motor nativo con listas uBlock/AdGuard/EasyList compiladas en O(1), cortafuegos anti-robot y soporte completo JKAnime.",
+              "version": "11.0.0",
+              "description": "Bloqueador instantáneo 0ms sin parpadeo, Play al primer clic en JKAnime y carga completa en Doramasflix.",
               "browser_specific_settings": {
                   "gecko": {
                       "id": "shield@battv.browser",
@@ -197,32 +176,10 @@ jobs:
           background_js_template = r'''(function () {
             "use strict";
 
-            // 1. Tabla Hash O(1) con todos los dominios de uBlock Origin, EasyList Spanish, AdGuard y Peter Lowe
             const COMPILED_AD_DOMAINS = new Set(__DOMAINS_JSON__);
 
-            // 2. Sitios donde el documento raíz (frameId === 0) bloquea cualquier script de dominios aleatorios nuevos.
-            //    NOTA CRÍTICA: jkanime.net NO se incluye en este bloqueo ciego de scripts para que su reproductor
-            //    (Desu/Nozomi/etc.) siempre cargue al 100%, mientras que Doramasflix y DramaChino quedan blindados
-            //    contra el script rotativo que inyecta "CONFIRMA QUE NO ERES UN ROBOT".
-            const STRICT_ROOT_SCRIPT_SITES = [
-              "doramasflix.io", "doramasflix.co", "dramachino.com",
-              "tudorama.com", "asialiveaction.com", "kisskh.do", "kisskh.co"
-            ];
-
-            const ALLOWED_TECH_CDNS = [
-              "doramasflix.io", "doramasflix.co", "dramachino.com",
-              "tudorama.com", "asialiveaction.com", "kisskh.do", "kisskh.co",
-              "cloudflare.com", "cdnjs.cloudflare.com", "cloudflareinsights.com",
-              "jsdelivr.net", "unpkg.com", "gstatic.com", "googleapis.com",
-              "google.com", "recaptcha.net", "jquery.com", "bootstrapcdn.com",
-              "fontawesome.com", "jwpsrv.com", "jwpcdn.com", "jwplayer.com",
-              "vimeocdn.com", "plyr.io", "zencdn.net", "videojs.com",
-              "tmdb.org", "imgur.com", "wp.com", "gitlab.io", "github.io",
-              "akamaihd.net", "fastly.net", "cloudfront.net", "disqus.com", "disquscdn.com"
-            ];
-
-            // 3. Patrones de URL publicitarios (Adsterra 32-hex, PopAds, 1xBet, banners y popunders)
-            const AD_URL_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js\?|\/(popunder|tabunder|clickunder|socialbar|inpagepush|adframe|adscript)([\/._?-]|$)|\/(apu|afu)\.php(\?|$)|[?&](utm_source=pop|ad_type=pop|ali_trackid=|aff_fcid=|aff_fsk=|clickid=|zoneid=)|1xbet|mostbet|bet365|apuestasroyal)/i;
+            // Firmas exactas de scripts de popunders, Adsterra Social Bar (32-hex), In-Page Push y banners de apuestas
+            const AD_URL_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js\?|\/(popunder|tabunder|clickunder|socialbar|inpagepush|adframe|adscript|pop\.js|pop2\.js)([\/._?-]|$)|\/(apu|afu)\.php(\?|$)|[?&](utm_source=pop|ad_type=pop|ali_trackid=|aff_fcid=|aff_fsk=|clickid=)|1xbet|mostbet|bet365|apuestasroyal)/i;
 
             function isDomainBlocked(hostname) {
               let curr = (hostname || "").toLowerCase().replace(/^www\./, "");
@@ -235,20 +192,6 @@ jobs:
               return false;
             }
 
-            function getBaseBrand(hostname) {
-              const clean = (hostname || "").toLowerCase().replace(/^www\./, "");
-              const parts = clean.split(".");
-              return parts.length >= 2 ? parts[parts.length - 2] : clean;
-            }
-
-            function isHostInList(host, list) {
-              for (let i = 0; i < list.length; i++) {
-                const item = list[i];
-                if (host === item || host.endsWith("." + item)) return true;
-              }
-              return false;
-            }
-
             if (typeof browser !== "undefined" && browser.webRequest && browser.webRequest.onBeforeRequest) {
               browser.webRequest.onBeforeRequest.addListener(
                 function (details) {
@@ -256,36 +199,23 @@ jobs:
                     const rawUrl = details.url || "";
                     if (!rawUrl.startsWith("http")) return {};
 
+                    // REGLA CRÍTICA PARA DORAMASFLIX Y MINIATURAS:
+                    // Nunca bloquear imágenes (miniaturas/portadas) salvo que vengan de 1xbet/mostbet/adsterra/exoclick
+                    if (details.type === "image" || details.type === "imageset") {
+                      if (/1xbet|mostbet|bet365|apuestasroyal|exoclick|adsterra|juicyads/i.test(rawUrl)) {
+                        return { cancel: true };
+                      }
+                      return {};
+                    }
+
                     const parsed = new URL(rawUrl);
                     const reqHost = parsed.hostname.toLowerCase().replace(/^www\./, "");
 
-                    // A. Bloqueo instantáneo O(1) por lista compilada de uBlock/AdGuard/EasyList o por patrón de URL
                     if (isDomainBlocked(reqHost) || AD_URL_REGEX.test(rawUrl)) {
                       if (details.type === "script") {
                         return { redirectUrl: "data:text/javascript;charset=utf-8," };
                       }
                       return { cancel: true };
-                    }
-
-                    const docUrl = details.originUrl || details.documentUrl || "";
-                    if (!docUrl.startsWith("http")) return {};
-                    const docHost = new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "");
-
-                    if (docHost.includes("chaturbate.com")) return {};
-
-                    const isSameSite = (reqHost === docHost) ||
-                                       reqHost.endsWith("." + docHost) ||
-                                       docHost.endsWith("." + reqHost) ||
-                                       (getBaseBrand(reqHost) === getBaseBrand(docHost));
-
-                    // B. Cortafuegos de scripts de terceros desconocidos en el documento principal (frameId === 0)
-                    //    de DramaChino, Doramasflix, TuDorama, AsiaLiveAction y KissKH:
-                    //    Impide que dominios aleatorios recién registrados inyecten "CONFIRMA QUE NO ERES UN ROBOT".
-                    if (details.type === "script" && details.frameId === 0 && !isSameSite) {
-                      if (isHostInList(docHost, STRICT_ROOT_SCRIPT_SITES) &&
-                          !isHostInList(reqHost, ALLOWED_TECH_CDNS)) {
-                        return { redirectUrl: "data:text/javascript;charset=utf-8," };
-                      }
                     }
                   } catch (_) {}
                   return {};
@@ -318,10 +248,11 @@ jobs:
             const currentHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
             const isChaturbate = currentHost === "chaturbate.com" || currentHost.endsWith(".chaturbate.com");
 
-            // 1. Inyección en el Main World:
-            //    - En Chaturbate: activa MSE (hls.js) para directos 1080p sin cortes.
-            //    - En el resto de páginas y reproductores: neutraliza window.open(), window.alert(),
-            //      Notification.requestPermission() y clics sintéticos (a.click()) hacia dominios externos.
+            // 1. Inyección inmediata en el Main World (document_start):
+            //    - Intercepta EventTarget.prototype.addEventListener para IMPEDIR que los reproductores
+            //      de JKAnime (Desu/Nozomi/Streamwish/Voe) y DramaChino registren eventos click/mousedown
+            //      en window/document/body que absorben tus primeros 2 o 3 clics sobre el botón Play.
+            //    - Neutraliza window.open() devolviendo un objeto ventana simulado.
             const injectMainWorldEngine = function () {
               try {
                 const s = document.createElement("script");
@@ -392,11 +323,35 @@ jobs:
                         return origAnchorClick.apply(this, arguments);
                       };
 
-                      if ("Notification" in window) {
-                        window.Notification.requestPermission = function() {
-                          return Promise.resolve("denied");
-                        };
-                      }
+                      // BLOQUEO DE ESCUCHADORES DE POPUNDER QUE ROBAN EL CLIC DE PLAY:
+                      // Impide que los scripts publicitarios registren capturadores de clic en window o document
+                      const origAddEventListener = EventTarget.prototype.addEventListener;
+                      const INTERCEPTED_EVENTS = new Set(["click", "mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "touchend"]);
+                      const AD_LISTENER_REGEX = /window\.open|\.open\s*\(|popunder|tabunder|clickunder|_blank|BetterJsPop|jsPopunder|atOptions|_pop|createElement\s*\(\s*['"]a['"]\s*\)/i;
+
+                      EventTarget.prototype.addEventListener = function(type, listener, options) {
+                        try {
+                          if (INTERCEPTED_EVENTS.has(type) && typeof listener === "function") {
+                            const fnStr = Function.prototype.toString.call(listener);
+                            if (AD_LISTENER_REGEX.test(fnStr)) {
+                              return;
+                            }
+                            // Dentro de iframes de reproductores, bloquear listeners globales en window/document
+                            // que intenten detener la propagación del clic hacia el botón Play
+                            if (window !== window.top && (this === window || this === document || this === document.body || this === document.documentElement)) {
+                              const wrappedListener = function(ev) {
+                                try {
+                                  ev.stopPropagation = function() {};
+                                  ev.stopImmediatePropagation = function() {};
+                                } catch (_) {}
+                                return listener.apply(this, arguments);
+                              };
+                              return origAddEventListener.call(this, type, wrappedListener, options);
+                            }
+                          }
+                        } catch (_) {}
+                        return origAddEventListener.apply(this, arguments);
+                      };
 
                       const origAttachShadow = Element.prototype.attachShadow;
                       if (origAttachShadow) {
@@ -465,10 +420,8 @@ jobs:
               } catch (_) {}
             }
 
-            // 3. Destructor de:
-            //    - Modal "CONFIRMA QUE NO ERES UN ROBOT / Haz clic en el botón" (DramaChino y reproductores)
-            //    - Banner horizontal "1XBET / ¡BONO 300% EN TUS PRIMEROS 4 DEPÓSITOS!" (JKAnime)
-            //    - Tarjetas "¡Felicidades! BONUS €1500" y "¡Reclama tu bono AHORA! Ruleta Mundial"
+            // 3. Limpieza instantánea (0ms sin parpadeo) de anuncios de esquina, capas invisibles sobre Play
+            //    y modales de "CONFIRMA QUE NO ERES UN ROBOT" / "BONUS €1500"
             const EXACT_SCAM_PHRASES = [
               "confirma que no eres un robot",
               "haz clic en el botón",
@@ -498,135 +451,192 @@ jobs:
               return false;
             }
 
-            function isProtectedPlayerHierarchy(el) {
-              if (!el || !el.tagName) return false;
+            function isProtectedPlayerOrLayoutElement(el) {
+              if (!el || !el.tagName) return true;
               const tag = el.tagName.toUpperCase();
-              if (tag === "VIDEO" || tag === "BODY" || tag === "HTML") return true;
-              if (el.id === "video_box" || el.id === "pframe" || el.id === "player" || el.id === "main_video_container") {
+              if (tag === "VIDEO" || tag === "BODY" || tag === "HTML" || tag === "MAIN" || tag === "HEADER" || tag === "NAV") {
                 return true;
               }
-              if (el.classList && (
-                  el.classList.contains("servers") ||
-                  el.classList.contains("bg-servers") ||
-                  el.classList.contains("player_conte") ||
-                  el.classList.contains("video-player")
+              const id = (el.id || "").toLowerCase();
+              if (id === "video_box" || id === "pframe" || id === "player" || id === "main_video_container" ||
+                  id === "__next" || id === "app" || id === "root" || id === "episodes-content") {
+                return true;
+              }
+              const cls = (typeof el.className === "string") ? el.className.toLowerCase() : "";
+              if (cls.includes("servers") || cls.includes("player") || cls.includes("jw-") ||
+                  cls.includes("vjs-") || cls.includes("plyr") || cls.includes("navbar") ||
+                  cls.includes("header") || cls.includes("container")) {
+                return true;
+              }
+              if (el.querySelector && el.querySelector(
+                  "video, #video_box, #pframe, .player_conte, .servers, .bg-servers, " +
+                  "iframe[src*='jkplayer'], iframe[src*='um.php'], iframe[src*='nozomi'], " +
+                  "iframe[src*='desu'], iframe[src*='embedshortener'], iframe[src*='primeload'], " +
+                  "iframe[src*='voe'], iframe[src*='dood'], iframe[src*='streamtape'], iframe[src*='streamwish']"
               )) {
-                return true;
-              }
-              if (el.querySelector && el.querySelector("video, #video_box, #pframe, .player_conte, .servers, .bg-servers, iframe[src*='jkplayer'], iframe[src*='um.php']")) {
                 return true;
               }
               return false;
             }
 
-            function cleanAllAdsBannersAndRobotModals() {
-              if (isChaturbate) return;
+            // Evalúa un único nodo recién insertado en el DOM y lo elimina ANTES de que se pinte en pantalla (0ms flash)
+            function inspectAndNeutralizeAdNode(el) {
+              if (!el || el.nodeType !== 1 || isChaturbate) return;
               try {
-                // A. Si estamos dentro de un iframe publicitario que cargó "CONFIRMA QUE NO ERES UN ROBOT"
-                //    y no contiene ningún <video>, ocultarlo de inmediato.
-                if (!isTopFrame && document.body && !document.querySelector("video")) {
-                  const bodyTxt = (document.body.textContent || "").trim();
-                  if (bodyTxt.length > 5 && bodyTxt.length < 400 && hasExactScamPhrase(bodyTxt)) {
-                    document.documentElement.style.setProperty("display", "none", "important");
+                if (isProtectedPlayerOrLayoutElement(el)) return;
+
+                // 1. Si es un host de Shadow DOM con anuncio de esquina o Bonus
+                if (el.hasAttribute("data-battv-shadow") && el.shadowRoot) {
+                  if (!el.shadowRoot.querySelector("video")) {
+                    el.style.setProperty("display", "none", "important");
+                    el.remove();
                     return;
                   }
                 }
 
-                // B. Destruir Shadow DOMs que contengan anuncios ("BONUS €1500" / "CONFIRMA QUE NO ERES UN ROBOT")
-                const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
-                for (let i = 0; i < shadowHosts.length; i++) {
-                  const host = shadowHosts[i];
-                  const sr = host.shadowRoot;
-                  if (sr && !sr.querySelector("video")) {
-                    const shadowDump = (sr.textContent || "") + " " + (sr.innerHTML || "");
-                    if (hasExactScamPhrase(shadowDump)) {
-                      host.remove();
-                    }
+                // 2. Si es un enlace <a target="_blank"> hacia un dominio externo o capa vacía
+                if (el.tagName === "A") {
+                  if (el.classList.contains("servers") || el.closest(".servers, .bg-servers, .dropdown-menu")) {
+                    el.removeAttribute("target");
+                    return;
                   }
-                }
-
-                // C. Eliminar banners horizontales externos (como el banner de 1XBET en JKAnime)
-                //    y capas transparentes <a target="_blank"> sobre el reproductor
-                const links = document.getElementsByTagName("a");
-                for (let j = links.length - 1; j >= 0; j--) {
-                  const a = links[j];
-                  if (a.classList.contains("servers") || a.closest(".servers, .bg-servers, .dropdown-menu, #episodes-content")) {
-                    a.removeAttribute("target");
-                    continue;
+                  const target = (el.getAttribute("target") || "").toLowerCase();
+                  const href = (el.getAttribute("href") || "").trim();
+                  if (!isTopFrame && (target === "_blank" || (href && !href.startsWith("#") && !href.startsWith("javascript:")))) {
+                    el.style.setProperty("display", "none", "important");
+                    el.remove();
+                    return;
                   }
-                  const href = (a.getAttribute("href") || "").trim();
-                  const hrefLower = href.toLowerCase();
-                  const target = (a.getAttribute("target") || "").toLowerCase();
-
-                  // Dentro de un iframe de reproductor (!isTopFrame), eliminar cualquier <a target="_blank">
-                  if (!isTopFrame) {
-                    if (target === "_blank" || (href && !href.startsWith("#") && !href.startsWith("javascript:"))) {
-                      a.remove();
-                    }
-                    continue;
-                  }
-
-                  // En la página principal (ej. JKAnime), si el enlace apunta a otro dominio o tiene target="_blank":
-                  if (target === "_blank" || hrefLower.includes("1xbet") || hrefLower.includes("mostbet") || hrefLower.includes("bet365")) {
-                    if (!href || href.startsWith("#") || href.startsWith("javascript:")) {
-                      a.removeAttribute("target");
-                      continue;
-                    }
+                  if (target === "_blank" && href.startsWith("http")) {
                     try {
                       const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
                       if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
-                        // Si contiene una imagen de banner horizontal (como 1XBET) o es una capa vacía, eliminarlo
-                        const img = a.querySelector("img");
-                        if (img) {
-                          const iw = img.clientWidth || img.naturalWidth || 0;
-                          const ih = img.clientHeight || img.naturalHeight || 0;
-                          if (iw >= 300 && (ih === 0 || (iw / ih) >= 2.6)) {
-                            a.remove();
-                            continue;
-                          }
-                        }
-                        if ((a.textContent || "").trim().length === 0 && !img) {
-                          a.remove();
-                          continue;
-                        }
+                        el.style.setProperty("display", "none", "important");
+                        el.remove();
+                        return;
                       }
                     } catch (_) {}
                   }
                 }
 
-                // D. Eliminar cualquier modal o contenedor que tenga el texto "CONFIRMA QUE NO ERES UN ROBOT",
-                //    "¡Felicidades! BONUS €1500" o "¡Reclama tu bono AHORA!" (sin límite de 650x480 px)
-                if (document.body) {
-                  const candidates = document.querySelectorAll("div, section, aside, ins, iframe");
-                  for (let k = candidates.length - 1; k >= 0; k--) {
-                    const el = candidates[k];
-                    if (!el || isProtectedPlayerHierarchy(el)) continue;
+                // 3. Si contiene texto de "CONFIRMA QUE NO ERES UN ROBOT" / "BONUS €1500" / "Reclama tu bono"
+                if (el.children.length <= 14) {
+                  const txt = (el.textContent || "").trim();
+                  if (txt.length >= 8 && txt.length <= 360 && hasExactScamPhrase(txt)) {
+                    el.style.setProperty("display", "none", "important");
+                    el.remove();
+                    return;
+                  }
+                }
 
-                    if (el.tagName === "IFRAME") {
-                      const src = (el.getAttribute("src") || "").toLowerCase();
-                      if (src.includes("1xbet") || src.includes("adsterra") || src.includes("exoclick") ||
-                          src.includes("vidoomy") || src.includes("popads")) {
-                        el.remove();
-                      }
-                      continue;
+                // 4. Detector de anuncios flotantes en las esquinas (JKAnime / DramaChino) y capas transparentes sobre el reproductor:
+                //    Si es hijo directo de <body> (o dentro de un iframe de reproductor) con position: fixed o z-index gigante
+                if (el.parentElement === document.body || !isTopFrame) {
+                  const cs = window.getComputedStyle(el);
+                  const pos = cs.position;
+                  const zIdx = parseInt(cs.zIndex, 10) || 0;
+
+                  if (pos === "fixed" || pos === "sticky" || (pos === "absolute" && zIdx >= 999)) {
+                    const rect = el.getBoundingClientRect();
+                    // Caso A: Anuncio flotante en una esquina (como en JKAnime)
+                    if (pos === "fixed" && rect.width > 20 && rect.width < 520 && rect.height > 20 && rect.height < 420) {
+                      el.style.setProperty("display", "none", "important");
+                      el.remove();
+                      return;
                     }
+                    // Caso B: Capa transparente de clickjacking colocada encima del botón Play
+                    const opacity = parseFloat(cs.opacity);
+                    const bg = cs.backgroundColor || "";
+                    const isTransparent = (opacity < 0.12) || bg === "transparent" || bg === "rgba(0, 0, 0, 0)";
+                    if (isTransparent && zIdx >= 50 && (el.textContent || "").trim().length === 0) {
+                      el.style.setProperty("pointer-events", "none", "important");
+                      el.style.setProperty("display", "none", "important");
+                      el.remove();
+                      return;
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
 
-                    if (el.children.length <= 14) {
-                      const txt = (el.textContent || "").trim();
-                      if (txt.length >= 10 && txt.length <= 360 && hasExactScamPhrase(txt)) {
-                        let targetToRemove = el;
-                        while (
-                          targetToRemove.parentElement &&
-                          targetToRemove.parentElement !== document.body &&
-                          targetToRemove.parentElement !== document.documentElement &&
-                          !isProtectedPlayerHierarchy(targetToRemove.parentElement) &&
-                          (targetToRemove.parentElement.textContent || "").trim().length <= 420
-                        ) {
-                          targetToRemove = targetToRemove.parentElement;
+            function sweepExistingAdNodes() {
+              if (isChaturbate || !document.body) return;
+              try {
+                if (!isTopFrame && !document.querySelector("video")) {
+                  const bodyTxt = (document.body.textContent || "").trim();
+                  if (bodyTxt.length > 5 && bodyTxt.length < 380 && hasExactScamPhrase(bodyTxt)) {
+                    document.documentElement.style.setProperty("display", "none", "important");
+                    return;
+                  }
+                }
+
+                const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
+                for (let i = 0; i < shadowHosts.length; i++) {
+                  inspectAndNeutralizeAdNode(shadowHosts[i]);
+                }
+
+                const blankLinks = document.querySelectorAll("a[target='_blank']");
+                for (let j = blankLinks.length - 1; j >= 0; j--) {
+                  inspectAndNeutralizeAdNode(blankLinks[j]);
+                }
+
+                const bodyChildren = document.body.children;
+                for (let k = bodyChildren.length - 1; k >= 0; k--) {
+                  inspectAndNeutralizeAdNode(bodyChildren[k]);
+                }
+              } catch (_) {}
+            }
+
+            // Observador síncrono en document_start: elimina cualquier popup in-page o anuncio de esquina
+            // en el mismo microsegundo en que se inserta, ANTES de que aparezca en pantalla (0ms de parpadeo)
+            if (!isChaturbate) {
+              const startInstantMutationGuard = function () {
+                try {
+                  const targetRoot = document.documentElement || document;
+                  const obs = new MutationObserver(function (mutations) {
+                    for (let i = 0; i < mutations.length; i++) {
+                      const added = mutations[i].addedNodes;
+                      for (let j = 0; j < added.length; j++) {
+                        const node = added[j];
+                        if (node && node.nodeType === 1) {
+                          inspectAndNeutralizeAdNode(node);
                         }
-                        if (!isProtectedPlayerHierarchy(targetToRemove)) {
-                          targetToRemove.remove();
-                        }
+                      }
+                    }
+                  });
+                  obs.observe(targetRoot, { childList: true, subtree: true });
+                } catch (_) {}
+              };
+              startInstantMutationGuard();
+            }
+
+            // PERFORADOR DE CAPAS EN EL BOTÓN PLAY (Resuelve tener que dar clic varias veces en JKAnime):
+            // Cuando el usuario hace clic sobre el reproductor, inspecciona todas las capas en (clientX, clientY),
+            // destruye cualquier capa transparente que esté tapando el reproductor y activa video.play() en el primer clic.
+            function pierceOverlayAndTriggerPlayAtPoint(clientX, clientY) {
+              if (isChaturbate) return;
+              try {
+                if (typeof document.elementsFromPoint === "function" && clientX > 0 && clientY > 0) {
+                  const stack = document.elementsFromPoint(clientX, clientY);
+                  let playerIdx = -1;
+                  for (let i = 0; i < stack.length; i++) {
+                    const item = stack[i];
+                    const tag = (item.tagName || "").toUpperCase();
+                    if (tag === "VIDEO" || tag === "IFRAME" || item.id === "video_box" || item.id === "pframe" ||
+                        (typeof item.className === "string" && /jw-|vjs-|plyr|player/i.test(item.className))) {
+                      playerIdx = i;
+                      break;
+                    }
+                  }
+                  // Si hay elementos sentados ENCIMA del reproductor en esas coordenadas (índices 0 hasta playerIdx - 1),
+                  // y no son botones legítimos del reproductor, son capas trampa que roban el clic: eliminarlos en el acto.
+                  if (playerIdx > 0) {
+                    for (let j = 0; j < playerIdx; j++) {
+                      const overlayEl = stack[j];
+                      if (!isProtectedPlayerOrLayoutElement(overlayEl)) {
+                        overlayEl.style.setProperty("pointer-events", "none", "important");
+                        overlayEl.style.setProperty("display", "none", "important");
+                        overlayEl.remove();
                       }
                     }
                   }
@@ -689,6 +699,10 @@ jobs:
                   [id*="viwom" i], [class*="viwom" i],
                   [id*="primis" i], [class*="primis" i],
                   [id*="adinplay" i], [class*="adinplay" i],
+                  [id*="adsterra" i], [class*="adsterra" i],
+                  [id*="floating-ad" i], [class*="floating-ad" i],
+                  [id*="sticky-ad" i], [class*="sticky-ad" i],
+                  [data-battv-shadow],
                   iframe[src*="vidoomy" i], iframe[src*="viwom" i],
                   iframe[src*="exoclick" i], iframe[src*="adsterra" i],
                   iframe[src*="magsrv" i], iframe[src*="realsrv" i],
@@ -770,6 +784,10 @@ jobs:
                 `;
                 (document.head || document.documentElement).appendChild(style);
               } catch (_) {}
+            }
+
+            if (document.documentElement) {
+              injectTvStyles();
             }
 
             function enableIframeFullscreenAttrs() {
@@ -1057,10 +1075,10 @@ jobs:
               });
             }
 
-            // Interceptor en fase de captura antes de que el clic llegue a los scripts publicitarios
             function interceptAdClicks(e) {
               if (isChaturbate) return;
-              cleanAllAdsBannersAndRobotModals();
+              sweepExistingAdNodes();
+              pierceOverlayAndTriggerPlayAtPoint(e.clientX || 0, e.clientY || 0);
 
               const a = e.target && e.target.closest ? e.target.closest("a") : null;
               if (a && !a.classList.contains("servers") && !a.closest(".servers, .bg-servers, .dropdown-menu, #episodes-content")) {
@@ -1119,6 +1137,22 @@ jobs:
                 return;
               }
 
+              // Si estamos dentro de un iframe de reproductor y el usuario hizo clic para reproducir
+              // (sin tocar la barra de controles ni un input), iniciar el vídeo al primer clic
+              if (!isTopFrame && !isChaturbate) {
+                const v = document.querySelector("video");
+                if (v && v.paused && v.readyState >= 1) {
+                  const clickedControl = e.target && e.target.closest ? e.target.closest("button, input, select, .jw-controlbar, .vjs-control-bar, .plyr__controls") : null;
+                  if (!clickedControl) {
+                    setTimeout(function () {
+                      if (v.paused) {
+                        v.play().catch(function () {});
+                      }
+                    }, 60);
+                  }
+                }
+              }
+
               const target = e.target ? e.target.closest("input, textarea, [contenteditable='true']") : null;
               if (target && isEditableTextInput(target)) {
                 notifyInputFocus(target);
@@ -1164,7 +1198,7 @@ jobs:
             setInterval(function () {
               try {
                 if (!isChaturbate) {
-                  cleanAllAdsBannersAndRobotModals();
+                  sweepExistingAdNodes();
                 }
                 if (document.getElementsByTagName("video").length === 0) return;
                 const v = findActiveVideo();
@@ -1222,7 +1256,7 @@ jobs:
                 extractMediaMetadata();
                 enableIframeFullscreenAttrs();
                 if (!isChaturbate) {
-                  cleanAllAdsBannersAndRobotModals();
+                  sweepExistingAdNodes();
                 }
               });
             }
@@ -1286,14 +1320,14 @@ jobs:
                 injectTvStyles();
                 enableIframeFullscreenAttrs();
                 if (!isChaturbate) {
-                  cleanAllAdsBannersAndRobotModals();
+                  sweepExistingAdNodes();
                 }
               });
             } else {
               injectTvStyles();
               enableIframeFullscreenAttrs();
               if (!isChaturbate) {
-                cleanAllAdsBannersAndRobotModals();
+                sweepExistingAdNodes();
               }
             }
           })();
@@ -1302,7 +1336,7 @@ jobs:
           with open(os.path.join(SHIELD_DIR, "content_start.js"), "w", encoding="utf-8") as cf:
               cf.write(content_start_js.strip() + "\n")
 
-          print("Escudo nativo v10.0 creado correctamente:", os.listdir(EXT_BASE))
+          print("Escudo nativo v11.0 creado correctamente:", os.listdir(EXT_BASE))
           EOF
 
       - name: Instalar Gradle 8.5
