@@ -40,6 +40,7 @@ class BatTvGeckoViewManager(
         const val PC_MODE_USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
 
+        // Incluye redes publicitarias + tiendas y casas de apuestas que secuestran iframes al pulsar Play (AliExpress, etc.)
         private val AD_AND_POPUP_DOMAINS = listOf(
             "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
             "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
@@ -49,19 +50,25 @@ class BatTvGeckoViewManager(
             "galaksion.com", "clickadu.com", "adcash.com", "richads.com", "admaven.com",
             "bidgear.com", "trafficjunky.net", "trafficstars.com", "tsyndicate.com",
             "rollerads.com", "evadav.com", "optad360.io", "teads.tv", "taboola.com",
-            "outbrain.com", "1xbet.com", "bet365.com", "mostbet.com", "caliente.mx",
+            "outbrain.com", "1xbet.com", "1xstavka.ru", "bet365.com", "mostbet.com",
+            "caliente.mx", "codere.mx", "betano.com", "bwin.com", "pin-up.bet",
+            "pin-up.casino", "20bet.com", "22bet.com", "melbet.com", "parimatch.com",
+            "stake.com", "leon.bet", "1win.pro", "1win.com", "apuestasroyal.com",
             "pushground.com", "yllix.com", "plugrush.com", "adspyglass.com",
             "clksite.com", "clkmon.com", "betteradsystem.com", "blurtsbrerd.com",
             "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
             "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk",
             "wpadmngr.com", "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
-            "highperformanceformat.com", "surfe.pro", "bebi.com", "adsbyvli.com", "vlitag.com"
+            "highperformanceformat.com", "surfe.pro", "bebi.com", "adsbyvli.com", "vlitag.com",
+            "aliexpress.com", "aliexpress.us", "aliexpress.ru", "alibaba.com",
+            "mmstat.com", "aliapp.org", "temu.com", "shein.com", "shopee.com", "lazada.com"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
             "/popunder", "/tabunder", "/clickunder", "utm_source=pop", "ad_type=pop",
             "/apu.php", "/afu.php", "zoneid=", "directlink", "reclama-tu", "felicitaciones",
-            "spin-wheel", "lucky-winner", "phone-cleaner", "virus-scan", "battery-alert"
+            "spin-wheel", "lucky-winner", "phone-cleaner", "virus-scan", "battery-alert",
+            "ali_trackid=", "aff_fcid=", "aff_fsk="
         )
 
         private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(
@@ -172,14 +179,6 @@ class BatTvGeckoViewManager(
         }
     }
 
-    /**
-     * Configuración optimizada para compatibilidad total de reproductores (JKAnime, Doramasflix,
-     * DramaChino, TuDorama, AsiaLiveAction, KissKH), Chaturbate 1080p y coexistencia Wi-Fi + Bluetooth:
-     * - network.cookie.cookieBehavior: 0 (permite que todos los iframes de vídeo como Dood, Desu,
-     *   Primeload, Voe y Streamtape carguen sin quedarse en negro ni en blanco).
-     * - network.http.max-connections: 32 y max-persistent-connections-per-server: 6 (evita saturar
-     *   la antena compartida Wi-Fi 2.4GHz / Bluetooth cuando usas audífonos inalámbricos).
-     */
     private fun writeHighPerformanceTvGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.cacheDir, "battv_gecko_config.yaml")
