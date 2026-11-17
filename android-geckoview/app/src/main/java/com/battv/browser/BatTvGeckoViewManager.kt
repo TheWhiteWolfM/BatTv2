@@ -25,8 +25,8 @@ class BatTvGeckoViewManager(
     companion object {
         private const val TAG = "BatTvGeckoManager"
 
-        const val BATTV_SHIELD_ID = "shield_v18@battv.browser"
-        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v18/"
+        const val BATTV_SHIELD_ID = "shield_v19@battv.browser"
+        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v19/"
 
         const val POPUP_BLOCKER_ID = BATTV_SHIELD_ID
         const val UBLOCK_ORIGIN_ID = BATTV_SHIELD_ID
@@ -60,14 +60,14 @@ class BatTvGeckoViewManager(
             "cactusheadroomscaling.com", "ero-advertising.com", "adtng.com",
             "xlivrdr.com", "bngpt.com", "bongacams.com", "livejasmin.com",
             "awempire.com", "jerkmate.com", "cam4.com", "stripchat.com",
-            "adxpansion.com", "spotscenered.info", "traforama.com", "Twinrdsyn.com"
+            "adxpansion.com", "spotscenered.info", "traforama.com", "mondiad.com"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
             "/popunder", "/tabunder", "/clickunder", "utm_source=pop", "ad_type=pop",
-            "/apu.php", "/afu.php", "/cig.", "zoneid=", "directlink", "reclama-tu",
-            "felicitaciones", "spin-wheel", "lucky-winner", "phone-cleaner",
-            "virus-scan", "battery-alert", "/splash.php"
+            "/apu.php", "/afu.php", "/cig.", "/0/p.", "zoneid=", "directlink",
+            "reclama-tu", "felicitaciones", "spin-wheel", "lucky-winner",
+            "phone-cleaner", "virus-scan", "battery-alert", "/splash.php"
         )
 
         private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(
@@ -170,6 +170,13 @@ class BatTvGeckoViewManager(
         }
     }
 
+    /**
+     * Configuración optimizada para compatibilidad del 100% de reproductores
+     * (Doramasflix, OnlyJerk Player 01..05, JKAnime, DramaChino, LiveCamRips y Chaturbate):
+     * - network.cookie.cookieBehavior: 0 y sameSite.laxByDefault: false permiten que los iframes
+     *   de vídeo de terceros (Streamwish, Dood, Mixdrop, Voe, Lulustream, Primeload) autentiquen
+     *   su sesión sin quedarse en pantalla negra.
+     */
     private fun writeHighPerformanceTvGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.filesDir, "battv_gecko_config.yaml")
@@ -232,10 +239,13 @@ class BatTvGeckoViewManager(
                   network.http.max-persistent-connections-per-server: 8
                   network.http.speculative-parallel-limit: 6
                   network.http.pacing.requests.enabled: false
+                  network.http.sendRefererHeader: 2
                   network.dns.disablePrefetch: false
                   network.dns.disablePrefetchFromHTTPS: false
                   network.predictor.enabled: true
-                  network.cookie.cookieBehavior: 4
+                  network.cookie.cookieBehavior: 0
+                  network.cookie.sameSite.laxByDefault: false
+                  network.cookie.sameSite.noneRequiresSecure: false
                   security.mixed_content.block_active_content: false
                   security.mixed_content.block_display_content: false
                   dom.security.https_only_mode: false
@@ -331,9 +341,8 @@ class BatTvGeckoViewManager(
                 return true
             }
         }
-        // Detectar dominios de popunder con tokens estilo /ciG.Fjzkclz-...
         val path = runCatching { Uri.parse(uriString).path ?: "" }.getOrDefault("")
-        if (path.length > 24 && (path.startsWith("/ciG.") || path.startsWith("/cIg."))) {
+        if (path.length > 20 && (path.startsWith("/ciG.") || path.startsWith("/cIg.") || path.startsWith("/b/"))) {
             return true
         }
         return false
