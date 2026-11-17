@@ -25,8 +25,8 @@ class BatTvGeckoViewManager(
     companion object {
         private const val TAG = "BatTvGeckoManager"
 
-        const val BATTV_SHIELD_ID = "shield_v16@battv.browser"
-        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v16/"
+        const val BATTV_SHIELD_ID = "shield_v17@battv.browser"
+        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v17/"
 
         const val POPUP_BLOCKER_ID = BATTV_SHIELD_ID
         const val UBLOCK_ORIGIN_ID = BATTV_SHIELD_ID
@@ -55,7 +55,10 @@ class BatTvGeckoViewManager(
             "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
             "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk",
             "wpadmngr.com", "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
-            "highperformanceformat.com", "surfe.pro", "go2buddyspin.com", "cactusheadroomscaling.com"
+            "highperformanceformat.com", "surfe.pro", "go2buddyspin.com", "cactusheadroomscaling.com",
+            "ero-advertising.com", "adtng.com", "crakrevenue.com", "jerkmate.com",
+            "stripchat.com", "bongacams.com", "livejasmin.com", "awempire.com",
+            "camsoda.com", "flirt4free.com", "streamate.com", "imlive.com"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
@@ -164,13 +167,6 @@ class BatTvGeckoViewManager(
         }
     }
 
-    /**
-     * Configuración de alto rendimiento para Bat TV v4.1:
-     * - Mantiene intacta la base que hace funcionar Doramasflix, DramaChino y JKAnime.
-     * - Coexistencia Wi-Fi + Bluetooth (max-connections: 36 y persistent-connections: 8) para que
-     *   al usar audífonos Bluetooth en Chaturbate nunca se entrecorte la señal ni el audio.
-     * - Mayor velocidad de carga de páginas (content.notify.interval: 16666 y speculative-parallel-limit: 6).
-     */
     private fun writeHighPerformanceTvGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.filesDir, "battv_gecko_config.yaml")
@@ -340,7 +336,7 @@ class BatTvGeckoViewManager(
         val curHost = runCatching { Uri.parse(currentPageUrl).host?.lowercase()?.removePrefix("www.") ?: "" }.getOrDefault("")
         val tarHost = runCatching { Uri.parse(targetUrl).host?.lowercase()?.removePrefix("www.") ?: "" }.getOrDefault("")
         if (curHost.isEmpty() || tarHost.isEmpty()) return true
-        if (curHost == tarHost || tarHost.endsWith(".$curHost") || curHost.endsWith(".$tarHost")) return true
+        if (curHost == tarHost || tarHost.endsWith(".$curHost") \vert{}\vert{} curHost.endsWith(".$tarHost")) return true
 
         if (curHost.contains("google.") || curHost.contains("bing.com") || curHost.contains("duckduckgo.com")) {
             return true
