@@ -44,8 +44,8 @@ class BatTvGeckoViewManager(
             "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
             "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
             "googleadservices.com", "popads.net", "popcash.net", "propellerads.com",
-            "exoclick.com", "magsrv.com", "realsrv.com", "juicyads.com", "adsterra.com",
-            "monetag.com", "acscdn.com", "onclickads.net", "hilltopads.net",
+            "exoclick.com", "exosrv.com", "magsrv.com", "realsrv.com", "juicyads.com",
+            "adsterra.com", "monetag.com", "acscdn.com", "onclickads.net", "hilltopads.net",
             "galaksion.com", "clickadu.com", "adcash.com", "richads.com", "admaven.com",
             "bidgear.com", "trafficjunky.net", "trafficstars.com", "tsyndicate.com",
             "rollerads.com", "evadav.com", "optad360.io", "teads.tv", "taboola.com",
@@ -55,10 +55,11 @@ class BatTvGeckoViewManager(
             "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
             "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk",
             "wpadmngr.com", "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
-            "highperformanceformat.com", "surfe.pro", "go2buddyspin.com", "cactusheadroomscaling.com",
-            "ero-advertising.com", "adtng.com", "crakrevenue.com", "jerkmate.com",
-            "stripchat.com", "bongacams.com", "livejasmin.com", "awempire.com",
-            "camsoda.com", "flirt4free.com", "streamate.com", "imlive.com"
+            "highperformanceformat.com", "surfe.pro", "go2buddyspin.com",
+            "cactusheadroomscaling.com", "ero-advertising.com", "adtng.com",
+            "xlivrdr.com", "bngpt.com", "bongacams.com", "livejasmin.com",
+            "awempire.com", "jerkmate.com", "cam4.com", "stripchat.com",
+            "adxpansion.com", "spotscenered.info"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
@@ -177,7 +178,7 @@ class BatTvGeckoViewManager(
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 18432
+                  browser.cache.memory.capacity: 20480
                   browser.sessionhistory.max_total_viewers: 0
                   browser.safebrowsing.malware.enabled: false
                   browser.safebrowsing.phishing.enabled: false
@@ -196,11 +197,11 @@ class BatTvGeckoViewManager(
                   apz.overscroll.enabled: false
                   apz.fling_min_velocity_threshold: "0.4"
                   media.suspend-bkgnd-video.enabled: false
-                  media.cache_size: 32768
-                  media.memory_cache_max_size: 16384
-                  media.memory_caches_combined_limit_kb: 36864
-                  media.cache_readahead_limit: 40
-                  media.cache_resume_threshold: 4
+                  media.cache_size: 49152
+                  media.memory_cache_max_size: 24576
+                  media.memory_caches_combined_limit_kb: 49152
+                  media.cache_readahead_limit: 50
+                  media.cache_resume_threshold: 6
                   media.preload.default: 2
                   media.autoplay.default: 0
                   media.autoplay.blocking_policy: 0
@@ -319,9 +320,9 @@ class BatTvGeckoViewManager(
         val lower = uriString.lowercase()
         val host = runCatching { Uri.parse(uriString).host?.lowercase() ?: "" }.getOrDefault("")
         for (domain in AD_AND_POPUP_DOMAINS) {
-            if (host == domain || host.endsWith(".$domain") || lower.contains(domain)) {
-                return true
-            }
+            if (host == domain) return true
+            if (host.endsWith(".$domain")) return true
+            if (lower.contains(domain)) return true
         }
         for (pattern in SCAM_AND_AD_URL_PATTERNS) {
             if (lower.contains(pattern)) {
@@ -332,15 +333,20 @@ class BatTvGeckoViewManager(
     }
 
     fun isSameOrTrustedNavigationTarget(currentPageUrl: String, targetUrl: String): Boolean {
-        if (currentPageUrl.isBlank() || !currentPageUrl.startsWith("http", ignoreCase = true)) return true
+        if (currentPageUrl.isBlank()) return true
+        if (!currentPageUrl.startsWith("http", ignoreCase = true)) return true
+
         val curHost = runCatching { Uri.parse(currentPageUrl).host?.lowercase()?.removePrefix("www.") ?: "" }.getOrDefault("")
         val tarHost = runCatching { Uri.parse(targetUrl).host?.lowercase()?.removePrefix("www.") ?: "" }.getOrDefault("")
-        if (curHost.isEmpty() || tarHost.isEmpty()) return true
-        if (curHost == tarHost || tarHost.endsWith(".$curHost") \vert{}\vert{} curHost.endsWith(".$tarHost")) return true
+        if (curHost.isEmpty()) return true
+        if (tarHost.isEmpty()) return true
+        if (curHost == tarHost) return true
+        if (tarHost.endsWith(".$curHost")) return true
+        if (curHost.endsWith(".$tarHost")) return true
 
-        if (curHost.contains("google.") || curHost.contains("bing.com") || curHost.contains("duckduckgo.com")) {
-            return true
-        }
+        if (curHost.contains("google.")) return true
+        if (curHost.contains("bing.com")) return true
+        if (curHost.contains("duckduckgo.com")) return true
 
         val curParts = curHost.split(".")
         val tarParts = tarHost.split(".")
@@ -393,11 +399,12 @@ class BatTvGeckoViewManager(
             return "https://www.google.com/"
         }
 
-        if (trimmed.startsWith("http://", ignoreCase = true) ||
-            trimmed.startsWith("https://", ignoreCase = true) ||
-            trimmed.startsWith("about:", ignoreCase = true) ||
-            trimmed.startsWith("moz-extension://", ignoreCase = true)
-        ) {
+        val isHttp = trimmed.startsWith("http://", ignoreCase = true)
+        val isHttps = trimmed.startsWith("https://", ignoreCase = true)
+        val isAbout = trimmed.startsWith("about:", ignoreCase = true)
+        val isMozExt = trimmed.startsWith("moz-extension://", ignoreCase = true)
+
+        if (isHttp || isHttps || isAbout || isMozExt) {
             return trimmed
         }
 
@@ -428,10 +435,9 @@ class BatTvGeckoViewManager(
     fun clearSafeCaches(onComplete: (Long) -> Unit) {
         if (::runtime.isInitialized) {
             try {
-                runtime.storageController.clearData(
-                    StorageController.ClearFlags.IMAGE_CACHE or
-                        StorageController.ClearFlags.NETWORK_CACHE
-                )
+                val flags = StorageController.ClearFlags.IMAGE_CACHE or
+                    StorageController.ClearFlags.NETWORK_CACHE
+                runtime.storageController.clearData(flags)
             } catch (_: Exception) {}
         }
 
