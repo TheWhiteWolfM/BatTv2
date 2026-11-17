@@ -11,8 +11,8 @@ android {
         applicationId "com.battv.browser"
         minSdk 23
         targetSdk 34
-        versionCode 6
-        versionName "3.1"
+        versionCode 15
+        versionName "4.0"
 
         ndk {
             abiFilters "armeabi-v7a"
@@ -26,9 +26,8 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            minifyEnabled false
+            shrinkResources false
             signingConfig signingConfigs.debug
         }
     }
