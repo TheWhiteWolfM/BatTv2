@@ -25,8 +25,8 @@ class BatTvGeckoViewManager(
     companion object {
         private const val TAG = "BatTvGeckoManager"
 
-        const val BATTV_SHIELD_ID = "shield_v15@battv.browser"
-        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v15/"
+        const val BATTV_SHIELD_ID = "shield_v16@battv.browser"
+        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v16/"
 
         const val POPUP_BLOCKER_ID = BATTV_SHIELD_ID
         const val UBLOCK_ORIGIN_ID = BATTV_SHIELD_ID
@@ -55,7 +55,7 @@ class BatTvGeckoViewManager(
             "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
             "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk",
             "wpadmngr.com", "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
-            "highperformanceformat.com", "surfe.pro"
+            "highperformanceformat.com", "surfe.pro", "go2buddyspin.com", "cactusheadroomscaling.com"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
@@ -165,8 +165,11 @@ class BatTvGeckoViewManager(
     }
 
     /**
-     * Configuración exacta de codigo_battv_2.txt donde Doramasflix, DramaChino y JKAnime
-     * cargan miniaturas y reproductores sin bloqueos.
+     * Configuración de alto rendimiento para Bat TV v4.1:
+     * - Mantiene intacta la base que hace funcionar Doramasflix, DramaChino y JKAnime.
+     * - Coexistencia Wi-Fi + Bluetooth (max-connections: 36 y persistent-connections: 8) para que
+     *   al usar audífonos Bluetooth en Chaturbate nunca se entrecorte la señal ni el audio.
+     * - Mayor velocidad de carga de páginas (content.notify.interval: 16666 y speculative-parallel-limit: 6).
      */
     private fun writeHighPerformanceTvGeckoConfig(appContext: Context): File? {
         return try {
@@ -178,7 +181,7 @@ class BatTvGeckoViewManager(
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
                   browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 16384
+                  browser.cache.memory.capacity: 18432
                   browser.sessionhistory.max_total_viewers: 0
                   browser.safebrowsing.malware.enabled: false
                   browser.safebrowsing.phishing.enabled: false
@@ -190,6 +193,8 @@ class BatTvGeckoViewManager(
                   gfx.canvas.accelerated: true
                   layout.frame_rate: 60
                   layout.css.backdrop-filter.enabled: false
+                  content.notify.ontimer: true
+                  content.notify.interval: 16666
                   image.mem.decode_bytes_at_a_time: 65536
                   image.mem.shared: true
                   apz.overscroll.enabled: false
@@ -198,7 +203,7 @@ class BatTvGeckoViewManager(
                   media.cache_size: 32768
                   media.memory_cache_max_size: 16384
                   media.memory_caches_combined_limit_kb: 36864
-                  media.cache_readahead_limit: 30
+                  media.cache_readahead_limit: 40
                   media.cache_resume_threshold: 4
                   media.preload.default: 2
                   media.autoplay.default: 0
@@ -209,10 +214,13 @@ class BatTvGeckoViewManager(
                   media.android-media-codec.preferred: true
                   media.hardware-video-decoding.enabled: true
                   media.hardware-video-decoding.force-enabled: true
+                  media.decoder.recycle.enabled: true
                   media.decoder.skip-to-next-key-frame.enabled: false
                   media.ruin-av-sync.enabled: false
                   media.eme.enabled: true
                   media.mediasource.enabled: true
+                  media.mediasource.mp4.enabled: true
+                  media.mediasource.webm.enabled: true
                   dom.disable_open_during_load: true
                   dom.popup_maximum: 0
                   full-screen-api.enabled: true
@@ -221,8 +229,9 @@ class BatTvGeckoViewManager(
                   full-screen-api.warning.timeout: 0
                   nglayout.initialpaint.delay: 0
                   network.http.http3.enable: false
-                  network.http.max-connections: 64
-                  network.http.max-persistent-connections-per-server: 10
+                  network.http.max-connections: 36
+                  network.http.max-persistent-connections-per-server: 8
+                  network.http.speculative-parallel-limit: 6
                   network.http.pacing.requests.enabled: false
                   network.dns.disablePrefetch: false
                   network.dns.disablePrefetchFromHTTPS: false
@@ -272,8 +281,6 @@ class BatTvGeckoViewManager(
             }
         }
 
-        // Al cambiar BATTV_SHIELD_ID a "shield_v15@battv.browser", desinstala automáticamente
-        // el antiguo "shield@battv.browser" que quedaba atrapado en caché.
         controller.list().accept({ existingList ->
             existingList?.forEach { ext ->
                 if (ext.id != BATTV_SHIELD_ID) {
@@ -463,6 +470,7 @@ class BatTvGeckoViewManager(
                         line.contains("dom.ipc.processCount") ||
                             line.contains("layers.acceleration") ||
                             line.contains("network.http.http3") ||
+                            line.contains("network.http.max-connections") ||
                             line.contains("browser.cache.disk.enable") ||
                             line.contains("media.cache_resume_threshold") ||
                             line.contains("skip-to-next-key-frame") ||
