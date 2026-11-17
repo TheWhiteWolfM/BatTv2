@@ -24,11 +24,9 @@ class BatTvGeckoViewManager(
 
     companion object {
         private const val TAG = "BatTvGeckoManager"
-        private const val PREFS_NAME = "battv_browser_prefs"
-        private const val KEY_CLEAN_PROFILE_V14 = "profile_clean_reset_v14"
 
-        const val BATTV_SHIELD_ID = "shield@battv.browser"
-        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield/"
+        const val BATTV_SHIELD_ID = "shield_v15@battv.browser"
+        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v15/"
 
         const val POPUP_BLOCKER_ID = BATTV_SHIELD_ID
         const val UBLOCK_ORIGIN_ID = BATTV_SHIELD_ID
@@ -51,25 +49,19 @@ class BatTvGeckoViewManager(
             "galaksion.com", "clickadu.com", "adcash.com", "richads.com", "admaven.com",
             "bidgear.com", "trafficjunky.net", "trafficstars.com", "tsyndicate.com",
             "rollerads.com", "evadav.com", "optad360.io", "teads.tv", "taboola.com",
-            "outbrain.com", "1xbet.com", "1xstavka.ru", "bet365.com", "mostbet.com",
-            "caliente.mx", "codere.mx", "betano.com", "bwin.com", "pin-up.bet",
-            "pin-up.casino", "20bet.com", "22bet.com", "melbet.com", "parimatch.com",
-            "stake.com", "leon.bet", "1win.pro", "1win.com", "apuestasroyal.com",
+            "outbrain.com", "1xbet.com", "bet365.com", "mostbet.com", "caliente.mx",
             "pushground.com", "yllix.com", "plugrush.com", "adspyglass.com",
             "clksite.com", "clkmon.com", "betteradsystem.com", "blurtsbrerd.com",
             "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
             "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk",
             "wpadmngr.com", "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
-            "highperformanceformat.com", "surfe.pro", "bebi.com", "adsbyvli.com", "vlitag.com",
-            "aliexpress.com", "aliexpress.us", "aliexpress.ru", "alibaba.com",
-            "mmstat.com", "aliapp.org", "temu.com", "shein.com", "shopee.com", "lazada.com"
+            "highperformanceformat.com", "surfe.pro"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
             "/popunder", "/tabunder", "/clickunder", "utm_source=pop", "ad_type=pop",
             "/apu.php", "/afu.php", "zoneid=", "directlink", "reclama-tu", "felicitaciones",
-            "spin-wheel", "lucky-winner", "phone-cleaner", "virus-scan", "battery-alert",
-            "ali_trackid=", "aff_fcid=", "aff_fsk="
+            "spin-wheel", "lucky-winner", "phone-cleaner", "virus-scan", "battery-alert"
         )
 
         private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(
@@ -144,19 +136,11 @@ class BatTvGeckoViewManager(
     private fun getOrCreateRuntime(appContext: Context): GeckoRuntime {
         return sharedRuntime ?: synchronized(Companion) {
             sharedRuntime ?: run {
-                val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                val needsCleanReset = !prefs.getBoolean(KEY_CLEAN_PROFILE_V14, false)
-
                 try {
                     deleteDirectoryContents(appContext.cacheDir)
                     appContext.externalCacheDir?.let { deleteDirectoryContents(it) }
                     val mozillaDir = File(appContext.filesDir, "mozilla")
-                    if (needsCleanReset) {
-                        if (mozillaDir.exists()) {
-                            mozillaDir.deleteRecursively()
-                        }
-                        prefs.edit().putBoolean(KEY_CLEAN_PROFILE_V14, true).apply()
-                    } else if (mozillaDir.exists()) {
+                    if (mozillaDir.exists()) {
                         cleanDisposableGeckoDirs(mozillaDir)
                     }
                 } catch (_: Exception) {}
@@ -173,23 +157,16 @@ class BatTvGeckoViewManager(
                     builder.configFilePath(cfgFile.absolutePath)
                 }
 
-                GeckoRuntime.create(appContext, builder.build()).also { rt ->
-                    sharedRuntime = rt
-                    if (needsCleanReset) {
-                        try {
-                            rt.storageController.clearData(StorageController.ClearFlags.ALL_CACHES)
-                        } catch (_: Exception) {}
-                    }
+                GeckoRuntime.create(appContext, builder.build()).also {
+                    sharedRuntime = it
                 }
             }
         }
     }
 
     /**
-     * Configuración exacta probada en codigo_battv_2.txt donde Doramasflix, DramaChino y JKAnime
-     * cargan todas sus miniaturas, rutas Next.js y reproductores sin bloqueos:
-     * - Sin places.history.enabled: false (que bloqueaba el enrutador de Next.js en Doramasflix).
-     * - Escrita en filesDir para acceso inmediato de los procesos de contenido de GeckoView.
+     * Configuración exacta de codigo_battv_2.txt donde Doramasflix, DramaChino y JKAnime
+     * cargan miniaturas y reproductores sin bloqueos.
      */
     private fun writeHighPerformanceTvGeckoConfig(appContext: Context): File? {
         return try {
@@ -244,8 +221,8 @@ class BatTvGeckoViewManager(
                   full-screen-api.warning.timeout: 0
                   nglayout.initialpaint.delay: 0
                   network.http.http3.enable: false
-                  network.http.max-connections: 48
-                  network.http.max-persistent-connections-per-server: 8
+                  network.http.max-connections: 64
+                  network.http.max-persistent-connections-per-server: 10
                   network.http.pacing.requests.enabled: false
                   network.dns.disablePrefetch: false
                   network.dns.disablePrefetchFromHTTPS: false
@@ -295,7 +272,16 @@ class BatTvGeckoViewManager(
             }
         }
 
-        // Forzar actualización limpia del escudo nativo desde los assets del nuevo APK
+        // Al cambiar BATTV_SHIELD_ID a "shield_v15@battv.browser", desinstala automáticamente
+        // el antiguo "shield@battv.browser" que quedaba atrapado en caché.
+        controller.list().accept({ existingList ->
+            existingList?.forEach { ext ->
+                if (ext.id != BATTV_SHIELD_ID) {
+                    controller.uninstall(ext)
+                }
+            }
+        }, {})
+
         controller.ensureBuiltIn(BATTV_SHIELD_URI, BATTV_SHIELD_ID).accept(
             { extension ->
                 if (extension != null) {
@@ -471,20 +457,20 @@ class BatTvGeckoViewManager(
                 } else if (child.name != "storage" && child.name != "extensions") {
                     bytes += cleanDisposableGeckoDirs(child)
                 }
-            } else if (child.isFile && child.name == "addonStartup.json.lz4") {
-                // Borrar caché de arranque de extensiones para obligar a cargar siempre el nuevo battv_shield
-                bytes += child.length()
-                child.delete()
             } else if (child.isFile && child.name == "prefs.js") {
                 try {
                     val sanitized = child.readLines().filterNot { line ->
-                        line.contains("places.history.enabled") ||
+                        line.contains("dom.ipc.processCount") ||
+                            line.contains("layers.acceleration") ||
+                            line.contains("network.http.http3") ||
+                            line.contains("browser.cache.disk.enable") ||
+                            line.contains("media.cache_resume_threshold") ||
+                            line.contains("skip-to-next-key-frame") ||
+                            line.contains("places.history.enabled") ||
                             line.contains("browser.chrome.site_icons") ||
                             line.contains("browser.chrome.favicons") ||
                             line.contains("network.cookie.cookieBehavior") ||
-                            line.contains("browser.cache.disk.enable") ||
-                            line.contains("media.cache_resume_threshold") ||
-                            line.contains("skip-to-next-key-frame")
+                            line.contains("media.hls.enabled")
                     }
                     child.writeText(sanitized.joinToString("\n") + "\n")
                 } catch (_: Exception) {}
