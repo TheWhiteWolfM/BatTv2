@@ -25,8 +25,8 @@ class BatTvGeckoViewManager(
     companion object {
         private const val TAG = "BatTvGeckoManager"
 
-        const val BATTV_SHIELD_ID = "shield_v17@battv.browser"
-        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v17/"
+        const val BATTV_SHIELD_ID = "shield_v18@battv.browser"
+        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v18/"
 
         const val POPUP_BLOCKER_ID = BATTV_SHIELD_ID
         const val UBLOCK_ORIGIN_ID = BATTV_SHIELD_ID
@@ -44,28 +44,30 @@ class BatTvGeckoViewManager(
             "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
             "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
             "googleadservices.com", "popads.net", "popcash.net", "propellerads.com",
-            "exoclick.com", "exosrv.com", "magsrv.com", "realsrv.com", "juicyads.com",
-            "adsterra.com", "monetag.com", "acscdn.com", "onclickads.net", "hilltopads.net",
-            "galaksion.com", "clickadu.com", "adcash.com", "richads.com", "admaven.com",
-            "bidgear.com", "trafficjunky.net", "trafficstars.com", "tsyndicate.com",
-            "rollerads.com", "evadav.com", "optad360.io", "teads.tv", "taboola.com",
-            "outbrain.com", "1xbet.com", "bet365.com", "mostbet.com", "caliente.mx",
-            "pushground.com", "yllix.com", "plugrush.com", "adspyglass.com",
-            "clksite.com", "clkmon.com", "betteradsystem.com", "blurtsbrerd.com",
-            "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
-            "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk",
-            "wpadmngr.com", "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
+            "exoclick.com", "exosrv.com", "exdynsrv.com", "orbsrv.com", "magsrv.com",
+            "realsrv.com", "juicyads.com", "adsterra.com", "monetag.com", "acscdn.com",
+            "onclickads.net", "hilltopads.net", "yellowishgather.com", "galaksion.com",
+            "clickadu.com", "adcash.com", "richads.com", "admaven.com", "bidgear.com",
+            "trafficjunky.net", "trafficstars.com", "tsyndicate.com", "rollerads.com",
+            "evadav.com", "optad360.io", "teads.tv", "taboola.com", "outbrain.com",
+            "1xbet.com", "bet365.com", "mostbet.com", "caliente.mx", "pushground.com",
+            "yllix.com", "plugrush.com", "adspyglass.com", "clksite.com", "clkmon.com",
+            "betteradsystem.com", "blurtsbrerd.com", "capsidsflyleaf.com",
+            "skypipevatican.com", "21wiz.com", "aarems.org", "twinrdsyn.com",
+            "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk", "wpadmngr.com",
+            "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
             "highperformanceformat.com", "surfe.pro", "go2buddyspin.com",
             "cactusheadroomscaling.com", "ero-advertising.com", "adtng.com",
             "xlivrdr.com", "bngpt.com", "bongacams.com", "livejasmin.com",
             "awempire.com", "jerkmate.com", "cam4.com", "stripchat.com",
-            "adxpansion.com", "spotscenered.info"
+            "adxpansion.com", "spotscenered.info", "traforama.com", "Twinrdsyn.com"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
             "/popunder", "/tabunder", "/clickunder", "utm_source=pop", "ad_type=pop",
-            "/apu.php", "/afu.php", "zoneid=", "directlink", "reclama-tu", "felicitaciones",
-            "spin-wheel", "lucky-winner", "phone-cleaner", "virus-scan", "battery-alert"
+            "/apu.php", "/afu.php", "/cig.", "zoneid=", "directlink", "reclama-tu",
+            "felicitaciones", "spin-wheel", "lucky-winner", "phone-cleaner",
+            "virus-scan", "battery-alert", "/splash.php"
         )
 
         private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(
@@ -328,6 +330,11 @@ class BatTvGeckoViewManager(
             if (lower.contains(pattern)) {
                 return true
             }
+        }
+        // Detectar dominios de popunder con tokens estilo /ciG.Fjzkclz-...
+        val path = runCatching { Uri.parse(uriString).path ?: "" }.getOrDefault("")
+        if (path.length > 24 && (path.startsWith("/ciG.") || path.startsWith("/cIg."))) {
+            return true
         }
         return false
     }
