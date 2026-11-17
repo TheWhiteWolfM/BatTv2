@@ -40,11 +40,11 @@ jobs:
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
 
-      - name: Generar Motor Nativo Ultraligero v18.0 (Soporte OnlyJerk, Anti-PreRoll LiveCamRips, Pantalla Completa y JKAnime)
+      - name: Generar Motor Nativo Ultraligero v19.0 (Doramasflix, JKAnime, OnlyJerk, LiveCamRips y Chaturbate)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v18"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v19"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
 
@@ -52,11 +52,11 @@ jobs:
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "18.0.0",
-            "description": "Soporte Doramasflix/DramaChino/JKAnime + Carga limpia OnlyJerk + Eliminador de Pre-Roll en LiveCamRips + Diálogo Pantalla Completa.",
+            "version": "19.0.0",
+            "description": "Soporte total para reproductores de Doramasflix, JKAnime, OnlyJerk y LiveCamRips con destructor de notificaciones push y popunders.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v18@battv.browser",
+                "id": "shield_v19@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -113,26 +113,23 @@ jobs:
               "go2buddyspin.com", "cactusheadroomscaling.com", "ero-advertising.com",
               "adtng.com", "xlivrdr.com", "bngpt.com", "bongacams.com", "livejasmin.com",
               "awempire.com", "jerkmate.com", "cam4.com", "stripchat.com",
-              "adxpansion.com", "spotscenered.info", "traforama.com"
+              "adxpansion.com", "spotscenered.info", "traforama.com", "mondiad.com"
             ];
 
-            // NOTA: onlyjerk.net y livecamrips.to NO se meten en este bloqueo ciego de scripts externos
-            // para que sus temas WordPress, miniaturas y reproductores carguen al 100% sin pantalla negra.
+            // Sitios donde se aplica el cortafuegos de scripts externos en la página principal:
+            // NO incluye jkanime.net ni onlyjerk.net ni rutas /e/ genéricas para que JAMÁS
+            // se quede un reproductor en negro ni falle la carga de JKAnime u OnlyJerk.
             const PROTECTED_STREAMING_SITES = [
               "doramasflix.io", "doramasflix.co", "dramachino.com", "tudorama.com",
-              "asialiveaction.com", "kisskh.do", "kisskh.co", "jkanime.net", "jkanime.bz",
-              "jkdesu.com", "jkdesa.com", "hdfull.one", "primeload.co", "voe.sx",
-              "streamtape.com", "tapeblocker.com", "filemoon.sx", "streamwish.to",
-              "sfastwish.com", "vidhidevip.com", "do7go.com", "dood.watch", "dood.to",
-              "dood.la", "d000d.com", "ds2play.com", "mixdrop.co", "mixdrop.ag",
-              "mixdrop.to", "mixdrop.ps", "lulustream.com", "lulu.st", "vidoza.net",
-              "listeamed.net", "bembed.net", "bigwarp.io", "uqload.to", "upstream.to",
-              "byse.sx", "bysebuho.com", "bysefujedu.com", "n1mwq.org", "pkaa.top"
+              "asialiveaction.com", "kisskh.do", "kisskh.co", "byse.sx",
+              "bysebuho.com", "bysefujedu.com", "n1mwq.org", "pkaa.top"
             ];
 
             const ALLOWED_TECH_CDNS = [
+              "doramasflix.io", "doramasflix.co", "dramachino.com", "tudorama.com",
+              "asialiveaction.com", "kisskh.do", "kisskh.co", "embedshortener.co",
               "jkdesa.com", "jkdesu.com", "jkanime.net", "jkanime.bz",
-              "livecamrips.to", "livecamrips.com", "livecamrips.net", "livecamrip.tl",
+              "livecamrips.to", "livecamrips.com", "livecamrips.net",
               "onlyjerk.net", "onlyjerk.com", "fluidplayer.com", "tailwindcss.com",
               "disqus.com", "disquscdn.com", "cloudflare.com", "cdnjs.cloudflare.com",
               "cloudflareinsights.com", "jsdelivr.net", "unpkg.com", "gstatic.com",
@@ -144,8 +141,9 @@ jobs:
               "akamaihd.net", "cloudfront.net", "fastly.net"
             ];
 
-            // Detecta scripts de popups, tokens tipo /ciG.Fjzkclz (HilltopAds/YellowishGather) y URLs de anuncios VAST
-            const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/invoke\.js|\/popunder|\/tabunder|\/clickunder|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{10,}|\/splash\.php|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|fuckadblock|blockadblock)/i;
+            // Detecta firmas exactas de scripts de popunders, In-Page Push ("This simple trick is going viral" / "You have (1) new")
+            // y rutas de redirección como yellowishgather.com/b/3yV/0/P... o /ciG.Fjzkclz...
+            const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta)/i;
             const VAST_PREROLL_REGEX = /([?&/](vast|preroll|midroll|postroll|ad_tag|adtag|vmap)([=&/.?_]|$)|syndication\.|splash\.php)/i;
 
             function getBaseBrand(hostname) {
@@ -172,36 +170,26 @@ jobs:
                     const parsed = new URL(rawUrl);
                     const reqHost = parsed.hostname.toLowerCase().replace(/^www\./, "");
 
-                    if (reqHost.includes("embedshortener.co") && parsed.pathname.startsWith("/e/")) {
-                      const token = parsed.pathname.slice(3).split(".")[1];
-                      if (token) {
-                        const payload = JSON.parse(atob(token.replace(/-/g, "+").replace(/_/g, "/")));
-                        if (payload && payload.link) {
-                          const decodedUrl = atob(payload.link).trim();
-                          if (/^https?:\/\//i.test(decodedUrl)) {
-                            return { redirectUrl: decodedUrl };
-                          }
-                        }
-                      }
-                    }
+                    // NOTA CRÍTICA: NO redirigir embedshortener.co/e/ en background.js para que Streamwish
+                    // y los demás servidores de Doramasflix resuelvan su dominio actualizado sin dar 404 Not Found.
 
-                    // 1. Si es una petición XHR/Fetch de un anuncio de vídeo Pre-Roll (VAST),
-                    //    devolver un XML VAST vacío para que el reproductor omita "Este anuncio terminará en 10"
+                    // 1. Devolver XML VAST vacío en peticiones de anuncios de vídeo Pre-Roll ("Este anuncio terminará en 10")
                     if (details.type === "xmlhttprequest" && (VAST_PREROLL_REGEX.test(rawUrl) || isHostInList(reqHost, BLOCKED_AD_DOMAINS))) {
                       return {
                         redirectUrl: "data:text/xml;charset=utf-8," + encodeURIComponent('<VAST version="3.0"></VAST>')
                       };
                     }
 
-                    // 2. Bloquear dominios publicitarios, yellowishgather.com y rutas /ciG.
+                    // 2. Bloquear dominios publicitarios, yellowishgather.com y rutas /ciG. o /b/3yV/0/P.
                     if (isHostInList(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl) || VAST_PREROLL_REGEX.test(rawUrl)) {
                       return { cancel: true };
                     }
 
+                    // 3. Cortafuegos de scripts externos desconocidos en Doramasflix, DramaChino y BYSE
                     const docUrl = details.originUrl || details.documentUrl || "";
-                    if (docUrl.startsWith("http") && (details.type === "script" || details.type === "sub_frame")) {
+                    if (docUrl.startsWith("http") && details.type === "script") {
                       const docHost = new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "");
-                      if (docHost.includes("chaturbate.com")) {
+                      if (docHost.includes("chaturbate.com") || docHost.includes("jkanime.") || docHost.includes("onlyjerk.")) {
                         return {};
                       }
 
@@ -210,14 +198,9 @@ jobs:
                                          docHost.endsWith("." + reqHost) ||
                                          (getBaseBrand(reqHost) === getBaseBrand(docHost));
 
-                      if (!isSameSite && details.type === "script") {
-                        const onStreamingOrPlayer = isHostInList(docHost, PROTECTED_STREAMING_SITES) ||
-                                                    docHost.includes("byse") ||
-                                                    docUrl.includes("/e/") ||
-                                                    docUrl.includes("/embed") ||
-                                                    docUrl.includes("/um.php") ||
-                                                    docUrl.includes("/jkplayer");
-                        if (onStreamingOrPlayer &&
+                      if (!isSameSite) {
+                        const onProtectedSite = isHostInList(docHost, PROTECTED_STREAMING_SITES) || docHost.includes("byse");
+                        if (onProtectedSite &&
                             !isHostInList(reqHost, ALLOWED_TECH_CDNS) &&
                             !isHostInList(reqHost, PROTECTED_STREAMING_SITES)) {
                           return { cancel: true };
@@ -252,7 +235,8 @@ jobs:
             const currentHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
             const isChaturbate = currentHost === "chaturbate.com" || currentHost.endsWith(".chaturbate.com");
             const isJkAnimeOrPlayer = currentHost.includes("jkanime.") || currentHost.includes("jkdesu.") || currentHost.includes("jkdesa.");
-            const isLiveCamOrOnlyJerk = currentHost.includes("livecamrip") || currentHost.includes("onlyjerk");
+            const isLiveCamRips = currentHost.includes("livecamrip");
+            const isOnlyJerk = currentHost.includes("onlyjerk");
 
             const CLEAN_LIVESTREAM_SITES = ["chaturbate.com", "twitch.tv", "kick.com", "youtube.com"];
             const isCleanLiveStreamSite = CLEAN_LIVESTREAM_SITES.some(function (d) {
@@ -260,9 +244,10 @@ jobs:
             });
 
             // 1. Inyección en el Main World:
-            //    - En window.open: si la URL pertenece al mismo sitio (ej. abrir un vídeo en livecamrips.to u onlyjerk.net),
-            //      navega a ese vídeo; si es un dominio externo (ej. yellowishgather.com), lo bloquea en silencioso.
-            //    - Incluye Bypass Anti-Adblock para livecamrips.to y onlyjerk.net.
+            //    - En Chaturbate: activa MSE (hls.js) para directos 1080p con audífonos Bluetooth sin cortes.
+            //    - En todas las demás páginas: neutraliza window.open() sin permitir que un tabunder
+            //      sobrescriba la navegación, e impide que los scripts publicitarios registren capturadores
+            //      de clic (addEventListener) que abren yellowishgather.com al tocar un vídeo.
             const injectMainWorldKiller = function () {
               try {
                 const s = document.createElement("script");
@@ -289,16 +274,6 @@ jobs:
                       };
                       Object.defineProperty(window, "open", {
                         value: function(url) {
-                          try {
-                            if (url && typeof url === "string" && window === window.top) {
-                              const resolved = new URL(url, location.href);
-                              const dstHost = resolved.hostname.toLowerCase().replace(/^www\\./, "");
-                              const curHost = location.hostname.toLowerCase().replace(/^www\\./, "");
-                              if (dstHost === curHost || dstHost.endsWith("." + curHost)) {
-                                location.href = resolved.href;
-                              }
-                            }
-                          } catch (_) {}
                           return dummyWin;
                         },
                         writable: false,
@@ -309,15 +284,29 @@ jobs:
                       HTMLAnchorElement.prototype.click = function() {
                         try {
                           const href = (this.getAttribute("href") || "").trim();
-                          if (href.startsWith("http")) {
-                            const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\\./, "");
-                            const curHost = location.hostname.toLowerCase().replace(/^www\\./, "");
-                            if (dstHost !== curHost && !dstHost.endsWith("." + curHost)) {
+                          const target = (this.getAttribute("target") || "").toLowerCase();
+                          if (target === "_blank" || (href.startsWith("http") && !href.includes(location.hostname))) {
+                            return;
+                          }
+                        } catch (_) {}
+                        return origAnchorClick.apply(this, arguments);
+                      };
+
+                      // Bloquear escuchadores de clic de popunder/tabunder (como el que abre yellowishgather.com en livecamrips.to)
+                      const origAddEventListener = EventTarget.prototype.addEventListener;
+                      const POP_EVENTS = new Set(["click", "mousedown", "mouseup", "pointerdown", "pointerup", "touchstart"]);
+                      const POP_CODE_REGEX = /window\.open|popunder|tabunder|clickunder|BetterJsPop|jsPopunder|yellowishgather|\/ciG\./i;
+
+                      EventTarget.prototype.addEventListener = function(type, listener, options) {
+                        try {
+                          if (POP_EVENTS.has(type) && typeof listener === "function") {
+                            const fnStr = Function.prototype.toString.call(listener);
+                            if (POP_CODE_REGEX.test(fnStr)) {
                               return;
                             }
                           }
                         } catch (_) {}
-                        return origAnchorClick.apply(this, arguments);
+                        return origAddEventListener.apply(this, arguments);
                       };
 
                       const adGlobals = ["atOptions", "_pop", "popns", "exoOpts", "adsbyvidoomy", "pJSDom", "__Y"];
@@ -331,7 +320,7 @@ jobs:
                         } catch (_) {}
                       }
 
-                      // Variables de Bypass Anti-Adblock para livecamrips.to y onlyjerk.net
+                      // Variables de Bypass Anti-Adblock
                       window.canRunAds = true;
                       window.isAdBlockActive = false;
                       window.adBlockEnabled = false;
@@ -393,7 +382,6 @@ jobs:
             function skipAndFastForwardPreRollAds() {
               if (isChaturbate) return;
               try {
-                // A. Ocultar capas de clic publicitario VAST encima del reproductor (como el cartel rosa "FOR FREE")
                 const adLayers = document.querySelectorAll(
                   ".vast_clickthrough_layer, .fluid_ad_cta, .fluid_ad_playing, .vjs-ad-playing .vjs-tech, " +
                   ".jw-flag-ads .jw-overlays, [class*='preroll' i], [id*='preroll' i], [class*='vast-blocker' i]"
@@ -406,7 +394,6 @@ jobs:
                   }
                 }
 
-                // B. Pulsar automáticamente cualquier botón de "Saltar anuncio" / "Skip Ad"
                 const skipBtns = document.querySelectorAll(
                   ".skip_button, .fluid_ad_skip, .jw-skip, .vjs-skip-button, .ima-skip-container button, " +
                   "[class*='skip-ad' i], [id*='skip-ad' i], [class*='skip_button' i]"
@@ -415,8 +402,6 @@ jobs:
                   try { skipBtns[s].click(); } catch (_) {}
                 }
 
-                // C. Si hay un anuncio de vídeo pre-roll corriendo ("Este anuncio terminará en 10"),
-                //    adelantar el vídeo publicitario hasta su segundo final para que termine en 0 ms
                 const bodyText = document.body ? (document.body.innerText || "") : "";
                 const hasPreRollBanner = PREROLL_AD_TEXT_REGEX.test(bodyText) ||
                   document.querySelector(".fluid_ad_playing, .jw-flag-ads, .vjs-ad-playing, .vast_clickthrough_layer") !== null;
@@ -430,7 +415,6 @@ jobs:
                       v.currentTime = Math.max(0, v.duration - 0.1);
                     }
                   }
-                  // Ocultar el letrero "Este anuncio terminará en..."
                   const smallNodes = document.querySelectorAll("div, span, p");
                   for (let n = 0; n < smallNodes.length; n++) {
                     const el = smallNodes[n];
@@ -442,6 +426,7 @@ jobs:
               } catch (_) {}
             }
 
+            // 3. Desacortador automático de enlaces externos (sin redirigir embedshortener.co para no dar 404 en Streamwish)
             if (isTopFrame && !isCleanLiveStreamSite) {
               const SHORTENER_HOSTS = [
                 "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
@@ -450,7 +435,7 @@ jobs:
                 "corneey.com", "clk.sh", "clk.asia", "oko.sh", "za.gl",
                 "cuty.io", "cety.app", "gplinks.co", "droplink.co", "tnshort.net",
                 "rekonise.com", "sub2unlock.com", "boost.ink", "mboost.me",
-                "embedshortener.co", "short-jambo.com", "uii.io", "mitly.us"
+                "short-jambo.com", "uii.io", "mitly.us"
               ];
 
               function tryDecodeBase64Url(str) {
@@ -464,20 +449,6 @@ jobs:
 
               try {
                 const loc = window.location;
-                if (currentHost.includes("embedshortener.co") && loc.pathname.startsWith("/e/")) {
-                  const parts = loc.pathname.slice(3).split(".");
-                  if (parts.length > 1) {
-                    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-                    if (payload && payload.link) {
-                      const target = tryDecodeBase64Url(payload.link);
-                      if (target) {
-                        loc.replace(target);
-                        return;
-                      }
-                    }
-                  }
-                }
-
                 const isShortener = SHORTENER_HOSTS.some(function (d) {
                   return currentHost === d || currentHost.endsWith("." + d);
                 });
@@ -501,7 +472,16 @@ jobs:
               } catch (_) {}
             }
 
+            // 4. Destructor continuo de anuncios flotantes ("Ad - This simple trick is going viral",
+            //    "You have (1) new...", "CONFIRMA QUE NO ERES UN ROBOT", "777 ¡Felicitaciones!")
             const SCAM_TEXT_PATTERNS = [
+              "this simple trick is going viral",
+              "why thousands of people are sharing",
+              "going viral",
+              "you have (1) new",
+              "you have 1 new",
+              "new message",
+              "tienes (1) nuevo",
               "confirma que no eres un robot",
               "haz clic en el botón",
               "reclama tu bono",
@@ -531,11 +511,32 @@ jobs:
               return false;
             }
 
-            // EXCLUSIVO para JKAnime (sin tocar jamás OnlyJerk ni LiveCamRips para evitar pantalla negra)
+            function isProtectedAppOrPlayerElement(el) {
+              if (!el || !el.tagName) return true;
+              const tag = el.tagName.toUpperCase();
+              if (tag === "VIDEO" || tag === "BODY" || tag === "HTML" || tag === "MAIN" || tag === "HEADER" || tag === "NAV") {
+                return true;
+              }
+              const id = (el.id || "").toLowerCase();
+              if (id === "__next" || id === "app" || id === "root" || id === "video_box" ||
+                  id === "pframe" || id === "player" || id === "kt_player" || id === "episodes-content") {
+                return true;
+              }
+              if (el.querySelector && el.querySelector(
+                  "video, iframe, #__next, #video_box, #pframe, #kt_player, .fluid_video_wrapper, " +
+                  ".player_conte, .servers, .bg-servers, .anime__item, header, nav"
+              )) {
+                return true;
+              }
+              return false;
+            }
+
+            // Limpieza segura exclusiva para JKAnime (NUNCA borra la portada de jkanime.net)
             function cleanJkAnimeSpecificAds() {
               if (!isJkAnimeOrPlayer || !document.body) return;
               try {
-                if (isTopFrame) {
+                // Solo eliminar iframes externos si ya existe #video_box en la página (página de episodio)
+                if (isTopFrame && document.getElementById("video_box")) {
                   const allIframes = document.getElementsByTagName("iframe");
                   for (let fIdx = allIframes.length - 1; fIdx >= 0; fIdx--) {
                     const f = allIframes[fIdx];
@@ -547,15 +548,9 @@ jobs:
                   }
                 }
 
-                const jkRootDivs = document.querySelectorAll(".appGlobalMsj, body > div[id*='-'], body > div[style*='fixed'], body > div[style*='z-index'], body > aside, body > ins");
-                for (let i = jkRootDivs.length - 1; i >= 0; i--) {
-                  const div = jkRootDivs[i];
-                  if (!div || div.id === "video_box" || div.id === "pframe" || div.querySelector("video, #video_box, .player_conte, .servers, .bg-servers")) {
-                    continue;
-                  }
-                  if (div.classList.contains("appGlobalMsj") || div.querySelector("a[target='_blank'], iframe, img") || (div.textContent || "").trim().length === 0) {
-                    div.remove();
-                  }
+                const appMsgs = document.querySelectorAll(".appGlobalMsj");
+                for (let i = 0; i < appMsgs.length; i++) {
+                  appMsgs[i].remove();
                 }
               } catch (_) {}
             }
@@ -565,15 +560,45 @@ jobs:
               try {
                 if (node.hasAttribute && node.hasAttribute("data-battv-shadow")) {
                   const sr = node.shadowRoot;
-                  if (sr && !sr.querySelector("video") && (containsScamText(sr.innerHTML || "") || isJkAnimeOrPlayer)) {
-                    node.remove();
-                    return;
+                  if (sr && !sr.querySelector("video")) {
+                    const dump = (sr.textContent || "") + " " + (sr.innerHTML || "");
+                    if (containsScamText(dump) || isJkAnimeOrPlayer || isLiveCamRips) {
+                      node.remove();
+                      return;
+                    }
                   }
                 }
-                if (!node.querySelector("video, iframe, #video_box, #kt_player, .fluid_video_wrapper, .player_conte, .servers, .bg-servers")) {
-                  const txt = node.textContent || "";
-                  if (txt.length > 6 && txt.length < 360 && containsScamText(txt)) {
-                    node.remove();
+                if (isProtectedAppOrPlayerElement(node)) return;
+
+                const txt = (node.textContent || "").trim();
+                if (txt.length > 6 && txt.length < 360 && containsScamText(txt)) {
+                  let targetBox = node;
+                  while (
+                    targetBox.parentElement &&
+                    targetBox.parentElement !== document.body &&
+                    targetBox.parentElement !== document.documentElement &&
+                    !isProtectedAppOrPlayerElement(targetBox.parentElement) &&
+                    (targetBox.parentElement.textContent || "").trim().length < 420
+                  ) {
+                    targetBox = targetBox.parentElement;
+                  }
+                  if (!isProtectedAppOrPlayerElement(targetBox)) {
+                    targetBox.remove();
+                  }
+                  return;
+                }
+
+                // Detector específico de tarjetas push flotantes en las esquinas
+                // (como "Ad - This simple trick is going viral" y "You have (1) new...")
+                if (node.parentElement === document.body) {
+                  const cs = window.getComputedStyle(node);
+                  if (cs.position === "fixed" || cs.position === "sticky") {
+                    const r = node.getBoundingClientRect();
+                    if (r.width > 40 && r.width < 520 && r.height > 30 && r.height < 250) {
+                      if (containsScamText(txt) || node.querySelector("a[target='_blank']")) {
+                        node.remove();
+                      }
+                    }
                   }
                 }
               } catch (_) {}
@@ -592,10 +617,19 @@ jobs:
                   inspectNodeForScam(shadowHosts[i]);
                 }
 
-                // Limpiar enlaces <a target="_blank">:
-                // - Si apuntan al MISMO sitio (ej. tarjetas de vídeo en livecamrips.to u onlyjerk.net),
-                //   quitar target="_blank" para que abran limpiamente en la misma pestaña.
-                // - Si apuntan a un dominio EXTERNO (ej. yellowishgather.com), eliminarlos o bloquearlos.
+                // Buscar cualquier tarjeta flotante en el DOM con las frases de "going viral" / "You have (1) new"
+                const candidateBoxes = document.querySelectorAll("div, aside, section, ins");
+                for (let c = candidateBoxes.length - 1; c >= 0; c--) {
+                  const box = candidateBoxes[c];
+                  if (!box || box.children.length > 10 || isProtectedAppOrPlayerElement(box)) continue;
+                  const t = (box.textContent || "").trim();
+                  if (t.length > 8 && t.length < 280 && containsScamText(t)) {
+                    inspectNodeForScam(box);
+                  }
+                }
+
+                // Limpiar únicamente enlaces invisibles vacíos sobre el reproductor,
+                // SIN borrar jamás el atributo href de botones visibles como Player 01..05 en OnlyJerk.
                 const blankLinks = document.querySelectorAll("a[target='_blank']");
                 for (let j = blankLinks.length - 1; j >= 0; j--) {
                   const el = blankLinks[j];
@@ -610,15 +644,12 @@ jobs:
                   }
                   try {
                     const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
-                    if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
-                      if (!isTopFrame || (el.textContent || "").trim().length === 0) {
-                        el.remove();
-                      } else {
-                        el.removeAttribute("href");
-                        el.removeAttribute("target");
-                      }
-                    } else {
+                    if (dstHost === currentHost || dstHost.endsWith("." + currentHost)) {
+                      // Si apunta al mismo sitio (ej. vídeos de livecamrips.to u onlyjerk.net), abrir en la misma pestaña
                       el.removeAttribute("target");
+                    } else if (!isTopFrame && (el.textContent || "").trim().length === 0 && !el.querySelector("img")) {
+                      // Capa transparente vacía dentro de un reproductor
+                      el.remove();
                     }
                   } catch (_) {}
                 }
@@ -632,7 +663,7 @@ jobs:
               } catch (_) {}
             }
 
-            // 4. Puente con MainActivity, aviso automático de Pantalla Completa y reproducción 60 FPS
+            // 5. Puente con MainActivity, aviso automático de Pantalla Completa y reproducción 60 FPS
             let port = null;
             let activeInputEl = null;
             let inputCounter = 1;
@@ -682,7 +713,6 @@ jobs:
                   }
                 ` : `
                   .appGlobalMsj, .exo-native-widget, .vast_clickthrough_layer, .fluid_ad_cta,
-                  body > div[id*="-"] > a[target="_blank"],
                   [id*="vidoomy" i], [class*="vidoomy" i],
                   [id*="viwom" i], [class*="viwom" i],
                   [id*="aniview" i], [class*="aniview" i],
@@ -713,14 +743,7 @@ jobs:
                     -webkit-backdrop-filter: none !important;
                   }
                 `;
-                const playerContainCss = (isJkAnimeOrPlayer || isLiveCamOrOnlyJerk) ? "" : `
-                  .jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper,
-                  #player, .player, .video-player, #main_video_container {
-                    contain: layout style paint;
-                    transform: translateZ(0);
-                  }
-                `;
-                style.textContent = adHideCss + playerContainCss + `
+                style.textContent = adHideCss + `
                   video, iframe {
                     will-change: transform;
                     transform: translateZ(0);
@@ -777,6 +800,7 @@ jobs:
               } catch (_) {}
             }
 
+            // Activa iframes diferidos (data-src / data-litespeed-src) usados por OnlyJerk en Player 01..05
             function enableIframeFullscreenAndEagerLoad() {
               try {
                 const iframes = document.getElementsByTagName("iframe");
@@ -784,6 +808,13 @@ jobs:
                   const f = iframes[i];
                   if (f.getAttribute("loading") === "lazy") {
                     f.setAttribute("loading", "eager");
+                  }
+                  const curSrc = (f.getAttribute("src") || "").trim();
+                  if (!curSrc || curSrc === "about:blank") {
+                    const lazySrc = f.getAttribute("data-src") || f.getAttribute("data-litespeed-src") || f.getAttribute("data-lazy-src");
+                    if (lazySrc && lazySrc.startsWith("http")) {
+                      f.setAttribute("src", lazySrc);
+                    }
                   }
                   if (!f.hasAttribute("allowfullscreen")) {
                     f.setAttribute("allowfullscreen", "true");
@@ -1059,41 +1090,39 @@ jobs:
               });
             }
 
-            // Interceptor de clics para evitar cualquier redirección a yellowishgather.com u otros dominios externos
-            function blockExternalLinkHijack(e) {
-              if (isChaturbate) return;
-              skipAndFastForwardPreRollAds();
-              if (isJkAnimeOrPlayer) {
-                cleanJkAnimeSpecificAds();
-              }
-
-              const a = e.target && e.target.closest ? e.target.closest("a") : null;
-              if (a && !a.classList.contains("servers") && !a.closest(".servers, .bg-servers, .dropdown-menu")) {
-                const href = (a.getAttribute("href") || "").trim();
-                if (href.startsWith("http") || href.startsWith("//")) {
-                  try {
-                    const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
-                    if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.stopImmediatePropagation();
-                      a.removeAttribute("href");
-                      return;
-                    }
-                    a.removeAttribute("target");
-                  } catch (_) {}
-                }
-              }
-            }
-
-            document.addEventListener("pointerdown", blockExternalLinkHijack, true);
-            document.addEventListener("mousedown", blockExternalLinkHijack, true);
-
             document.addEventListener("click", function (e) {
-              blockExternalLinkHijack(e);
               enableIframeFullscreenAndEagerLoad();
               if (!isCleanLiveStreamSite) {
                 nukeInPlayerScamOverlaysOnce();
+              }
+
+              // En livecamrips.to: cuando el usuario toca una miniatura o enlace del mismo sitio,
+              // abrir el vídeo directamente deteniendo la propagación para que ningún script de la página
+              // pueda redirigir la pestaña hacia yellowishgather.com
+              if (isLiveCamRips && isTopFrame) {
+                const a = e.target && e.target.closest ? e.target.closest("a") : null;
+                if (a) {
+                  const href = (a.getAttribute("href") || "").trim();
+                  if (href && !href.startsWith("#") && !href.startsWith("javascript:")) {
+                    try {
+                      const resolved = new URL(href, location.href);
+                      const dstHost = resolved.hostname.toLowerCase().replace(/^www\./, "");
+                      if (dstHost === currentHost || dstHost.endsWith("." + currentHost)) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        window.location.assign(resolved.href);
+                        return;
+                      }
+                    } catch (_) {}
+                  }
+                }
+              }
+
+              // En onlyjerk.net: al pulsar Player 01..05, activar tras 120ms cualquier iframe diferido recién inyectado
+              if (isOnlyJerk) {
+                setTimeout(enableIframeFullscreenAndEagerLoad, 120);
+                setTimeout(enableIframeFullscreenAndEagerLoad, 450);
               }
 
               if (isPlayerFullscreenButton(e.target)) {
@@ -1154,15 +1183,17 @@ jobs:
               } catch (_) {}
             }
 
-            // Sondeo rápido para saltar anuncios pre-roll ("Este anuncio terminará en 10") y lanzar
-            // el aviso "¿Quieres abrir el vídeo en pantalla completa ahora? [Aceptar / Cancelar]"
+            // Sondeo continuo cada 550 ms:
+            // - Destruye notificaciones flotantes ("This simple trick is going viral", "You have (1) new...")
+            // - Salta anuncios Pre-Roll ("Este anuncio terminará en 10")
+            // - Lanza el diálogo para abrir en Pantalla Completa al iniciar un vídeo
             setInterval(function () {
               try {
-                if (!isChaturbate) {
-                  skipAndFastForwardPreRollAds();
+                if (!isCleanLiveStreamSite) {
+                  nukeInPlayerScamOverlaysOnce();
                 }
-                if (isJkAnimeOrPlayer) {
-                  cleanJkAnimeSpecificAds();
+                if (isOnlyJerk) {
+                  enableIframeFullscreenAndEagerLoad();
                 }
                 if (document.getElementsByTagName("video").length === 0) return;
                 const v = findActiveVideo();
@@ -1197,7 +1228,7 @@ jobs:
                   });
                 }
               } catch (_) {}
-            }, 600);
+            }, 550);
 
             if (isTopFrame) {
               function extractMediaMetadata() {
@@ -1219,6 +1250,7 @@ jobs:
               window.addEventListener("load", function () {
                 ensureBridgeConnected();
                 extractMediaMetadata();
+                enableIframeFullscreenAndEagerLoad();
                 if (!isCleanLiveStreamSite) {
                   nukeInPlayerScamOverlaysOnce();
                 }
@@ -1279,23 +1311,33 @@ jobs:
               }
             }
 
+            // Eliminar en livecamrips.to cualquier script inline que contenga window.open (Regla oficial uBlock: rmnt, script, window.open)
             function setupLightweightRootAdObserver() {
-              if (isCleanLiveStreamSite || !document.body) return;
+              if (isCleanLiveStreamSite) return;
               try {
                 const obs = new MutationObserver(function (mutations) {
                   for (let i = 0; i < mutations.length; i++) {
                     const added = mutations[i].addedNodes;
                     for (let j = 0; j < added.length; j++) {
-                      inspectNodeForScam(added[j]);
+                      const n = added[j];
+                      if (!n || n.nodeType !== 1) continue;
+                      if (isLiveCamRips && n.tagName === "SCRIPT" && !n.src) {
+                        const code = n.textContent || "";
+                        if (code.includes("window.open") || code.includes("yellowishgather") || code.includes("popunder")) {
+                          n.textContent = "";
+                          n.remove();
+                          continue;
+                        }
+                      }
+                      inspectNodeForScam(n);
                     }
                   }
-                  if (isJkAnimeOrPlayer) {
-                    cleanJkAnimeSpecificAds();
-                  }
                 });
-                obs.observe(document.body, { childList: true, subtree: false });
+                obs.observe(document.documentElement || document, { childList: true, subtree: true });
               } catch (_) {}
             }
+
+            setupLightweightRootAdObserver();
 
             if (document.readyState === "loading") {
               document.addEventListener("DOMContentLoaded", function () {
@@ -1303,7 +1345,6 @@ jobs:
                 enableIframeFullscreenAndEagerLoad();
                 if (!isCleanLiveStreamSite) {
                   nukeInPlayerScamOverlaysOnce();
-                  setupLightweightRootAdObserver();
                 }
               });
             } else {
@@ -1311,7 +1352,6 @@ jobs:
               enableIframeFullscreenAndEagerLoad();
               if (!isCleanLiveStreamSite) {
                 nukeInPlayerScamOverlaysOnce();
-                setupLightweightRootAdObserver();
               }
             }
           })();
