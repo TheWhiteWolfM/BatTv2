@@ -11,8 +11,8 @@ android {
         applicationId "com.battv.browser"
         minSdk 23
         targetSdk 34
-        versionCode 18
-        versionName "4.3"
+        versionCode 19
+        versionName "4.4"
 
         ndk {
             abiFilters "armeabi-v7a"
