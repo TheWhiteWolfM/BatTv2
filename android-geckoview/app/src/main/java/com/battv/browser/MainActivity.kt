@@ -150,6 +150,10 @@ class MainActivity : AppCompatActivity() {
   private var lastSeekPressUptime: Long = 0L
   private var cumulativeSeekDeltaSec: Double = 0.0
 
+  private var fullscreenPromptDialog: AlertDialog? = null
+  private var fullscreenPromptDismissedForPage: Boolean = false
+  private var lastFullscreenExitUptimeMs: Long = 0L
+
   private var activeDpadKeyCode: Int = 0
   private var isDpadPhysicallyHeld: Boolean = false
   private var dpadHoldStartUptimeMs: Long = 0L
@@ -383,6 +387,7 @@ class MainActivity : AppCompatActivity() {
 
   override fun onDestroy() {
     stopSmoothDpadMovement(immediate = true)
+    dismissFullscreenPromptDialog()
     mainHandler.removeCallbacksAndMessages(null)
     if (::geckoManager.isInitialized) {
       geckoManager.closeSessionCleanly()
@@ -437,8 +442,7 @@ class MainActivity : AppCompatActivity() {
           if (isFullScreenVideo) {
             exitFullScreenSafely()
           }
-          isInitialNavigationInProgress = true
-          allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
+          fullscreenPromptDismissedForPage = false
           geckoSession?.stop()
           geckoSession?.reload()
           activateCursorMode(showPointerNow = false)
@@ -662,6 +666,47 @@ class MainActivity : AppCompatActivity() {
     setContentView(rootLayout)
   }
 
+  private fun promptAutoFullscreenIfEligible() {
+    if (isHomeScreenVisible || isFullScreenVideo || fullscreenPromptDismissedForPage) return
+    if (fullscreenPromptDialog?.isShowing == true) return
+    if (SystemClock.uptimeMillis() - lastFullscreenExitUptimeMs < 4000L) return
+
+    stopSmoothDpadMovement(immediate = true)
+
+    val dialog = AlertDialog.Builder(this)
+      .setTitle("\uD83C\uDFAC Reproducir en pantalla completa")
+      .setMessage("\u00BFQuieres abrir el v\u00EDdeo en pantalla completa ahora?")
+      .setCancelable(true)
+      .setPositiveButton("Aceptar") { d, _ ->
+        d.dismiss()
+        fullscreenPromptDialog = null
+        enterVideoFullscreenAutomatically()
+      }
+      .setNegativeButton("Cancelar") { d, _ ->
+        fullscreenPromptDismissedForPage = true
+        d.dismiss()
+        fullscreenPromptDialog = null
+      }
+      .setOnCancelListener {
+        fullscreenPromptDismissedForPage = true
+        fullscreenPromptDialog = null
+      }
+      .create()
+
+    fullscreenPromptDialog = dialog
+    dialog.show()
+    dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.requestFocus()
+  }
+
+  private fun dismissFullscreenPromptDialog() {
+    try {
+      if (fullscreenPromptDialog?.isShowing == true) {
+        fullscreenPromptDialog?.dismiss()
+      }
+    } catch (_: Exception) {}
+    fullscreenPromptDialog = null
+  }
+
   private fun enterVideoFullscreenAutomatically() {
     applyFullScreenState(true)
     sendVideoCommandToWeb("ENTER_FULLSCREEN", 0.0)
@@ -674,6 +719,7 @@ class MainActivity : AppCompatActivity() {
 
   private fun showHomeScreen() {
     stopSmoothDpadMovement(immediate = true)
+    dismissFullscreenPromptDialog()
     if (isFullScreenVideo) {
       exitFullScreenSafely()
     }
@@ -685,6 +731,7 @@ class MainActivity : AppCompatActivity() {
     isHomeToolbarFocused = false
     isCursorModeActive = false
     isInitialNavigationInProgress = false
+    allowTopDomainChangeUntilUptimeMs = 0L
     cursorOverlay.hideCursorUntilMoved()
     videoSeekOverlay.hideOverlayImmediate()
     loadingProgressBar.visibility = View.GONE
@@ -967,8 +1014,6 @@ class MainActivity : AppCompatActivity() {
   private fun setBrowserDisplayMode(desktopMode: Boolean) {
     isDesktopMode = desktopMode
     prefs.edit().putBoolean(KEY_DESKTOP_MODE, isDesktopMode).apply()
-    isInitialNavigationInProgress = true
-    allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
     geckoManager.applyDisplayMode(
       isDesktopMode = isDesktopMode,
       reloadIfActive = !isHomeScreenVisible,
@@ -997,8 +1042,7 @@ class MainActivity : AppCompatActivity() {
     if (!isHomeScreenVisible && canGoBackState) {
       items.add("\u25C4  P\u00E1gina anterior (Atr\u00E1s)")
       actions.add {
-        isInitialNavigationInProgress = true
-        allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
+        allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 3000L
         geckoSession?.goBack()
         activateCursorMode(showPointerNow = false)
       }
@@ -1006,8 +1050,7 @@ class MainActivity : AppCompatActivity() {
     if (!isHomeScreenVisible && canGoForwardState) {
       items.add("\u25BA  P\u00E1gina siguiente (Adelante)")
       actions.add {
-        isInitialNavigationInProgress = true
-        allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
+        allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 3000L
         geckoSession?.goForward()
         activateCursorMode(showPointerNow = false)
       }
@@ -1069,7 +1112,7 @@ class MainActivity : AppCompatActivity() {
 
     val extItems = arrayOf(
       "1. Pop-ups Blocker (strict) + Cerrojo de Dominio \u2014 [$shieldLoaded]",
-      "2. Cortafuegos Anti-Ads (DramaChino, Doramasflix, Adsterra) \u2014 [$shieldLoaded]",
+      "2. Cortafuegos Anti-Ads y Saltador Pre-Roll VAST \u2014 [$shieldLoaded]",
       "3. Saltarse Todos los Enlaces Acortados + Motor 60FPS \u2014 [$shieldLoaded]"
     )
 
@@ -1078,7 +1121,7 @@ class MainActivity : AppCompatActivity() {
       .setItems(extItems) { _, _ ->
         Toast.makeText(
           this,
-          "El escudo nativo v12.0 est\u00E1 integrado y funcionando.",
+          "El escudo nativo v18.0 est\u00E1 activo y protegiendo la navegaci\u00F3n.",
           Toast.LENGTH_SHORT
         ).show()
       }
@@ -1418,19 +1461,20 @@ class MainActivity : AppCompatActivity() {
 
         val now = SystemClock.uptimeMillis()
 
+        // Si un enlace intenta abrir nueva ventana (TARGET_WINDOW_NEW), solo permitirlo si pertenece al mismo sitio
+        // (por ejemplo, abrir una tarjeta de vídeo en livecamrips.to u onlyjerk.net) y bloquear cualquier dominio externo
         if (request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
           if (request.hasUserGesture && geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
-            allowTopDomainChangeUntilUptimeMs = now + 5000L
             session.loadUri(uri)
           }
           return GeckoResult.deny()
         }
 
-        val isUserInitiatedNavigation = isInitialNavigationInProgress ||
-          (now <= allowTopDomainChangeUntilUptimeMs) ||
-          request.isDirectNavigation
+        val isExplicitUserBarNavigation = isInitialNavigationInProgress || (now <= allowTopDomainChangeUntilUptimeMs)
 
-        if (!isHomeScreenVisible && !isUserInitiatedNavigation && currentUrl.startsWith("http", ignoreCase = true)) {
+        // Candado estricto de dominio: impide que clics dentro de livecamrips.to, onlyjerk.net, jkanime.net o doramasflix
+        // redirijan la pestaña principal hacia dominios emergentes como yellowishgather.com
+        if (!isHomeScreenVisible && !isExplicitUserBarNavigation && currentUrl.startsWith("http", ignoreCase = true)) {
           if (!geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
             return GeckoResult.deny()
           }
@@ -1458,6 +1502,9 @@ class MainActivity : AppCompatActivity() {
       ) {
         if (!url.isNullOrBlank() && !url.startsWith("resource://")) {
           currentUrl = url
+          if (url.startsWith("http", ignoreCase = true)) {
+            isInitialNavigationInProgress = false
+          }
           if (!isHomeScreenVisible && !isEditingUrlText && !isEditingWebInput) {
             suppressWebInputWatcher = true
             urlEditText.setText(url)
@@ -1473,6 +1520,8 @@ class MainActivity : AppCompatActivity() {
           applyFullScreenState(false)
         }
         if (url != currentUrl) {
+          dismissFullscreenPromptDialog()
+          fullscreenPromptDismissedForPage = false
           latestExtractedHeading = ""
           hasActiveVodVideo = false
           isLiveStreamVideo = false
@@ -1484,6 +1533,10 @@ class MainActivity : AppCompatActivity() {
           }
         }
         currentUrl = url
+        if (url.startsWith("http", ignoreCase = true)) {
+          isInitialNavigationInProgress = false
+          allowTopDomainChangeUntilUptimeMs = 0L
+        }
         if (!isHomeScreenVisible && !isEditingUrlText && !isEditingWebInput) {
           suppressWebInputWatcher = true
           urlEditText.setText(url)
@@ -1586,6 +1639,9 @@ class MainActivity : AppCompatActivity() {
             mainHandler.removeCallbacks(hideCursorRunnable)
             mainHandler.postDelayed(hideCursorRunnable, 1200L)
           }
+          if (vodDurationSec >= 20.0 || isLiveStreamVideo) {
+            promptAutoFullscreenIfEligible()
+          }
         }
       }
 
@@ -1603,10 +1659,13 @@ class MainActivity : AppCompatActivity() {
         state: MediaSession.PositionState
       ) {
         runOnUiThread {
-          if (state.duration >= 90.0 && state.duration < 36000.0) {
+          if (state.duration >= 20.0 && state.duration < 36000.0) {
             hasActiveVodVideo = true
             isLiveStreamVideo = false
             vodDurationSec = state.duration
+            if (vodIsPlaying && state.position >= 0.4) {
+              promptAutoFullscreenIfEligible()
+            }
           }
           if (!isUserSeekingVod && state.position >= 0.0) {
             vodCurrentTimeSec = state.position
@@ -1654,6 +1713,7 @@ class MainActivity : AppCompatActivity() {
     stopSmoothDpadMovement(immediate = true)
 
     if (fullScreen) {
+      dismissFullscreenPromptDialog()
       if (isEditingWebInput || isEditingUrlText) {
         closeNativeWebInputBridge(submit = false)
       }
@@ -1669,6 +1729,7 @@ class MainActivity : AppCompatActivity() {
       geckoView.requestLayout()
       geckoView.requestFocus()
     } else {
+      lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()
       mainHandler.removeCallbacks(hideVideoSeekRunnable)
       isUserSeekingVod = false
       consecutiveSeekPresses = 0
@@ -1690,6 +1751,8 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun exitFullScreenSafely() {
+    fullscreenPromptDismissedForPage = true
+    lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()
     try {
       geckoSession?.exitFullScreen()
     } catch (_: Exception) {}
@@ -1749,6 +1812,19 @@ class MainActivity : AppCompatActivity() {
                   }
                 }
               }
+              "VIDEO_PLAY_STARTED_PROMPT_FS" -> {
+                val dur = json.optDouble("duration", 0.0)
+                val isLive = json.optBoolean("isLive", false)
+                runOnUiThread {
+                  isLiveStreamVideo = isLive
+                  hasActiveVodVideo = !isLive && dur >= 20.0
+                  if (dur > 0.0) vodDurationSec = dur
+                  loadingProgressBar.visibility = View.GONE
+                  if (isLive || dur >= 20.0) {
+                    promptAutoFullscreenIfEligible()
+                  }
+                }
+              }
               "REQUEST_UNIFIED_FULLSCREEN" -> {
                 val enable = json.optBoolean("enable", true)
                 runOnUiThread {
@@ -1776,7 +1852,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                   val startedPlayingNow = !vodIsPlaying && playing
                   isLiveStreamVideo = isLive
-                  hasActiveVodVideo = !isLive && hasVod && dur >= 90.0
+                  hasActiveVodVideo = !isLive && hasVod && dur >= 20.0
                   vodIsPlaying = playing
                   if (dur > 0.0) {
                     vodDurationSec = dur
@@ -1793,6 +1869,7 @@ class MainActivity : AppCompatActivity() {
                       mainHandler.removeCallbacks(hideCursorRunnable)
                       mainHandler.postDelayed(hideCursorRunnable, 900L)
                     }
+                    promptAutoFullscreenIfEligible()
                   }
                 }
               }
@@ -1984,8 +2061,6 @@ class MainActivity : AppCompatActivity() {
   private fun closeNativeWebInputBridge(submit: Boolean) {
     mainHandler.removeCallbacks(activateNativeWebInputRunnable)
     if (submit) {
-      isInitialNavigationInProgress = true
-      allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
       val finalQuery = urlEditText.text?.toString() ?: ""
       syncWebInputTextToPage(finalQuery, submit = true)
     } else {
@@ -2053,11 +2128,13 @@ class MainActivity : AppCompatActivity() {
   private fun loadUrlOrSearch(input: String) {
     val finalUri = geckoManager.resolveInputToUrl(input)
     stopSmoothDpadMovement(immediate = true)
+    dismissFullscreenPromptDialog()
     if (isFullScreenVideo) {
       exitFullScreenSafely()
     }
+    fullscreenPromptDismissedForPage = false
     isInitialNavigationInProgress = true
-    allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
+    allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 4500L
     isHomeScreenVisible = false
     isHomeToolbarFocused = false
     homeOverlayLayout.visibility = View.GONE
@@ -2291,8 +2368,7 @@ class MainActivity : AppCompatActivity() {
           isFullScreenVideo -> exitFullScreenSafely()
           !isHomeScreenVisible && !isCursorModeActive -> activateCursorMode(showPointerNow = true)
           !isHomeScreenVisible && canGoBackState -> {
-            isInitialNavigationInProgress = true
-            allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 8000L
+            allowTopDomainChangeUntilUptimeMs = SystemClock.uptimeMillis() + 3000L
             geckoSession?.goBack()
           }
           !isHomeScreenVisible && !canGoBackState -> showHomeScreen()
@@ -2664,6 +2740,7 @@ class MainActivity : AppCompatActivity() {
 
   private fun exitBrowserCleanly() {
     stopSmoothDpadMovement(immediate = true)
+    dismissFullscreenPromptDialog()
     if (::geckoManager.isInitialized) {
       geckoManager.closeSessionCleanly()
     }
