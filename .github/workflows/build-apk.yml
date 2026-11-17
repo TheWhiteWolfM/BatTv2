@@ -35,7 +35,7 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Generar Motor Nativo Ultraligero Anti-Ads, Anti-Popups y Fluidez TV (battv_shield_v15)
+      - name: Generar Motor Nativo Ultraligero Anti-Ads, Anti-Popups y Fluidez TV (battv_shield_v16)
         run: |
           python3 - << 'EOF'
           import json
@@ -46,17 +46,17 @@ jobs:
           if os.path.exists(EXT_BASE):
               shutil.rmtree(EXT_BASE)
 
-          SHIELD_DIR = os.path.join(EXT_BASE, "battv_shield_v15")
+          SHIELD_DIR = os.path.join(EXT_BASE, "battv_shield_v16")
           os.makedirs(SHIELD_DIR, exist_ok=True)
 
           manifest = {
               "manifest_version": 2,
               "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-              "version": "15.0.0",
-              "description": "Base probada de codigo_battv_2 con soporte completo Doramasflix, DramaChino, JKAnime y Chaturbate.",
+              "version": "16.0.0",
+              "description": "Base intacta para Doramasflix/DramaChino + Regla oficial uBlock/AdGuard para JKAnime (jkdesa.com/jkdesu.com) + Chaturbate Bluetooth.",
               "browser_specific_settings": {
                   "gecko": {
-                      "id": "shield_v15@battv.browser",
+                      "id": "shield_v16@battv.browser",
                       "strict_min_version": "115.0"
                   }
               },
@@ -110,27 +110,33 @@ jobs:
               "adskeeper.com", "adskeeper.co.uk", "wpadmngr.com", "onmarshtompor.com",
               "alwingulla.com", "profitablecpmrate.com", "highperformanceformat.com",
               "surfe.pro", "histats.com", "yandex.ru", "mc.yandex.ru", "clarity.ms",
-              "aliexpress.com", "alibaba.com", "temu.com", "shein.com"
+              "aliexpress.com", "alibaba.com", "temu.com", "shein.com",
+              "go2buddyspin.com", "cactusheadroomscaling.com"
             ];
 
-            // Exactamente la lista de codigo_battv_2.txt que hace funcionar Doramasflix y DramaChino,
-            // quitando únicamente "jkanime.net" para que JKAnime muestre sus reproductores.
+            // Ahora jkanime.net vuelve a estar protegido por el cortafuegos estricto de scripts externos
+            // (igual que doramasflix y dramachino), porque hemos añadido sus dos CDNs oficiales
+            // (jkdesa.com y jkdesu.com) en ALLOWED_TECH_CDNS tal como hace uBlock Origin / AdGuard.
             const PROTECTED_STREAMING_SITES = [
               "doramasflix.io", "doramasflix.co", "dramachino.com", "tudorama.com",
-              "asialiveaction.com", "kisskh.do", "kisskh.co",
-              "hdfull.one", "primeload.co", "voe.sx", "streamtape.com",
-              "filemoon.sx", "streamwish.to", "vidhidevip.com", "do7go.com",
-              "byse.sx", "bysebuho.com", "bysefujedu.com", "n1mwq.org", "pkaa.top"
+              "asialiveaction.com", "kisskh.do", "kisskh.co", "jkanime.net", "jkanime.bz",
+              "jkdesu.com", "jkdesa.com", "hdfull.one", "primeload.co", "voe.sx",
+              "streamtape.com", "filemoon.sx", "streamwish.to", "sfastwish.com",
+              "vidhidevip.com", "do7go.com", "byse.sx", "bysebuho.com", "bysefujedu.com",
+              "n1mwq.org", "pkaa.top"
             ];
 
+            // Incluye jkdesa.com, jkdesu.com y tailwindcss.com (regla denyallow de AdGuard/uBlock para JKAnime)
             const ALLOWED_TECH_CDNS = [
+              "jkdesa.com", "jkdesu.com", "jkanime.net", "jkanime.bz",
+              "tailwindcss.com", "disqus.com", "disquscdn.com",
               "cloudflare.com", "cdnjs.cloudflare.com", "cloudflareinsights.com",
               "jsdelivr.net", "unpkg.com", "gstatic.com", "googleapis.com",
               "google.com", "recaptcha.net", "jquery.com", "bootstrapcdn.com",
               "fontawesome.com", "jwpsrv.com", "jwpcdn.com", "jwplayer.com",
               "vimeocdn.com", "plyr.io", "vjs.zencdn.net", "videojs.com",
               "tmdb.org", "themoviedb.org", "imgur.com", "wp.com", "gitlab.io", "github.io",
-              "jkanime.net", "jkanime.bz", "ok.ru", "mycdn.me", "mp4upload.com"
+              "ok.ru", "mycdn.me", "mp4upload.com"
             ];
 
             const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/invoke\.js|\/popunder|\/tabunder|\/clickunder|\/apu\.php|\/afu\.php|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta)/i;
@@ -179,7 +185,7 @@ jobs:
                     const docUrl = details.originUrl || details.documentUrl || "";
                     if (docUrl.startsWith("http") && (details.type === "script" || details.type === "sub_frame")) {
                       const docHost = new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "");
-                      if (docHost.includes("chaturbate.com") || docHost.includes("jkanime.")) {
+                      if (docHost.includes("chaturbate.com")) {
                         return {};
                       }
 
@@ -191,7 +197,10 @@ jobs:
                       if (!isSameSite && details.type === "script") {
                         const onStreamingOrPlayer = isHostInList(docHost, PROTECTED_STREAMING_SITES) ||
                                                     docHost.includes("byse") ||
-                                                    docUrl.includes("/e/") || docUrl.includes("/embed");
+                                                    docUrl.includes("/e/") ||
+                                                    docUrl.includes("/embed") ||
+                                                    docUrl.includes("/um.php") ||
+                                                    docUrl.includes("/jkplayer");
                         if (onStreamingOrPlayer &&
                             !isHostInList(reqHost, ALLOWED_TECH_CDNS) &&
                             !isHostInList(reqHost, PROTECTED_STREAMING_SITES)) {
@@ -227,18 +236,33 @@ jobs:
 
             const isTopFrame = (window === window.top);
             const currentHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
-            const isJkAnime = currentHost.includes("jkanime.");
+            const isChaturbate = currentHost === "chaturbate.com" || currentHost.endsWith(".chaturbate.com");
+            const isJkAnimeOrPlayer = currentHost.includes("jkanime.") || currentHost.includes("jkdesu.") || currentHost.includes("jkdesa.");
 
             const CLEAN_LIVESTREAM_SITES = ["chaturbate.com", "twitch.tv", "kick.com", "youtube.com"];
             const isCleanLiveStreamSite = CLEAN_LIVESTREAM_SITES.some(function (d) {
               return currentHost === d || currentHost.endsWith("." + d);
             });
 
-            // 1. Neutralizar variables de anuncios y window.open en sitios con publicidad (Exacto a codigo_battv_2.txt)
-            if (!isCleanLiveStreamSite) {
-              const injectMainWorldKiller = function () {
-                try {
-                  const s = document.createElement("script");
+            // 1. Inyección en el Main World:
+            //    - En Chaturbate: fuerza el motor hls.js (MSE) para que el directo y el audio con audífonos Bluetooth
+            //      mantengan un búfer continuo en RAM sin entrecortarse jamás.
+            //    - En el resto de páginas: bloquea window.open y variables de anuncios (exacto a v15.0) +
+            //      bloquea clics sintéticos a.click() de popups en JKAnime.
+            const injectMainWorldKiller = function () {
+              try {
+                const s = document.createElement("script");
+                if (isChaturbate) {
+                  s.textContent = `(function(){
+                    try {
+                      const origCanPlay = HTMLMediaElement.prototype.canPlayType;
+                      HTMLMediaElement.prototype.canPlayType = function(type) {
+                        if (type && /mpegurl/i.test(type)) return "";
+                        return origCanPlay.apply(this, arguments);
+                      };
+                    } catch(_) {}
+                  })();`;
+                } else if (!isCleanLiveStreamSite) {
                   s.textContent = `(function(){
                     try {
                       const dummyWin = {
@@ -251,7 +275,7 @@ jobs:
                       };
                       Object.defineProperty(window, "open", {
                         value: function(url) {
-                          if (url && typeof url === "string" && url.startsWith(location.origin)) {
+                          if (url && typeof url === "string" && url.startsWith(location.origin) && window === window.top) {
                             location.href = url;
                           }
                           return dummyWin;
@@ -260,7 +284,19 @@ jobs:
                         configurable: false
                       });
 
-                      const adGlobals = ["atOptions", "_pop", "popns", "exoOpts", "adsbyvidoomy", "pJSDom"];
+                      const origAnchorClick = HTMLAnchorElement.prototype.click;
+                      HTMLAnchorElement.prototype.click = function() {
+                        try {
+                          const href = (this.getAttribute("href") || "").trim();
+                          const target = (this.getAttribute("target") || "").toLowerCase();
+                          if (target === "_blank" || (href.startsWith("http") && !href.includes(location.hostname))) {
+                            return;
+                          }
+                        } catch (_) {}
+                        return origAnchorClick.apply(this, arguments);
+                      };
+
+                      const adGlobals = ["atOptions", "_pop", "popns", "exoOpts", "adsbyvidoomy", "pJSDom", "__Y"];
                       for (let i = 0; i < adGlobals.length; i++) {
                         try {
                           Object.defineProperty(window, adGlobals[i], {
@@ -281,19 +317,19 @@ jobs:
                       }
                     } catch(_) {}
                   })();`;
-                  (document.head || document.documentElement).appendChild(s);
-                  s.remove();
-                } catch (_) {}
-              };
+                }
+                (document.head || document.documentElement).appendChild(s);
+                s.remove();
+              } catch (_) {}
+            };
 
-              if (document.documentElement) {
-                injectMainWorldKiller();
-              } else {
-                document.addEventListener("DOMContentLoaded", injectMainWorldKiller, { once: true });
-              }
+            if (document.documentElement) {
+              injectMainWorldKiller();
+            } else {
+              document.addEventListener("DOMContentLoaded", injectMainWorldKiller, { once: true });
             }
 
-            // 2. Desacortador automático de enlaces (Exacto a codigo_battv_2.txt)
+            // 2. Desacortador automático de enlaces (Exacto a v15.0)
             if (isTopFrame && !isCleanLiveStreamSite) {
               const SHORTENER_HOSTS = [
                 "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
@@ -353,7 +389,7 @@ jobs:
               } catch (_) {}
             }
 
-            // 3. Limpieza ligera de nodos recién inyectados (Exacta a codigo_battv_2.txt + frases de robot/777)
+            // 3. Limpieza de nodos scam + Regla específica de AdGuard/uBlock para el anuncio de esquina de JKAnime
             const SCAM_TEXT_PATTERNS = [
               "confirma que no eres un robot",
               "haz clic en el botón",
@@ -381,12 +417,53 @@ jobs:
               return false;
             }
 
+            // Limpieza exclusiva para JKAnime basada en AdGuard SpanishFilter (jkanime.net##body > div[id*="-"] > a[target="_blank"])
+            // Elimina el anuncio flotante de la esquina y las capas invisibles sobre el botón Play sin tocar #video_box ni .servers
+            function cleanJkAnimeSpecificAds() {
+              if (!isJkAnimeOrPlayer || !document.body) return;
+              try {
+                // Regla 1: jkanime.net##.appGlobalMsj y contenedores hijos directos de body con enlaces _blank externos
+                const jkRootDivs = document.querySelectorAll(".appGlobalMsj, body > div[id*='-'], body > div[style*='fixed'], body > div[style*='z-index']");
+                for (let i = jkRootDivs.length - 1; i >= 0; i--) {
+                  const div = jkRootDivs[i];
+                  if (!div || div.id === "video_box" || div.id === "pframe" || div.querySelector("video, #video_box, .servers, .bg-servers")) {
+                    continue;
+                  }
+                  if (div.classList.contains("appGlobalMsj") || div.querySelector("a[target='_blank']") || (div.textContent || "").trim().length === 0) {
+                    div.remove();
+                  }
+                }
+
+                // Regla 2: Dentro de los iframes de reproductores de JKAnime (um.php / jkplayer / jkdesu),
+                // eliminar cualquier capa invisible (div o a) colocada encima del reproductor para que Play funcione al 1er clic
+                if (!isTopFrame) {
+                  const overlays = document.querySelectorAll("a[target='_blank'], body > div, body > a");
+                  for (let j = overlays.length - 1; j >= 0; j--) {
+                    const el = overlays[j];
+                    if (!el || el.id === "player" || el.id === "video_box" || el.classList.contains("jwplayer") ||
+                        el.classList.contains("plyr") || el.classList.contains("video-js") || el.querySelector("video")) {
+                      continue;
+                    }
+                    if (el.tagName === "A") {
+                      el.remove();
+                      continue;
+                    }
+                    const cs = window.getComputedStyle(el);
+                    const zIdx = parseInt(cs.zIndex, 10) || 0;
+                    if ((cs.position === "fixed" || cs.position === "absolute") && zIdx >= 99 && (el.textContent || "").trim().length === 0) {
+                      el.remove();
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+
             function inspectNodeForScam(node) {
               if (!node || node.nodeType !== 1) return;
               try {
                 if (node.hasAttribute && node.hasAttribute("data-battv-shadow")) {
                   const sr = node.shadowRoot;
-                  if (sr && containsScamText(sr.innerHTML || "")) {
+                  if (sr && (!sr.querySelector("video") && (containsScamText(sr.innerHTML || "") || isJkAnimeOrPlayer))) {
                     node.remove();
                     return;
                   }
@@ -403,6 +480,10 @@ jobs:
             function nukeInPlayerScamOverlaysOnce() {
               if (isCleanLiveStreamSite) return;
               try {
+                if (isJkAnimeOrPlayer) {
+                  cleanJkAnimeSpecificAds();
+                }
+
                 const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
                 for (let i = 0; i < shadowHosts.length; i++) {
                   inspectNodeForScam(shadowHosts[i]);
@@ -417,7 +498,13 @@ jobs:
                   }
                   const href = (el.getAttribute("href") || "").trim();
                   if (!href || href === "#" || href.startsWith("javascript:")) {
-                    if (!isJkAnime) el.remove();
+                    if (!isJkAnimeOrPlayer) {
+                      el.remove();
+                    } else if (!isTopFrame) {
+                      el.remove();
+                    } else {
+                      el.removeAttribute("target");
+                    }
                     continue;
                   }
                   try {
@@ -439,7 +526,7 @@ jobs:
               } catch (_) {}
             }
 
-            // 4. Puente con MainActivity y reproducción fluida 60 FPS (Exacto a codigo_battv_2.txt)
+            // 4. Puente con MainActivity y reproducción fluida 60 FPS
             let port = null;
             let activeInputEl = null;
             let inputCounter = 1;
@@ -477,7 +564,17 @@ jobs:
                   .chat-holder, .chat-box, #chat, .msg-list-wrapper, .room-list, .endless_page_template {
                     contain: layout style paint !important;
                   }
+                  html.__battv_lock_scroll .chat-holder,
+                  html.__battv_lock_scroll .chat-box,
+                  html.__battv_lock_scroll #header,
+                  html.__battv_lock_scroll .nav-bar,
+                  html.__battv_lock_scroll .bio-container {
+                    visibility: hidden !important;
+                    pointer-events: none !important;
+                  }
                 ` : `
+                  .appGlobalMsj,
+                  body > div[id*="-"] > a[target="_blank"],
                   [id*="vidoomy" i], [class*="vidoomy" i],
                   [id*="viwom" i], [class*="viwom" i],
                   [id*="aniview" i], [class*="aniview" i],
@@ -488,7 +585,8 @@ jobs:
                   iframe[src*="magsrv" i], iframe[src*="realsrv" i],
                   iframe[src*="doubleclick" i], iframe[src*="googlesyndication" i],
                   iframe[src*="popads" i], iframe[src*="propellerads" i],
-                  ins.eas6a97888e, div[class*="popunder" i], div[id*="popunder" i] {
+                  iframe[src*="1xbet" i], a[href*="1xbet" i], a[href*="mostbet" i], a[href*="bet365" i],
+                  ins.eas6a97888e, ins.adsbygoogle, div[class*="popunder" i], div[id*="popunder" i] {
                     display: none !important;
                     visibility: hidden !important;
                     opacity: 0 !important;
@@ -503,7 +601,7 @@ jobs:
                     -webkit-backdrop-filter: none !important;
                   }
                 `;
-                const playerContainCss = isJkAnime ? "" : `
+                const playerContainCss = isJkAnimeOrPlayer ? "" : `
                   .jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper,
                   #player, .player, .video-player, #main_video_container {
                     contain: layout style paint;
@@ -641,7 +739,6 @@ jobs:
               return dur >= 90;
             }
 
-            // Sin recortes de currentTime en directos para que Chaturbate nunca se pare
             function attachStreamStabilizer(v) {
               if (!v || watchedVideosSet.has(v)) return;
               watchedVideosSet.add(v);
@@ -652,6 +749,19 @@ jobs:
                 v.playsInline = true;
                 if (v.playbackRate !== 1.0) v.playbackRate = 1.0;
               } catch (_) {}
+
+              // Auto-recuperación en Chaturbate si una micro-pausa detiene el reproductor mientras usas audífonos Bluetooth
+              if (isChaturbate) {
+                v.addEventListener("pause", function () {
+                  if (Date.now() >= userPausedManuallyUntil && !v.ended) {
+                    setTimeout(function () {
+                      if (v.paused && Date.now() >= userPausedManuallyUntil && !v.ended) {
+                        v.play().catch(function () {});
+                      }
+                    }, 250);
+                  }
+                });
+              }
             }
 
             function findActiveVideo() {
@@ -838,6 +948,12 @@ jobs:
               });
             }
 
+            document.addEventListener("pointerdown", function () {
+              if (isJkAnimeOrPlayer) {
+                cleanJkAnimeSpecificAds();
+              }
+            }, true);
+
             document.addEventListener("click", function (e) {
               enableIframeFullscreenAndEagerLoad();
               if (!isCleanLiveStreamSite) {
@@ -904,13 +1020,16 @@ jobs:
 
             setInterval(function () {
               try {
+                if (isJkAnimeOrPlayer) {
+                  cleanJkAnimeSpecificAds();
+                }
                 if (document.getElementsByTagName("video").length === 0) return;
                 const v = findActiveVideo();
                 if (!v) return;
 
                 const isPlaying = !v.paused && !v.ended && v.readyState >= 2;
                 const rawDur = v.duration;
-                const isLive = !Number.isFinite(rawDur) || rawDur <= 0 || rawDur > 36000;
+                const isLive = isChaturbate || !Number.isFinite(rawDur) || rawDur <= 0 || rawDur > 36000;
                 const dur = isLive ? 0 : rawDur;
 
                 postToNative({
@@ -918,7 +1037,7 @@ jobs:
                   hasVod: !isLive && dur >= 90,
                   isLive: isLive,
                   playing: isPlaying,
-                  currentTime: v.currentTime || 0,
+                  currentTime: isLive ? 0 : (v.currentTime || 0),
                   duration: dur
                 });
               } catch (_) {}
@@ -1014,6 +1133,9 @@ jobs:
                       inspectNodeForScam(added[j]);
                     }
                   }
+                  if (isJkAnimeOrPlayer) {
+                    cleanJkAnimeSpecificAds();
+                  }
                 });
                 obs.observe(document.body, { childList: true, subtree: false });
               } catch (_) {}
@@ -1042,7 +1164,7 @@ jobs:
           with open(os.path.join(SHIELD_DIR, "content_start.js"), "w", encoding="utf-8") as cf:
               cf.write(content_start_js.strip() + "\n")
 
-          print("Escudo nativo v15.0 (base codigo_battv_2) creado correctamente:", os.listdir(EXT_BASE))
+          print("Escudo nativo v16.0 creado correctamente:", os.listdir(EXT_BASE))
           EOF
 
       - name: Instalar Gradle 8.5
