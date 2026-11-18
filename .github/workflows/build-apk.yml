@@ -45,31 +45,20 @@ jobs:
           sed -i 's/battv_shield_v[0-9]\+/battv_shield_v22/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
+          import re
           main_path = "android-geckoview/app/src/main/java/com/battv/browser/MainActivity.kt"
           with open(main_path, "r", encoding="utf-8") as f:
               code = f.read()
-
-          # Evitar que onPageStart corte redirecciones iniciales legitimas de Doramasflix o DramaChino
-          old_block = """        if (!isHomeScreenVisible && currentUrl.startsWith("http", ignoreCase = true)) {
-          if (geckoManager.isKnownAdOrPopupUri(url) || (!isInitialNavigationInProgress && !geckoManager.isSameOrTrustedNavigationTarget(currentUrl, url))) {
-            session.stop()
-            return
-          }
-        }"""
-          new_block = """        if (!isHomeScreenVisible && currentUrl.startsWith("http", ignoreCase = true)) {
-          if (geckoManager.isKnownAdOrPopupUri(url)) {
-            session.stop()
-            return
-          }
-        }"""
-          if old_block in code:
-              code = code.replace(old_block, new_block)
-
+          code = re.sub(
+              r"if \(geckoManager\.isKnownAdOrPopupUri\(url\) \|\| \(!isInitialNavigationInProgress && !geckoManager\.isSameOrTrustedNavigationTarget\(currentUrl, url\)\)\)",
+              "if (geckoManager.isKnownAdOrPopupUri(url))",
+              code
+          )
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v22.0 (Reglas Oficiales uBlock para Doramasflix/DramaChino + Resto Aislado)
+      - name: Generar Motor Nativo Ultraligero v22.0 (Doramasflix y DramaChino Instantaneos + Sitios Aislados)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
@@ -149,10 +138,6 @@ jobs:
               "fbpbpmjjg-f.club"
             ];
 
-            // Cortafuegos estricto de scripts de terceros en el documento raíz (frameId === 0):
-            // Protege JKAnime, LiveCamRips, Doramasflix y DramaChino de scripts de popups/banners,
-            // pero deja LIBRES los iframes de reproductores (frameId > 0) para que Byse, Primeload,
-            // F16Px, Streamwish, Voe y Dood descarguen sus desencriptadores HLS al instante sin quedarse en 0:00.
             const PROTECTED_ROOT_SITES = [
               "jkanime.net", "jkanime.bz", "jkdesu.com", "jkdesa.com",
               "livecamrips.to", "livecamrips.com", "livecamrips.net", "livecamrip.tl",
@@ -204,21 +189,35 @@ jobs:
                     const parsed = new URL(rawUrl);
                     const reqHost = parsed.hostname.toLowerCase().replace(/^www\./, "");
 
-                    // 1. Devolver XML VAST vacío en peticiones de anuncios Pre-Roll ("Este anuncio terminará en 10")
+                    // 1. Desacortar directamente embedshortener.co/e/<jwt> (excepto Streamwish para evitar 404)
+                    if (reqHost.includes("embedshortener.co") && parsed.pathname.startsWith("/e/")) {
+                      const token = parsed.pathname.slice(3).split(".")[1];
+                      if (token) {
+                        const payload = JSON.parse(atob(token.replace(/-/g, "+").replace(/_/g, "/")));
+                        if (payload && payload.link) {
+                          const decodedUrl = atob(payload.link).trim();
+                          if (/^https?:\/\//i.test(decodedUrl) && !/streamwish|sfastwish|wishembed/i.test(decodedUrl)) {
+                            return { redirectUrl: decodedUrl };
+                          }
+                        }
+                      }
+                    }
+
+                    // 2. Devolver XML VAST vacío en peticiones de anuncios Pre-Roll ("Este anuncio terminará en 10")
                     if (details.type === "xmlhttprequest" && (VAST_PREROLL_REGEX.test(rawUrl) || isHostInList(reqHost, BLOCKED_AD_DOMAINS))) {
                       return {
                         redirectUrl: "data:text/xml;charset=utf-8," + encodeURIComponent('<VAST version="3.0"></VAST>')
                       };
                     }
 
-                    // 2. Bloquear en cualquier nivel dominios publicitarios, 1xBet, yellowishgather.com y rutas /ciG.
+                    // 3. Bloquear en cualquier nivel dominios publicitarios, 1xBet, yellowishgather.com y rutas /ciG.
                     if (isHostInList(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl) || VAST_PREROLL_REGEX.test(rawUrl)) {
                       return { cancel: true };
                     }
 
-                    // 3. Cortafuegos de scripts externos en la página principal (frameId === 0)
+                    // 4. Cortafuegos de scripts externos en la página principal (frameId === 0)
                     //    de JKAnime, LiveCamRips, Doramasflix y DramaChino.
-                    //    Los iframes de reproductores (frameId > 0) quedan libres para cargar sus scripts de vídeo sin demora.
+                    //    Los iframes de reproductores (frameId > 0) quedan libres para cargar sus desencriptadores de vídeo al instante.
                     const docUrl = details.originUrl || details.documentUrl || "";
                     if (docUrl.startsWith("http") && details.type === "script") {
                       const docHost = new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "");
@@ -286,11 +285,6 @@ jobs:
               return currentHost === d || currentHost.endsWith("." + d);
             });
 
-            // 1. Inyectar CSS en 0.0ms (antes del primer pintado en pantalla):
-            //    Incluye la regla oficial de uBlock Origin (filters-2024.txt Issue #32894):
-            //    .video-embed-mode > div[class][style]:not(#root)
-            //    que oculta la capa transparente colocada encima del botón azul "Reproducir"
-            //    en los reproductores de Doramasflix y DramaChino (Byse / Primeload / F16Px).
             function injectTvStyles() {
               try {
                 const styleId = "__battv_fullscreen_css";
@@ -434,14 +428,6 @@ jobs:
               injectTvStyles();
             }
 
-            // 2. Inyección en el Main World:
-            //    - Rama 1 (Chaturbate): MSE hls.js intacto.
-            //    - Rama 2 (JKAnime, LiveCamRips, OnlyJerk): 100% IDÉNTICA a la versión 20.0 que ya te funciona perfecto.
-            //    - Rama 3 (Doramasflix, DramaChino y sus reproductores Byse/Primeload/F16Px):
-            //      * Aplica la regla oficial de uBlock Origin ##+js(nostif, readyWait) para saltar la espera del reproductor.
-            //      * NO modifica canPlayType ni bloquea addEventListener para que el botón azul "Reproducir"
-            //        desencripte y reproduzca el vídeo al primer clic sin quedarse girando en 0:00.
-            //      * Oculta en 0.0ms cualquier Shadow DOM publicitario creado fuera de #root / #__next / #page.
             const injectMainWorldKiller = function () {
               try {
                 const s = document.createElement("script");
@@ -456,7 +442,6 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (isOtherProtectedSite) {
-                  // Rama AISLADA e INTACTA para JKAnime, LiveCamRips y OnlyJerk
                   s.textContent = `(function(){
                     try {
                       const dummyWin = {
@@ -570,7 +555,6 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (!isCleanLiveStreamSite) {
-                  // Rama específica para Doramasflix, DramaChino y sus reproductores (Byse / Primeload / F16Px / Streamwish / Voe / Dood)
                   s.textContent = `(function(){
                     try {
                       const dummyWin = {
@@ -593,8 +577,6 @@ jobs:
                         configurable: false
                       });
 
-                      // Regla oficial de uBlock Origin (filters-2024.txt): ##+js(nostif, readyWait)
-                      // Elimina la espera artificial readyWait en reproductores Byse / Primeload / F16Px / Filemoon
                       const origSetTimeout = window.setTimeout;
                       window.setTimeout = function(fn, delay) {
                         try {
@@ -617,8 +599,6 @@ jobs:
                         } catch (_) {}
                       }
 
-                      // Ocultar en 0.0ms cualquier Shadow DOM publicitario creado fuera de #root / #__next / #page
-                      // (evita el parpadeo de 1 microsegundo en DramaChino sin tocar los componentes internos del reproductor)
                       const origAttachShadow = Element.prototype.attachShadow;
                       if (origAttachShadow) {
                         Element.prototype.attachShadow = function(init) {
@@ -653,7 +633,67 @@ jobs:
               document.addEventListener("DOMContentLoaded", injectMainWorldKiller, { once: true });
             }
 
-            // 3. Saltador de anuncios Pre-Roll ("Este anuncio terminará en 10" en LiveCamRips / OnlyJerk)
+            if (!isCleanLiveStreamSite) {
+              const SHORTENER_HOSTS = [
+                "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
+                "shrtfly.com", "shrinke.me", "shrinkme.io", "linkvertise.com",
+                "adfoc.us", "bc.vc", "shorte.st", "gestyy.com", "destyy.com",
+                "corneey.com", "clk.sh", "clk.asia", "oko.sh", "za.gl",
+                "cuty.io", "cety.app", "gplinks.co", "droplink.co", "tnshort.net",
+                "rekonise.com", "sub2unlock.com", "boost.ink", "mboost.me",
+                "short-jambo.com", "uii.io", "mitly.us"
+              ];
+
+              function tryDecodeBase64Url(str) {
+                try {
+                  const clean = decodeURIComponent(str).trim().replace(/-/g, "+").replace(/_/g, "/");
+                  const decoded = atob(clean).trim();
+                  if (/^https?:\/\/[^\s"']+$/i.test(decoded)) return decoded;
+                } catch (_) {}
+                return null;
+              }
+
+              try {
+                const loc = window.location;
+                if (currentHost.includes("embedshortener.co") && loc.pathname.startsWith("/e/")) {
+                  const parts = loc.pathname.slice(3).split(".");
+                  if (parts.length > 1) {
+                    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+                    if (payload && payload.link) {
+                      const target = tryDecodeBase64Url(payload.link);
+                      if (target && !/streamwish|sfastwish|wishembed/i.test(target)) {
+                        loc.replace(target);
+                        return;
+                      }
+                    }
+                  }
+                }
+
+                if (isTopFrame) {
+                  const isShortener = SHORTENER_HOSTS.some(function (d) {
+                    return currentHost === d || currentHost.endsWith("." + d);
+                  });
+                  if (isShortener) {
+                    const params = new URLSearchParams(loc.search);
+                    const keys = ["url", "dest", "destination", "go", "link", "target", "out", "redirect", "r", "u"];
+                    for (let i = 0; i < keys.length; i++) {
+                      const val = params.get(keys[i]);
+                      if (!val) continue;
+                      if (/^https?:\/\//i.test(val)) {
+                        loc.replace(val);
+                        return;
+                      }
+                      const b64 = tryDecodeBase64Url(val);
+                      if (b64) {
+                        loc.replace(b64);
+                        return;
+                      }
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+
             const PREROLL_AD_TEXT_REGEX = /(este anuncio terminar[aá] en|this ad will end in|anuncio\s*:\s*0:|ad\s+will\s+end|skip\s+ad|saltar\s+anuncio)/i;
 
             function skipAndFastForwardPreRollAds() {
@@ -698,11 +738,9 @@ jobs:
               } catch (_) {}
             }
 
-            // 4. Limpieza inmediata de la capa transparente sobre el botón "Reproducir" en el reproductor Byse / Primeload (#root)
             function unlockByseAndDoramaPlayButton() {
               if (isChaturbate || isJkAnimeOrPlayer || isLiveCamRips || isOnlyJerk) return;
               try {
-                // Regla exacta de uBlock Origin (#32894): eliminar cualquier hermano de #root dentro de .video-embed-mode
                 const rootEl = document.getElementById("root");
                 if (rootEl && rootEl.parentElement) {
                   const siblings = rootEl.parentElement.children;
@@ -712,51 +750,6 @@ jobs:
                       sib.style.setProperty("display", "none", "important");
                       sib.style.setProperty("pointer-events", "none", "important");
                       sib.remove();
-                    }
-                  }
-                }
-              } catch (_) {}
-            }
-
-            if (isTopFrame && !isCleanLiveStreamSite) {
-              const SHORTENER_HOSTS = [
-                "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
-                "shrtfly.com", "shrinke.me", "shrinkme.io", "linkvertise.com",
-                "adfoc.us", "bc.vc", "shorte.st", "gestyy.com", "destyy.com",
-                "corneey.com", "clk.sh", "clk.asia", "oko.sh", "za.gl",
-                "cuty.io", "cety.app", "gplinks.co", "droplink.co", "tnshort.net",
-                "rekonise.com", "sub2unlock.com", "boost.ink", "mboost.me",
-                "short-jambo.com", "uii.io", "mitly.us"
-              ];
-
-              function tryDecodeBase64Url(str) {
-                try {
-                  const clean = decodeURIComponent(str).trim().replace(/-/g, "+").replace(/_/g, "/");
-                  const decoded = atob(clean).trim();
-                  if (/^https?:\/\/[^\s"']+$/i.test(decoded)) return decoded;
-                } catch (_) {}
-                return null;
-              }
-
-              try {
-                const loc = window.location;
-                const isShortener = SHORTENER_HOSTS.some(function (d) {
-                  return currentHost === d || currentHost.endsWith("." + d);
-                });
-                if (isShortener) {
-                  const params = new URLSearchParams(loc.search);
-                  const keys = ["url", "dest", "destination", "go", "link", "target", "out", "redirect", "r", "u"];
-                  for (let i = 0; i < keys.length; i++) {
-                    const val = params.get(keys[i]);
-                    if (!val) continue;
-                    if (/^https?:\/\//i.test(val)) {
-                      loc.replace(val);
-                      return;
-                    }
-                    const b64 = tryDecodeBase64Url(val);
-                    if (b64) {
-                      loc.replace(b64);
-                      return;
                     }
                   }
                 }
@@ -922,7 +915,6 @@ jobs:
               } catch (_) {}
             }
 
-            // Limpiador ligero (sin querySelectorAll("div") pesado para no ralentizar Doramasflix ni DramaChino)
             function nukeInPlayerScamOverlaysOnce() {
               if (isCleanLiveStreamSite) return;
               try {
@@ -971,7 +963,6 @@ jobs:
               } catch (_) {}
             }
 
-            // 5. Puente con MainActivity, aviso automático de Pantalla Completa y reproducción 60 FPS
             let port = null;
             let activeInputEl = null;
             let inputCounter = 1;
@@ -1387,7 +1378,6 @@ jobs:
               } catch (_) {}
             }
 
-            // Sondeo ligero cada 1000 ms (como en v15.0) para no sobrecargar la CPU del Android TV
             setInterval(function () {
               try {
                 unlockByseAndDoramaPlayButton();
@@ -1513,10 +1503,6 @@ jobs:
               }
             }
 
-            // Observador ligero:
-            // - En LiveCamRips, JKAnime y OnlyJerk mantiene subtree: true igual que en v20.0.
-            // - En Doramasflix y DramaChino observa solo hijos directos de body (subtree: false, igual que en v15.0)
-            //   para que React/Next.js y el reproductor carguen al instante sin consumo extra de CPU.
             function setupLightweightRootAdObserver() {
               if (isCleanLiveStreamSite) return;
               try {
