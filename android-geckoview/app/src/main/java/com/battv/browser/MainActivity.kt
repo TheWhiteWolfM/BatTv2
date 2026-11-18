@@ -65,6 +65,7 @@ class MainActivity : AppCompatActivity() {
     private const val PREFS_NAME = "battv_browser_prefs"
     private const val KEY_BOOKMARKS = "bookmarks_tv_list_v5"
     private const val KEY_BOOKMARKS_SEEDED = "bookmarks_tv_seeded_v5"
+    private const val KEY_BOOKMARKS_ADDED_V20 = "bookmarks_added_extra_v20"
     private const val KEY_HISTORY = "history_json_v2"
     private const val KEY_DESKTOP_MODE = "desktop_mode_enabled"
     private const val KEY_MODE_SELECTED = "initial_mode_selected_v2"
@@ -339,10 +340,42 @@ class MainActivity : AppCompatActivity() {
         put(JSONObject().put("title", "AsiaLiveAction").put("url", "https://asialiveaction.com/"))
         put(JSONObject().put("title", "KissKH").put("url", "https://kisskh.do/"))
         put(JSONObject().put("title", "JKAnime").put("url", "https://jkanime.net/"))
+        put(JSONObject().put("title", "Chaturbate").put("url", "https://chaturbate.com/"))
+        put(JSONObject().put("title", "LiveCamRips").put("url", "https://livecamrips.to/"))
+        put(JSONObject().put("title", "OnlyJerk").put("url", "https://onlyjerk.net/"))
       }
       prefs.edit()
         .putString(KEY_BOOKMARKS, defaults.toString())
         .putBoolean(KEY_BOOKMARKS_SEEDED, true)
+        .putBoolean(KEY_BOOKMARKS_ADDED_V20, true)
+        .apply()
+      return
+    }
+
+    // Si la aplicación ya estaba instalada en el TV, agregar automáticamente Chaturbate, LiveCamRips y OnlyJerk
+    if (!prefs.getBoolean(KEY_BOOKMARKS_ADDED_V20, false)) {
+      val currentArr = getBookmarksArray()
+      val newSites = listOf(
+        "Chaturbate" to "https://chaturbate.com/",
+        "LiveCamRips" to "https://livecamrips.to/",
+        "OnlyJerk" to "https://onlyjerk.net/"
+      )
+      for ((title, url) in newSites) {
+        var exists = false
+        for (i in 0 until currentArr.length()) {
+          val item = currentArr.optJSONObject(i) ?: continue
+          if (item.optString("url").equals(url, ignoreCase = true)) {
+            exists = true
+            break
+          }
+        }
+        if (!exists) {
+          currentArr.put(JSONObject().put("title", title).put("url", url))
+        }
+      }
+      prefs.edit()
+        .putString(KEY_BOOKMARKS, currentArr.toString())
+        .putBoolean(KEY_BOOKMARKS_ADDED_V20, true)
         .apply()
     }
   }
@@ -1112,7 +1145,7 @@ class MainActivity : AppCompatActivity() {
 
     val extItems = arrayOf(
       "1. Pop-ups Blocker (strict) + Cerrojo de Dominio \u2014 [$shieldLoaded]",
-      "2. Cortafuegos Anti-Ads y Saltador Pre-Roll VAST \u2014 [$shieldLoaded]",
+      "2. Cortafuegos 0ms Anti-Ads y Saltador Pre-Roll VAST \u2014 [$shieldLoaded]",
       "3. Saltarse Todos los Enlaces Acortados + Motor 60FPS \u2014 [$shieldLoaded]"
     )
 
@@ -1121,7 +1154,7 @@ class MainActivity : AppCompatActivity() {
       .setItems(extItems) { _, _ ->
         Toast.makeText(
           this,
-          "El escudo nativo v18.0 est\u00E1 activo y protegiendo la navegaci\u00F3n.",
+          "El escudo nativo v20.0 est\u00E1 activo y bloqueando en 0ms.",
           Toast.LENGTH_SHORT
         ).show()
       }
@@ -1461,8 +1494,6 @@ class MainActivity : AppCompatActivity() {
 
         val now = SystemClock.uptimeMillis()
 
-        // Si un enlace intenta abrir nueva ventana (TARGET_WINDOW_NEW), solo permitirlo si pertenece al mismo sitio
-        // (por ejemplo, abrir una tarjeta de vídeo en livecamrips.to u onlyjerk.net) y bloquear cualquier dominio externo
         if (request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
           if (request.hasUserGesture && geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
             session.loadUri(uri)
@@ -1472,8 +1503,6 @@ class MainActivity : AppCompatActivity() {
 
         val isExplicitUserBarNavigation = isInitialNavigationInProgress || (now <= allowTopDomainChangeUntilUptimeMs)
 
-        // Candado estricto de dominio: impide que clics dentro de livecamrips.to, onlyjerk.net, jkanime.net o doramasflix
-        // redirijan la pestaña principal hacia dominios emergentes como yellowishgather.com
         if (!isHomeScreenVisible && !isExplicitUserBarNavigation && currentUrl.startsWith("http", ignoreCase = true)) {
           if (!geckoManager.isSameOrTrustedNavigationTarget(currentUrl, uri)) {
             return GeckoResult.deny()
@@ -1501,6 +1530,11 @@ class MainActivity : AppCompatActivity() {
         hasUserGesture: Boolean
       ) {
         if (!url.isNullOrBlank() && !url.startsWith("resource://")) {
+          if (!isHomeScreenVisible && currentUrl.startsWith("http", ignoreCase = true)) {
+            if (geckoManager.isKnownAdOrPopupUri(url) || !geckoManager.isSameOrTrustedNavigationTarget(currentUrl, url)) {
+              return
+            }
+          }
           currentUrl = url
           if (url.startsWith("http", ignoreCase = true)) {
             isInitialNavigationInProgress = false
@@ -1516,6 +1550,12 @@ class MainActivity : AppCompatActivity() {
 
     session.progressDelegate = object : GeckoSession.ProgressDelegate {
       override fun onPageStart(session: GeckoSession, url: String) {
+        if (!isHomeScreenVisible && currentUrl.startsWith("http", ignoreCase = true)) {
+          if (geckoManager.isKnownAdOrPopupUri(url) || (!isInitialNavigationInProgress && !geckoManager.isSameOrTrustedNavigationTarget(currentUrl, url))) {
+            session.stop()
+            return
+          }
+        }
         if (url != currentUrl && isFullScreenVideo) {
           applyFullScreenState(false)
         }
