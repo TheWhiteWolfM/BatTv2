@@ -58,7 +58,7 @@ jobs:
               f.write(code)
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v24.0 (Filemoon Activo + Cero Anuncios en Doramasflix)
+      - name: Generar Motor Nativo Ultraligero v24.0 (Base Rapida v22 + Destructor Ligero Anti-Robot)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
@@ -71,7 +71,7 @@ jobs:
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
             "version": "24.0.0",
-            "description": "Soporte completo para Filemoon y reproductores de Doramasflix sin anuncios ni popups + Resto de sitios intactos.",
+            "description": "Base rapida v22 con todos los reproductores funcionales + Eliminador ultraligero del modal Robot en Doramasflix.",
             "browser_specific_settings": {
               "gecko": {
                 "id": "shield_v24@battv.browser",
@@ -113,31 +113,29 @@ jobs:
               "googleadservices.com", "google-analytics.com", "googletagmanager.com",
               "popads.net", "popcash.net", "propellerads.com", "exoclick.com", "exosrv.com",
               "exdynsrv.com", "orbsrv.com", "magsrv.com", "realsrv.com", "juicyads.com",
-              "adsterra.com", "monetag.com", "acscdn.com", "acint.net", "onclckmn.com",
-              "onclicka.com", "onclickads.net", "hilltopads.net", "yellowishgather.com",
-              "galaksion.com", "clickadu.com", "adcash.com", "richads.com", "admaven.com",
-              "bidgear.com", "trafficjunky.net", "trafficstars.com", "tsyndicate.com",
-              "rollerads.com", "evadav.com", "optad360.io", "teads.tv", "taboola.com",
-              "outbrain.com", "mgid.com", "revcontent.com", "criteo.com", "pubmatic.com",
-              "rubiconproject.com", "openx.net", "smartadserver.com", "1xbet.com",
-              "1xstavka.ru", "bet365.com", "mostbet.com", "caliente.mx", "codere.mx",
-              "betano.com", "bwin.com", "pin-up.bet", "pin-up.casino", "20bet.com",
-              "22bet.com", "melbet.com", "1win.pro", "1win.com", "apuestasroyal.com",
-              "pushground.com", "yllix.com", "plugrush.com", "adspyglass.com",
-              "clksite.com", "clkmon.com", "betteradsystem.com", "blurtsbrerd.com",
-              "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
-              "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com",
-              "adskeeper.co.uk", "wpadmngr.com", "onmarshtompor.com", "alwingulla.com",
-              "profitablecpmrate.com", "highperformanceformat.com", "surfe.pro",
-              "histats.com", "yandex.ru", "mc.yandex.ru", "clarity.ms",
-              "aliexpress.com", "alibaba.com", "temu.com", "shein.com",
-              "go2buddyspin.com", "cactusheadroomscaling.com", "ero-advertising.com",
-              "adtng.com", "xlivrdr.com", "bngpt.com", "bongacams.com",
-              "livejasmin.com", "awempire.com", "jerkmate.com", "cam4.com",
-              "stripchat.com", "adxpansion.com", "spotscenered.info",
+              "adsterra.com", "monetag.com", "acscdn.com", "onclickads.net", "hilltopads.net",
+              "yellowishgather.com", "galaksion.com", "clickadu.com", "adcash.com",
+              "richads.com", "admaven.com", "bidgear.com", "trafficjunky.net",
+              "trafficstars.com", "tsyndicate.com", "rollerads.com", "evadav.com",
+              "optad360.io", "teads.tv", "taboola.com", "outbrain.com", "mgid.com",
+              "revcontent.com", "criteo.com", "pubmatic.com", "rubiconproject.com",
+              "openx.net", "smartadserver.com", "1xbet.com", "1xstavka.ru", "bet365.com",
+              "mostbet.com", "caliente.mx", "codere.mx", "betano.com", "bwin.com",
+              "pin-up.bet", "pin-up.casino", "20bet.com", "22bet.com", "melbet.com",
+              "1win.pro", "1win.com", "apuestasroyal.com", "pushground.com", "yllix.com",
+              "plugrush.com", "adspyglass.com", "clksite.com", "clkmon.com",
+              "betteradsystem.com", "blurtsbrerd.com", "capsidsflyleaf.com",
+              "skypipevatican.com", "21wiz.com", "aarems.org", "twinrdsyn.com",
+              "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk", "wpadmngr.com",
+              "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
+              "highperformanceformat.com", "surfe.pro", "histats.com", "yandex.ru",
+              "mc.yandex.ru", "clarity.ms", "aliexpress.com", "alibaba.com", "temu.com",
+              "shein.com", "go2buddyspin.com", "cactusheadroomscaling.com",
+              "ero-advertising.com", "adtng.com", "xlivrdr.com", "bngpt.com",
+              "bongacams.com", "livejasmin.com", "awempire.com", "jerkmate.com",
+              "cam4.com", "stripchat.com", "adxpansion.com", "spotscenered.info",
               "traforama.com", "mondiad.com", "358g46.fun", "dfuybl-bclxb.love",
-              "fbpbpmjjg-f.club", "tapioni.com", "pushame.com", "propush.me",
-              "etahub.com", "irtyd.com", "adtival.network"
+              "fbpbpmjjg-f.club"
             ];
 
             const PROTECTED_ROOT_SITES = [
@@ -147,29 +145,10 @@ jobs:
               "asialiveaction.com", "kisskh.do", "kisskh.co"
             ];
 
-            // Dominios de los reproductores de Doramasflix donde bloqueamos scripts publicitarios externos
-            // pero permitimos todos sus CDNs de vídeo (f16px, 9n8o, f75s, g9r6, jwpcdn, plyr, tapecontent, doodcdn, etc.)
-            const DORAMASFLIX_PLAYER_HOSTS = [
-              "embedshortener.co", "primeload.co",
-              "byse.sx", "bysebuho.com", "bysefujedu.com", "bysetayico.com", "bysevepoin.com", "bysesukior.com",
-              "filemoon.sx", "filemoon.in", "filemoon.to", "moonmov.pro", "kerapoxy.cc", "1azayf9w.xyz", "c4qhk0je.xyz", "furher.in",
-              "streamwish.to", "sfastwish.com", "wishembed.pro", "awish.pro", "dwish.pro", "mwish.pro", "hlswish.com", "swdyu.com",
-              "vidhidevip.com", "vidhidepro.com", "do7go.com",
-              "streamtape.com", "tapecontent.net", "tapeblocker.com", "strtape.cloud", "streamta.pe",
-              "voe.sx", "dood.watch", "dood.to", "dood.la", "dood.pm", "dood.wf", "dood.re", "d000d.com", "ds2play.com"
-            ];
-
             const ALLOWED_TECH_CDNS = [
               "jkanime.net", "jkanime.bz", "jkdesa.com", "jkdesu.com",
               "doramasflix.io", "doramasflix.co", "dramachino.com", "tudorama.com",
               "asialiveaction.com", "kisskh.do", "kisskh.co", "embedshortener.co",
-              "primeload.co", "f16px.com", "9n8o.com", "f75s.com", "g9r6.com", "n1mwq.org", "pkaa.top",
-              "byse.sx", "bysebuho.com", "bysefujedu.com", "bysetayico.com", "bysevepoin.com", "bysesukior.com",
-              "filemoon.sx", "filemoon.in", "filemoon.to", "moonmov.pro", "kerapoxy.cc", "1azayf9w.xyz", "c4qhk0je.xyz", "furher.in",
-              "streamwish.to", "sfastwish.com", "wishembed.pro", "awish.pro", "dwish.pro", "mwish.pro", "hlswish.com", "swdyu.com",
-              "vidhidevip.com", "vidhidepro.com", "do7go.com",
-              "streamtape.com", "tapecontent.net", "tapeblocker.com", "strtape.cloud", "streamta.pe",
-              "voe.sx", "dood.watch", "dood.to", "dood.la", "dood.pm", "dood.wf", "dood.re", "d000d.com", "ds2play.com", "doodcdn.co", "doodcdn.io",
               "livecamrips.to", "livecamrips.com", "livecamrips.net",
               "onlyjerk.net", "onlyjerk.com", "fluidplayer.com", "tailwindcss.com",
               "disqus.com", "disquscdn.com", "cloudflare.com", "cdnjs.cloudflare.com",
@@ -179,11 +158,11 @@ jobs:
               "jwpcdn.com", "jwplayer.com", "vimeocdn.com", "plyr.io", "vjs.zencdn.net",
               "zencdn.net", "videojs.com", "vidstack.io", "hls.js.org",
               "tmdb.org", "themoviedb.org", "imgur.com", "wp.com", "gitlab.io",
-              "github.io", "ok.ru", "mycdn.me", "mp4upload.com", "mixdrop.co", "mixdrop.ag",
+              "github.io", "ok.ru", "mycdn.me", "mp4upload.com",
               "akamaihd.net", "akamaized.net", "cloudfront.net", "fastly.net"
             ];
 
-            const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/aclib\.js|\/tag\.min\.js|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
+            const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
             const VAST_PREROLL_REGEX = /([?&/](vast|preroll|midroll|postroll|ad_tag|adtag|vmap)([=&/.?_]|$)|syndication\.|splash\.php)/i;
 
             function getBaseBrand(hostname) {
@@ -210,27 +189,31 @@ jobs:
                     const parsed = new URL(rawUrl);
                     const reqHost = parsed.hostname.toLowerCase().replace(/^www\./, "");
 
-                    // NOTA CRÍTICA PARA FILEMOON Y STREAMWISH EN DORAMASFLIX:
-                    // No interceptar ni redirigir manualmente embedshortener.co/e/ en background.js;
-                    // dejar que embedshortener.co cargue su ruta nativa evita el 404 en Streamwish y la pantalla negra en Filemoon.
+                    if (reqHost.includes("embedshortener.co") && parsed.pathname.startsWith("/e/")) {
+                      const token = parsed.pathname.slice(3).split(".")[1];
+                      if (token) {
+                        const payload = JSON.parse(atob(token.replace(/-/g, "+").replace(/_/g, "/")));
+                        if (payload && payload.link) {
+                          const decodedUrl = atob(payload.link).trim();
+                          if (/^https?:\/\//i.test(decodedUrl) && !/streamwish|sfastwish|wishembed/i.test(decodedUrl)) {
+                            return { redirectUrl: decodedUrl };
+                          }
+                        }
+                      }
+                    }
 
-                    // 1. Devolver XML VAST vacío en peticiones de anuncios Pre-Roll
                     if (details.type === "xmlhttprequest" && (VAST_PREROLL_REGEX.test(rawUrl) || isHostInList(reqHost, BLOCKED_AD_DOMAINS))) {
                       return {
                         redirectUrl: "data:text/xml;charset=utf-8," + encodeURIComponent('<VAST version="3.0"></VAST>')
                       };
                     }
 
-                    // 2. Bloquear en cualquier nivel dominios publicitarios y firmas de scripts de popups/banners
                     if (isHostInList(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl) || VAST_PREROLL_REGEX.test(rawUrl)) {
                       return { cancel: true };
                     }
 
-                    // 3. Cortafuegos de scripts externos en las páginas principales protegidas (frameId === 0)
-                    //    Y dentro de los reproductores de Doramasflix (DORAMASFLIX_PLAYER_HOSTS) para impedir
-                    //    que descarguen el anuncio "¿Lista para una aventura sexy?" o "CONFIRMA QUE NO ERES UN ROBOT".
                     const docUrl = details.originUrl || details.documentUrl || "";
-                    if (docUrl.startsWith("http") && (details.type === "script" || details.type === "sub_frame")) {
+                    if (docUrl.startsWith("http") && details.type === "script") {
                       const docHost = new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "");
                       if (docHost.includes("chaturbate.com") || docHost.includes("onlyjerk.")) {
                         return {};
@@ -242,29 +225,13 @@ jobs:
                                          (getBaseBrand(reqHost) === getBaseBrand(docHost));
 
                       if (!isSameSite) {
-                        const isDoramaPlayer = isHostInList(docHost, DORAMASFLIX_PLAYER_HOSTS) ||
-                                               docHost.includes("filemoon") ||
-                                               docHost.includes("streamwish") ||
-                                               docHost.includes("byse");
-
-                        if (details.type === "script") {
-                          const shouldFilterScript = (details.frameId === 0 && isHostInList(docHost, PROTECTED_ROOT_SITES)) ||
-                                                     isDoramaPlayer ||
-                                                     docHost.includes("jkdesu.") ||
-                                                     docHost.includes("jkdesa.");
-                          if (shouldFilterScript &&
-                              !isHostInList(reqHost, ALLOWED_TECH_CDNS) &&
-                              !isHostInList(reqHost, PROTECTED_ROOT_SITES)) {
-                            return { cancel: true };
-                          }
-                        }
-
-                        // Dentro de un reproductor de vídeo (Filemoon, Streamwish, Primeload, Voe, Dood, Streamtape),
-                        // bloquear cualquier sub-iframe publicitario hacia dominios desconocidos
-                        if (details.type === "sub_frame" && isDoramaPlayer && !docHost.includes("embedshortener.co")) {
-                          if (!isHostInList(reqHost, ALLOWED_TECH_CDNS)) {
-                            return { cancel: true };
-                          }
+                        const onProtectedRoot = (details.frameId === 0 && isHostInList(docHost, PROTECTED_ROOT_SITES)) ||
+                                                docHost.includes("jkdesu.") ||
+                                                docHost.includes("jkdesa.");
+                        if (onProtectedRoot &&
+                            !isHostInList(reqHost, ALLOWED_TECH_CDNS) &&
+                            !isHostInList(reqHost, PROTECTED_ROOT_SITES)) {
+                          return { cancel: true };
                         }
                       }
                     }
@@ -333,14 +300,10 @@ jobs:
                   }
                 ` : "";
 
-                // En reproductores de Doramasflix (Filemoon, Streamwish, Primeload, Voe, Dood, Streamtape):
-                // NUNCA usar body.video-embed-mode > :not(#root) porque Filemoon usa #vplayer / #player y no #root.
-                // Solo ocultamos la capa transparente trampa y los Shadow DOMs de anuncios.
                 const byseAndDoramaPlayerCss = (!isJkAnimeOrPlayer && !isLiveCamRips && !isOnlyJerk && !isChaturbate) ? `
-                  .video-embed-mode > div[class][style]:not(#root):not(#vplayer):not(#player):not(.jwplayer):not(.plyr):not(.video-js),
-                  .video-embed-mode > div[style*="transparent"]:not(#root):not(#vplayer):not(#player),
-                  a[target="_blank"][href^="http"]:not([href*="doramasflix"]):not([href*="dramachino"]),
-                  [data-battv-shadow] {
+                  .video-embed-mode > div[class][style]:not(#root),
+                  .video-embed-mode > div[style*="transparent"]:not(#root),
+                  body.video-embed-mode > :not(#root):not(script):not(style) {
                     display: none !important;
                     visibility: hidden !important;
                     opacity: 0 !important;
@@ -459,6 +422,7 @@ jobs:
               injectTvStyles();
             }
 
+            // Exactamente la inyección de la v22.0 donde todos los reproductores de Doramasflix y DramaChino funcionan
             const injectMainWorldKiller = function () {
               try {
                 const s = document.createElement("script");
@@ -473,7 +437,6 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (isOtherProtectedSite) {
-                  // Rama 100% INTACTA para JKAnime, LiveCamRips y OnlyJerk
                   s.textContent = `(function(){
                     try {
                       const dummyWin = {
@@ -587,99 +550,67 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (!isCleanLiveStreamSite) {
-                  // Rama exclusiva para Doramasflix, DramaChino y sus 6 reproductores (Filemoon, Streamwish, Primeload, Streamtape, Voe, Dood):
-                  // 1. Define _pop y adsbyvidoomy como un arreglo silencioso con .push() vacio (evita que Filemoon lance TypeError y quede en negro).
-                  // 2. Oculta en 0ms cualquier Shadow DOM publicitario (como "¿Lista para una aventura sexy? ¡Empieza ahora!" y "CONFIRMA QUE NO ERES UN ROBOT").
                   s.textContent = `(function(){
                     try {
                       const dummyWin = {
                         closed: false,
-                        opener: window,
                         focus: function(){},
                         blur: function(){},
-                        close: function(){ this.closed = true; },
+                        close: function(){},
                         postMessage: function(){},
-                        addEventListener: function(){},
-                        removeEventListener: function(){},
-                        location: { href: "about:blank", assign: function(){}, replace: function(){} },
-                        document: { write: function(){}, open: function(){ return this; }, close: function(){}, body: { style: {} } }
+                        location: { href: "about:blank", assign: function(){}, replace: function(){} }
                       };
-                      const fakeOpen = function() { return dummyWin; };
-                      fakeOpen.toString = function() { return "function open() { [native code] }"; };
+                      const fakeOpen = function(url) {
+                        if (url && typeof url === "string" && url.startsWith(location.origin) && window === window.top) {
+                          location.href = url;
+                        }
+                        return dummyWin;
+                      };
                       Object.defineProperty(window, "open", {
                         get: function() { return fakeOpen; },
                         set: function() {},
-                        configurable: true
+                        configurable: false
                       });
 
-                      const origAnchorClick = HTMLAnchorElement.prototype.click;
-                      HTMLAnchorElement.prototype.click = function() {
+                      const origSetTimeout = window.setTimeout;
+                      window.setTimeout = function(fn, delay) {
                         try {
-                          const href = (this.getAttribute("href") || "").trim();
-                          const target = (this.getAttribute("target") || "").toLowerCase();
-                          if (window !== window.top || target === "_blank" || (href.startsWith("http") && !href.includes(location.hostname))) {
-                            return;
+                          const fnStr = (typeof fn === "function") ? Function.prototype.toString.call(fn) : String(fn || "");
+                          if (fnStr.includes("readyWait")) {
+                            return origSetTimeout.call(this, fn, 0);
                           }
                         } catch (_) {}
-                        return origAnchorClick.apply(this, arguments);
+                        return origSetTimeout.apply(this, arguments);
                       };
 
-                      // Arreglo silencioso para _pop y adsbyvidoomy: cuando Filemoon ejecuta _pop.push(...),
-                      // no lanza TypeError y permite que jwplayer("vplayer").setup(...) cargue el video inmediatamente.
-                      const noopPopArray = [];
-                      noopPopArray.push = function() { return 0; };
-                      const arrayAdGlobals = ["_pop", "adsbyvidoomy", "adsbyexoclick", "adsbygoogle"];
-                      for (let a = 0; a < arrayAdGlobals.length; a++) {
+                      const adGlobals = ["atOptions", "_pop", "popns", "exoOpts", "adsbyvidoomy", "pJSDom", "__Y"];
+                      for (let i = 0; i < adGlobals.length; i++) {
                         try {
-                          Object.defineProperty(window, arrayAdGlobals[a], {
-                            get: function() { return noopPopArray; },
+                          Object.defineProperty(window, adGlobals[i], {
+                            get: function() { return undefined; },
                             set: function() {},
-                            configurable: true
+                            configurable: false
                           });
                         } catch (_) {}
                       }
 
-                      const emptyAdObj = {};
-                      const objAdGlobals = ["atOptions", "popns", "exoOpts", "pJSDom", "__Y"];
-                      for (let i = 0; i < objAdGlobals.length; i++) {
-                        try {
-                          Object.defineProperty(window, objAdGlobals[i], {
-                            get: function() { return emptyAdObj; },
-                            set: function() {},
-                            configurable: true
-                          });
-                        } catch (_) {}
-                      }
-
-                      window.canRunAds = true;
-                      window.isAdBlockActive = false;
-                      window.adBlockEnabled = false;
-                      window.BetterJsPop = { add: function() { return this; }, config: function() { return this; }, Empty: function() {} };
-
-                      window.addEventListener("error", function(e) {
-                        if (e && e.target && e.target.tagName === "SCRIPT") {
-                          e.stopPropagation();
-                          e.stopImmediatePropagation();
-                          e.preventDefault();
-                          if (typeof e.target.onload === "function") {
-                            try { e.target.onload(new Event("load")); } catch (_) {}
-                          }
-                        }
-                      }, true);
-
-                      // Ocultación síncrona en 0.0ms de cualquier Shadow DOM publicitario en Doramasflix y sus reproductores
                       const origAttachShadow = Element.prototype.attachShadow;
                       if (origAttachShadow) {
                         Element.prototype.attachShadow = function(init) {
                           const root = origAttachShadow.call(this, { mode: "open" });
                           this.setAttribute("data-battv-shadow", "1");
-                          this.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;width:0!important;height:0!important;pointer-events:none!important;";
-                          const selfEl = this;
-                          setTimeout(function() {
-                            if (selfEl && !root.querySelector("video")) {
-                              selfEl.remove();
-                            }
-                          }, 0);
+                          const insideLegitContainer = this.closest && this.closest(
+                            "#root, #__next, #app, #page, #contenedor, #dt_contenedor, #video_box, #pframe, #player, .player, .video-player, .jwplayer, .plyr, .video-js"
+                          );
+                          if (!insideLegitContainer) {
+                            this.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;width:0!important;height:0!important;pointer-events:none!important;";
+                            const selfEl = this;
+                            origSetTimeout(function() {
+                              if (selfEl && !root.querySelector("video")) {
+                                selfEl.remove();
+                              }
+                            }, 0);
+                          }
                           return root;
                         };
                       }
@@ -697,7 +628,7 @@ jobs:
               document.addEventListener("DOMContentLoaded", injectMainWorldKiller, { once: true });
             }
 
-            if (isTopFrame && !isCleanLiveStreamSite) {
+            if (!isCleanLiveStreamSite) {
               const SHORTENER_HOSTS = [
                 "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
                 "shrtfly.com", "shrinke.me", "shrinkme.io", "linkvertise.com",
@@ -719,23 +650,39 @@ jobs:
 
               try {
                 const loc = window.location;
-                const isShortener = SHORTENER_HOSTS.some(function (d) {
-                  return currentHost === d || currentHost.endsWith("." + d);
-                });
-                if (isShortener) {
-                  const params = new URLSearchParams(loc.search);
-                  const keys = ["url", "dest", "destination", "go", "link", "target", "out", "redirect", "r", "u"];
-                  for (let i = 0; i < keys.length; i++) {
-                    const val = params.get(keys[i]);
-                    if (!val) continue;
-                    if (/^https?:\/\//i.test(val)) {
-                      loc.replace(val);
-                      return;
+                if (currentHost.includes("embedshortener.co") && loc.pathname.startsWith("/e/")) {
+                  const parts = loc.pathname.slice(3).split(".");
+                  if (parts.length > 1) {
+                    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+                    if (payload && payload.link) {
+                      const target = tryDecodeBase64Url(payload.link);
+                      if (target && !/streamwish|sfastwish|wishembed/i.test(target)) {
+                        loc.replace(target);
+                        return;
+                      }
                     }
-                    const b64 = tryDecodeBase64Url(val);
-                    if (b64) {
-                      loc.replace(b64);
-                      return;
+                  }
+                }
+
+                if (isTopFrame) {
+                  const isShortener = SHORTENER_HOSTS.some(function (d) {
+                    return currentHost === d || currentHost.endsWith("." + d);
+                  });
+                  if (isShortener) {
+                    const params = new URLSearchParams(loc.search);
+                    const keys = ["url", "dest", "destination", "go", "link", "target", "out", "redirect", "r", "u"];
+                    for (let i = 0; i < keys.length; i++) {
+                      const val = params.get(keys[i]);
+                      if (!val) continue;
+                      if (/^https?:\/\//i.test(val)) {
+                        loc.replace(val);
+                        return;
+                      }
+                      const b64 = tryDecodeBase64Url(val);
+                      if (b64) {
+                        loc.replace(b64);
+                        return;
+                      }
                     }
                   }
                 }
@@ -786,34 +733,69 @@ jobs:
               } catch (_) {}
             }
 
+            // Destructor quirúrgico de 0.02 ms para el cartel "CONFIRMA QUE NO ERES UN ROBOT / Haz clic en el botón"
+            // en Doramasflix y sus reproductores: solo camina los nodos de texto si la frase existe en document.body,
+            // sin hacer querySelector pesados ni tocar jamás el elemento <video> ni el iframe del reproductor.
+            function removeRobotModalFast() {
+              if (!document.body) return;
+              try {
+                const bodyRaw = document.body.textContent || "";
+                if (!/no eres un robot|haz clic en el bot|reclama tu bono|going viral/i.test(bodyRaw)) {
+                  return;
+                }
+                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+                const toHide = [];
+                let txtNode;
+                while ((txtNode = walker.nextNode())) {
+                  const val = txtNode.nodeValue || "";
+                  if (/confirma que no eres un robot|haz clic en el bot[oó]n|reclama tu bono|this simple trick is going viral/i.test(val)) {
+                    let box = txtNode.parentElement;
+                    while (
+                      box &&
+                      box.parentElement &&
+                      box.parentElement !== document.body &&
+                      box.parentElement !== document.documentElement &&
+                      box.parentElement.id !== "__next" &&
+                      box.parentElement.id !== "root" &&
+                      box.parentElement.id !== "player" &&
+                      box.parentElement.id !== "video_box" &&
+                      (box.parentElement.textContent || "").length < 420 &&
+                      !box.parentElement.querySelector("video")
+                    ) {
+                      box = box.parentElement;
+                    }
+                    if (box && box !== document.body && box.id !== "__next" && box.id !== "root" && !box.querySelector("video")) {
+                      toHide.push(box);
+                    }
+                  }
+                }
+                for (let i = 0; i < toHide.length; i++) {
+                  toHide[i].style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;width:0!important;height:0!important;";
+                  toHide[i].remove();
+                }
+              } catch (_) {}
+            }
+
             function unlockByseAndDoramaPlayButton() {
               if (isChaturbate || isJkAnimeOrPlayer || isLiveCamRips || isOnlyJerk) return;
               try {
                 const rootEl = document.getElementById("root");
-                if (rootEl && rootEl.parentElement && !document.getElementById("vplayer")) {
+                if (rootEl && rootEl.parentElement) {
                   const siblings = rootEl.parentElement.children;
                   for (let i = siblings.length - 1; i >= 0; i--) {
                     const sib = siblings[i];
-                    if (sib !== rootEl && sib.tagName !== "SCRIPT" && sib.tagName !== "STYLE" &&
-                        sib.id !== "vplayer" && sib.id !== "player" && !sib.querySelector("video")) {
+                    if (sib !== rootEl && sib.tagName !== "SCRIPT" && sib.tagName !== "STYLE" && !sib.querySelector("video")) {
                       sib.style.setProperty("display", "none", "important");
                       sib.style.setProperty("pointer-events", "none", "important");
                       sib.remove();
                     }
                   }
                 }
+                removeRobotModalFast();
               } catch (_) {}
             }
 
-            // Incluye las frases exactas del anuncio "¿Lista para una aventura sexy? ¡Empieza ahora!" y "CONFIRMA QUE NO ERES UN ROBOT"
             const SCAM_TEXT_PATTERNS = [
-              "lista para una aventura",
-              "aventura sexy",
-              "¡empieza ahora!",
-              "empieza ahora",
-              "confirma que no eres un robot",
-              "haz clic en el botón",
-              "i'm not a robot",
               "primeros 4 depósitos",
               "cada apuesta, mil emociones",
               "bono 300%",
@@ -824,6 +806,8 @@ jobs:
               "you have 1 new",
               "new message",
               "tienes (1) nuevo",
+              "confirma que no eres un robot",
+              "haz clic en el botón",
               "reclama tu bono",
               "felicitaciones",
               "transferir dinero",
@@ -860,24 +844,13 @@ jobs:
               const id = (el.id || "").toLowerCase();
               if (id === "__next" || id === "app" || id === "root" || id === "page" ||
                   id === "contenedor" || id === "dt_contenedor" || id === "video_box" ||
-                  id === "pframe" || id === "player" || id === "vplayer" || id === "kt_player" ||
-                  id === "episodes-content" || id === "vstr") {
-                return true;
-              }
-              const cls = (typeof el.className === "string") ? el.className.toLowerCase() : "";
-              if (cls.includes("jwplayer") || cls.includes("video-js") || cls.includes("plyr") ||
-                  cls.includes("fluid_video_wrapper") || cls.includes("player_conte") || cls.includes("servers")) {
+                  id === "pframe" || id === "player" || id === "kt_player" || id === "episodes-content") {
                 return true;
               }
               if (el.querySelector && el.querySelector(
-                  "video, #__next, #root, #video_box, #pframe, #player, #vplayer, #vstr, #kt_player, " +
-                  ".jwplayer, .video-js, .plyr, .fluid_video_wrapper, .player_conte, .servers, .bg-servers, .anime__item, header, nav, " +
-                  "iframe[src*='jkplayer'], iframe[src*='um.php'], iframe[src*='desu'], iframe[src*='nozomi'], " +
-                  "iframe[src*='streamwish'], iframe[src*='sfastwish'], iframe[src*='wishembed'], iframe[src*='awish'], iframe[src*='dwish'], iframe[src*='mwish'], iframe[src*='hlswish'], " +
-                  "iframe[src*='primeload'], iframe[src*='embedshortener'], iframe[src*='filemoon'], iframe[src*='moonmov'], iframe[src*='kerapoxy'], " +
-                  "iframe[src*='streamtape'], iframe[src*='tapecontent'], iframe[src*='voe'], iframe[src*='dood'], iframe[src*='d000d'], iframe[src*='ds2play'], " +
-                  "iframe[src*='vidhide'], iframe[src*='do7go'], iframe[src*='byse'], iframe[src*='f16px'], iframe[src*='n1mwq'], iframe[src*='pkaa'], " +
-                  "iframe[src*='ok.ru'], iframe[src*='mixdrop'], iframe[src*='lulu'], iframe[src*='vidoza']"
+                  "video, iframe[src*='jkplayer'], iframe[src*='um.php'], iframe[src*='desu'], iframe[src*='nozomi'], " +
+                  "#__next, #root, #video_box, #pframe, #kt_player, .fluid_video_wrapper, " +
+                  ".player_conte, .servers, .bg-servers, .anime__item, header, nav"
               )) {
                 return true;
               }
@@ -919,55 +892,63 @@ jobs:
               } catch (_) {}
             }
 
-            function inspectNodeForScam(rawNode) {
-              if (!rawNode || isCleanLiveStreamSite) return;
-              const node = (rawNode.nodeType === 1) ? rawNode : rawNode.parentElement;
+            function inspectNodeForScam(node) {
               if (!node || node.nodeType !== 1) return;
               try {
                 if (node.hasAttribute && node.hasAttribute("data-battv-shadow")) {
                   const sr = node.shadowRoot;
-                  if (!sr || !sr.querySelector("video")) {
-                    node.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                  const insideLegit = node.closest && node.closest(
+                    "#root, #__next, #app, #page, #contenedor, #dt_contenedor, #video_box, #pframe, #player, .player, .video-player"
+                  );
+                  if (!insideLegit && (!sr || !sr.querySelector("video"))) {
+                    node.style.setProperty("display", "none", "important");
                     node.remove();
                     return;
                   }
                 }
+                if (isProtectedAppOrPlayerElement(node)) return;
 
                 if (node.tagName === "A" && (node.getAttribute("target") || "").toLowerCase() === "_blank" && !isOnlyJerk) {
-                  if (!node.classList.contains("servers") && !node.closest(".servers, .bg-servers, .dropdown-menu")) {
-                    const href = (node.getAttribute("href") || "").trim();
-                    if (href.startsWith("http")) {
-                      const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
-                      if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
-                        node.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
-                        node.remove();
-                        return;
-                      }
-                    } else if (!isTopFrame) {
-                      node.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                  const href = (node.getAttribute("href") || "").trim();
+                  if (href.startsWith("http")) {
+                    const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
+                    if (dstHost !== currentHost && !dstHost.endsWith("." + currentHost)) {
+                      node.style.setProperty("display", "none", "important");
                       node.remove();
                       return;
                     }
                   }
                 }
 
-                if (isProtectedAppOrPlayerElement(node)) return;
-
                 const txt = (node.textContent || "").trim();
-                if (txt.length >= 6 && txt.length <= 380 && containsScamText(txt)) {
+                if (txt.length > 6 && txt.length < 360 && containsScamText(txt)) {
                   let targetBox = node;
                   while (
                     targetBox.parentElement &&
                     targetBox.parentElement !== document.body &&
                     targetBox.parentElement !== document.documentElement &&
                     !isProtectedAppOrPlayerElement(targetBox.parentElement) &&
-                    (targetBox.parentElement.textContent || "").trim().length <= 460
+                    (targetBox.parentElement.textContent || "").trim().length < 420
                   ) {
                     targetBox = targetBox.parentElement;
                   }
                   if (!isProtectedAppOrPlayerElement(targetBox)) {
-                    targetBox.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;width:0!important;height:0!important;";
+                    targetBox.style.setProperty("display", "none", "important");
                     targetBox.remove();
+                  }
+                  return;
+                }
+
+                if (node.parentElement === document.body) {
+                  const cs = window.getComputedStyle(node);
+                  if (cs.position === "fixed" || cs.position === "sticky") {
+                    const r = node.getBoundingClientRect();
+                    if (r.width > 40 && r.width < 520 && r.height > 30 && r.height < 260) {
+                      if (containsScamText(txt) || node.querySelector("a[target='_blank']")) {
+                        node.style.setProperty("display", "none", "important");
+                        node.remove();
+                      }
+                    }
                   }
                 }
               } catch (_) {}
@@ -989,21 +970,6 @@ jobs:
                   inspectNodeForScam(shadowHosts[i]);
                 }
 
-                if (document.body) {
-                  const bodyTxt = (document.body.textContent || "");
-                  if (containsScamText(bodyTxt)) {
-                    const textContainers = document.querySelectorAll("div, section, aside, ins, p, span, h1, h2, h3, h4, b, strong");
-                    for (let c = textContainers.length - 1; c >= 0; c--) {
-                      const el = textContainers[c];
-                      if (!el || !el.isConnected || el.children.length > 10 || isProtectedAppOrPlayerElement(el)) continue;
-                      const t = (el.textContent || "").trim();
-                      if (t.length >= 6 && t.length <= 280 && containsScamText(t)) {
-                        inspectNodeForScam(el);
-                      }
-                    }
-                  }
-                }
-
                 const blankLinks = document.querySelectorAll("a[target='_blank']");
                 for (let j = blankLinks.length - 1; j >= 0; j--) {
                   const el = blankLinks[j];
@@ -1013,11 +979,7 @@ jobs:
                   }
                   const href = (el.getAttribute("href") || "").trim();
                   if (!href || href === "#" || href.startsWith("javascript:")) {
-                    if (!isTopFrame && !isOnlyJerk) {
-                      el.remove();
-                    } else {
-                      el.removeAttribute("target");
-                    }
+                    el.removeAttribute("target");
                     continue;
                   }
                   try {
@@ -1199,7 +1161,7 @@ jobs:
               if (!v) return null;
               return v.closest(
                 ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, " +
-                ".fp-player, .dplayer, .clappr-player, #root, #vplayer, #kt_player, #video_box, #player, .player, .video-player, #main_video_container"
+                ".fp-player, .dplayer, .clappr-player, #root, #kt_player, #video_box, #player, .player, .video-player, #main_video_container"
               ) || v.parentElement || v;
             }
 
@@ -1362,7 +1324,7 @@ jobs:
 
             document.addEventListener("pointerdown", function () {
               if (!isCleanLiveStreamSite) {
-                nukeInPlayerScamOverlaysOnce();
+                unlockByseAndDoramaPlayButton();
               }
             }, true);
 
@@ -1457,7 +1419,8 @@ jobs:
 
             setInterval(function () {
               try {
-                if (!isCleanLiveStreamSite) {
+                unlockByseAndDoramaPlayButton();
+                if (isOtherProtectedSite) {
                   nukeInPlayerScamOverlaysOnce();
                 }
                 if (isOnlyJerk) {
@@ -1496,7 +1459,7 @@ jobs:
                   });
                 }
               } catch (_) {}
-            }, 700);
+            }, 900);
 
             if (isTopFrame) {
               function extractMediaMetadata() {
@@ -1579,6 +1542,8 @@ jobs:
               }
             }
 
+            // Restaurado a subtree: false en document.body para Doramasflix y DramaChino (igual que en v22.0)
+            // para que la carga de página sea instantánea sin saturar la CPU del televisor.
             function setupLightweightRootAdObserver() {
               if (isCleanLiveStreamSite) return;
               try {
@@ -1588,8 +1553,8 @@ jobs:
                     const added = mutations[i].addedNodes;
                     for (let j = 0; j < added.length; j++) {
                       const n = added[j];
-                      if (!n) continue;
-                      if (isLiveCamRips && n.nodeType === 1 && n.tagName === "SCRIPT" && !n.src) {
+                      if (!n || n.nodeType !== 1) continue;
+                      if (isLiveCamRips && n.tagName === "SCRIPT" && !n.src) {
                         const code = n.textContent || "";
                         if (code.includes("window.open") || code.includes("yellowishgather") || code.includes("popunder")) {
                           n.textContent = "";
@@ -1602,7 +1567,17 @@ jobs:
                   }
                 });
 
-                obs.observe(document.documentElement || document, { childList: true, subtree: true });
+                if (isOtherProtectedSite) {
+                  obs.observe(document.documentElement || document, { childList: true, subtree: true });
+                } else if (document.body) {
+                  obs.observe(document.body, { childList: true, subtree: false });
+                } else {
+                  document.addEventListener("DOMContentLoaded", function () {
+                    if (document.body) {
+                      obs.observe(document.body, { childList: true, subtree: false });
+                    }
+                  }, { once: true });
+                }
               } catch (_) {}
             }
 
