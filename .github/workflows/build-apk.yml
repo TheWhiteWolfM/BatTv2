@@ -35,17 +35,18 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Actualizar versionCode a 24 (v4.9) y ajustar navegacion inicial en Kotlin
+      - name: Actualizar a versionCode 25 (v5.0) y ajustar dominios en Kotlin
         run: |
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
-          sed -i 's/versionCode [0-9]\+/versionCode 24/g' android-geckoview/app/build.gradle
-          sed -i 's/versionName "[^"]*"/versionName "4.9"/g' android-geckoview/app/build.gradle
-          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v24@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
-          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v24/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/versionCode [0-9]\+/versionCode 25/g' android-geckoview/app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "5.0"/g' android-geckoview/app/build.gradle
+          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v25@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v25/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
           import re
+
           main_path = "android-geckoview/app/src/main/java/com/battv/browser/MainActivity.kt"
           with open(main_path, "r", encoding="utf-8") as f:
               code = f.read()
@@ -56,13 +57,22 @@ jobs:
           )
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
+
+          mgr_path = "android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
+          with open(mgr_path, "r", encoding="utf-8") as f:
+              mgr = f.read()
+          if "chatmate.tv" not in mgr:
+              mgr = mgr.replace('"mondiad.com"', '"mondiad.com", "chatmate.tv", "chatmate.com"')
+          mgr = mgr.replace('path.startsWith("/b/")', 'path.contains("/0/P.")')
+          with open(mgr_path, "w", encoding="utf-8") as f:
+              f.write(mgr)
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v24.0 (Base Rapida v22 + Destructor Ligero Anti-Robot)
+      - name: Generar Motor Nativo Ultraligero v25.0 (Filemoon/BYSE, Primeload, VOE y OnlyJerk Close Ad)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v24"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v25"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
 
@@ -70,11 +80,11 @@ jobs:
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "24.0.0",
-            "description": "Base rapida v22 con todos los reproductores funcionales + Eliminador ultraligero del modal Robot en Doramasflix.",
+            "version": "25.0.0",
+            "description": "Soporte Filemoon/BYSE sin pantalla negra, interaccion directa en Primeload, limpieza VOE y bloqueo Close ad/chatmate en OnlyJerk.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v24@battv.browser",
+                "id": "shield_v25@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -113,29 +123,30 @@ jobs:
               "googleadservices.com", "google-analytics.com", "googletagmanager.com",
               "popads.net", "popcash.net", "propellerads.com", "exoclick.com", "exosrv.com",
               "exdynsrv.com", "orbsrv.com", "magsrv.com", "realsrv.com", "juicyads.com",
-              "adsterra.com", "monetag.com", "acscdn.com", "onclickads.net", "hilltopads.net",
-              "yellowishgather.com", "galaksion.com", "clickadu.com", "adcash.com",
-              "richads.com", "admaven.com", "bidgear.com", "trafficjunky.net",
-              "trafficstars.com", "tsyndicate.com", "rollerads.com", "evadav.com",
-              "optad360.io", "teads.tv", "taboola.com", "outbrain.com", "mgid.com",
-              "revcontent.com", "criteo.com", "pubmatic.com", "rubiconproject.com",
-              "openx.net", "smartadserver.com", "1xbet.com", "1xstavka.ru", "bet365.com",
-              "mostbet.com", "caliente.mx", "codere.mx", "betano.com", "bwin.com",
-              "pin-up.bet", "pin-up.casino", "20bet.com", "22bet.com", "melbet.com",
-              "1win.pro", "1win.com", "apuestasroyal.com", "pushground.com", "yllix.com",
-              "plugrush.com", "adspyglass.com", "clksite.com", "clkmon.com",
-              "betteradsystem.com", "blurtsbrerd.com", "capsidsflyleaf.com",
-              "skypipevatican.com", "21wiz.com", "aarems.org", "twinrdsyn.com",
-              "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk", "wpadmngr.com",
-              "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
-              "highperformanceformat.com", "surfe.pro", "histats.com", "yandex.ru",
-              "mc.yandex.ru", "clarity.ms", "aliexpress.com", "alibaba.com", "temu.com",
-              "shein.com", "go2buddyspin.com", "cactusheadroomscaling.com",
-              "ero-advertising.com", "adtng.com", "xlivrdr.com", "bngpt.com",
-              "bongacams.com", "livejasmin.com", "awempire.com", "jerkmate.com",
-              "cam4.com", "stripchat.com", "adxpansion.com", "spotscenered.info",
-              "traforama.com", "mondiad.com", "358g46.fun", "dfuybl-bclxb.love",
-              "fbpbpmjjg-f.club"
+              "adsterra.com", "monetag.com", "acscdn.com", "onclckmn.com", "onclicka.com",
+              "onclickads.net", "hilltopads.net", "yellowishgather.com", "galaksion.com",
+              "clickadu.com", "adcash.com", "richads.com", "admaven.com", "bidgear.com",
+              "trafficjunky.net", "trafficstars.com", "tsyndicate.com", "rollerads.com",
+              "evadav.com", "optad360.io", "teads.tv", "taboola.com", "outbrain.com",
+              "mgid.com", "revcontent.com", "criteo.com", "pubmatic.com",
+              "rubiconproject.com", "openx.net", "smartadserver.com", "1xbet.com",
+              "1xstavka.ru", "bet365.com", "mostbet.com", "caliente.mx", "codere.mx",
+              "betano.com", "bwin.com", "pin-up.bet", "pin-up.casino", "20bet.com",
+              "22bet.com", "melbet.com", "1win.pro", "1win.com", "apuestasroyal.com",
+              "pushground.com", "yllix.com", "plugrush.com", "adspyglass.com",
+              "clksite.com", "clkmon.com", "betteradsystem.com", "blurtsbrerd.com",
+              "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
+              "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com",
+              "adskeeper.co.uk", "wpadmngr.com", "onmarshtompor.com", "alwingulla.com",
+              "profitablecpmrate.com", "highperformanceformat.com", "surfe.pro",
+              "histats.com", "yandex.ru", "mc.yandex.ru", "clarity.ms",
+              "aliexpress.com", "alibaba.com", "temu.com", "shein.com",
+              "go2buddyspin.com", "cactusheadroomscaling.com", "ero-advertising.com",
+              "adtng.com", "xlivrdr.com", "bngpt.com", "bongacams.com",
+              "livejasmin.com", "awempire.com", "jerkmate.com", "cam4.com",
+              "stripchat.com", "chatmate.tv", "chatmate.com", "adxpansion.com",
+              "spotscenered.info", "traforama.com", "mondiad.com",
+              "358g46.fun", "dfuybl-bclxb.love", "fbpbpmjjg-f.club"
             ];
 
             const PROTECTED_ROOT_SITES = [
@@ -162,7 +173,7 @@ jobs:
               "akamaihd.net", "akamaized.net", "cloudfront.net", "fastly.net"
             ];
 
-            const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
+            const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/fingerprint-sw\.js|\/aclib\.js|\/tag\.min\.js|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
             const VAST_PREROLL_REGEX = /([?&/](vast|preroll|midroll|postroll|ad_tag|adtag|vmap)([=&/.?_]|$)|syndication\.|splash\.php)/i;
 
             function getBaseBrand(hostname) {
@@ -189,18 +200,8 @@ jobs:
                     const parsed = new URL(rawUrl);
                     const reqHost = parsed.hostname.toLowerCase().replace(/^www\./, "");
 
-                    if (reqHost.includes("embedshortener.co") && parsed.pathname.startsWith("/e/")) {
-                      const token = parsed.pathname.slice(3).split(".")[1];
-                      if (token) {
-                        const payload = JSON.parse(atob(token.replace(/-/g, "+").replace(/_/g, "/")));
-                        if (payload && payload.link) {
-                          const decodedUrl = atob(payload.link).trim();
-                          if (/^https?:\/\//i.test(decodedUrl) && !/streamwish|sfastwish|wishembed/i.test(decodedUrl)) {
-                            return { redirectUrl: decodedUrl };
-                          }
-                        }
-                      }
-                    }
+                    // Sin redireccion forzada en embedshortener.co/e/ para que Filemoon, Streamwish,
+                    // Primeload y VOE resuelvan su dominio y Referer reales sin quedar en pantalla negra.
 
                     if (details.type === "xmlhttprequest" && (VAST_PREROLL_REGEX.test(rawUrl) || isHostInList(reqHost, BLOCKED_AD_DOMAINS))) {
                       return {
@@ -290,7 +291,9 @@ jobs:
                   a[target="_blank"][href^="http"]:not([href*="jkanime"]):not([href*="jkdesu"]):not([href*="jkdesa"]):not(.servers),
                   a[target="_blank"] > img,
                   .appGlobalMsj,
-                  body > div[id*="-"] > a[target="_blank"] {
+                  body > div[id*="-"] > a[target="_blank"],
+                  body > [data-battv-shadow],
+                  body > div > [data-battv-shadow] {
                     display: none !important;
                     visibility: hidden !important;
                     opacity: 0 !important;
@@ -300,10 +303,21 @@ jobs:
                   }
                 ` : "";
 
-                const byseAndDoramaPlayerCss = (!isJkAnimeOrPlayer && !isLiveCamRips && !isOnlyJerk && !isChaturbate) ? `
-                  .video-embed-mode > div[class][style]:not(#root),
-                  .video-embed-mode > div[style*="transparent"]:not(#root),
-                  body.video-embed-mode > :not(#root):not(script):not(style) {
+                const liveCamZeroFlashCss = isLiveCamRips ? `
+                  body > [data-battv-shadow],
+                  body > div > [data-battv-shadow] {
+                    display: none !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                  }
+                ` : "";
+
+                const onlyJerkAdCss = isOnlyJerk ? `
+                  iframe[src*="chatmate" i], a[href*="chatmate" i],
+                  [class*="video-slider" i], [id*="video-slider" i],
+                  [class*="outstream" i], [id*="outstream" i],
+                  [class*="exo-video" i], [id*="exo-video" i] {
                     display: none !important;
                     visibility: hidden !important;
                     opacity: 0 !important;
@@ -325,9 +339,7 @@ jobs:
                     visibility: hidden !important;
                     pointer-events: none !important;
                   }
-                ` : jkAnimeZeroFlashCss + byseAndDoramaPlayerCss + `
-                  body > [data-battv-shadow],
-                  body > div:not(#root):not(#__next):not(#page):not(#contenedor):not(#dt_contenedor) > [data-battv-shadow],
+                ` : jkAnimeZeroFlashCss + liveCamZeroFlashCss + onlyJerkAdCss + `
                   .appGlobalMsj, .exo-native-widget, .vast_clickthrough_layer, .fluid_ad_cta,
                   [id*="vidoomy" i], [class*="vidoomy" i],
                   [id*="viwom" i], [class*="viwom" i],
@@ -342,7 +354,7 @@ jobs:
                   iframe[src*="doubleclick" i], iframe[src*="googlesyndication" i],
                   iframe[src*="popads" i], iframe[src*="propellerads" i],
                   iframe[src*="trafficjunky" i], iframe[src*="juicyads" i],
-                  iframe[src*="yellowishgather" i],
+                  iframe[src*="yellowishgather" i], iframe[src*="chatmate" i],
                   iframe[src*="stripchat" i], iframe[src*="bongacams" i],
                   iframe[src*="1xbet" i], a[href*="1xbet" i], a[href*="mostbet" i], a[href*="bet365" i],
                   ins.eas6a97888e, ins.adsbygoogle, div[class*="popunder" i], div[id*="popunder" i] {
@@ -422,7 +434,6 @@ jobs:
               injectTvStyles();
             }
 
-            // Exactamente la inyección de la v22.0 donde todos los reproductores de Doramasflix y DramaChino funcionan
             const injectMainWorldKiller = function () {
               try {
                 const s = document.createElement("script");
@@ -437,6 +448,7 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (isOtherProtectedSite) {
+                  // Rama AISLADA e INTACTA para JKAnime, LiveCamRips y OnlyJerk
                   s.textContent = `(function(){
                     try {
                       const dummyWin = {
@@ -550,6 +562,10 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (!isCleanLiveStreamSite) {
+                  // Rama limpia para Doramasflix, DramaChino y sus reproductores (Filemoon, BYSE, Primeload, VOE, Streamwish, Dood):
+                  // - NO oculta ni elimina elementos dentro de attachShadow() (soluciona pantalla negra en Filemoon y BYSE).
+                  // - NO altera setTimeout ni addEventListener para que los reproductores desencripten el video al instante.
+                  // - Neutraliza window.open() para bloquear popunders.
                   s.textContent = `(function(){
                     try {
                       const dummyWin = {
@@ -572,17 +588,6 @@ jobs:
                         configurable: false
                       });
 
-                      const origSetTimeout = window.setTimeout;
-                      window.setTimeout = function(fn, delay) {
-                        try {
-                          const fnStr = (typeof fn === "function") ? Function.prototype.toString.call(fn) : String(fn || "");
-                          if (fnStr.includes("readyWait")) {
-                            return origSetTimeout.call(this, fn, 0);
-                          }
-                        } catch (_) {}
-                        return origSetTimeout.apply(this, arguments);
-                      };
-
                       const adGlobals = ["atOptions", "_pop", "popns", "exoOpts", "adsbyvidoomy", "pJSDom", "__Y"];
                       for (let i = 0; i < adGlobals.length; i++) {
                         try {
@@ -594,23 +599,12 @@ jobs:
                         } catch (_) {}
                       }
 
+                      // Abrir Shadow DOM solo para poder inspeccionar si contiene anuncios (sin ocultarlo en el constructor)
                       const origAttachShadow = Element.prototype.attachShadow;
                       if (origAttachShadow) {
                         Element.prototype.attachShadow = function(init) {
                           const root = origAttachShadow.call(this, { mode: "open" });
                           this.setAttribute("data-battv-shadow", "1");
-                          const insideLegitContainer = this.closest && this.closest(
-                            "#root, #__next, #app, #page, #contenedor, #dt_contenedor, #video_box, #pframe, #player, .player, .video-player, .jwplayer, .plyr, .video-js"
-                          );
-                          if (!insideLegitContainer) {
-                            this.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;width:0!important;height:0!important;pointer-events:none!important;";
-                            const selfEl = this;
-                            origSetTimeout(function() {
-                              if (selfEl && !root.querySelector("video")) {
-                                selfEl.remove();
-                              }
-                            }, 0);
-                          }
                           return root;
                         };
                       }
@@ -628,7 +622,7 @@ jobs:
               document.addEventListener("DOMContentLoaded", injectMainWorldKiller, { once: true });
             }
 
-            if (!isCleanLiveStreamSite) {
+            if (isTopFrame && !isCleanLiveStreamSite) {
               const SHORTENER_HOSTS = [
                 "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
                 "shrtfly.com", "shrinke.me", "shrinkme.io", "linkvertise.com",
@@ -650,39 +644,23 @@ jobs:
 
               try {
                 const loc = window.location;
-                if (currentHost.includes("embedshortener.co") && loc.pathname.startsWith("/e/")) {
-                  const parts = loc.pathname.slice(3).split(".");
-                  if (parts.length > 1) {
-                    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-                    if (payload && payload.link) {
-                      const target = tryDecodeBase64Url(payload.link);
-                      if (target && !/streamwish|sfastwish|wishembed/i.test(target)) {
-                        loc.replace(target);
-                        return;
-                      }
+                const isShortener = SHORTENER_HOSTS.some(function (d) {
+                  return currentHost === d || currentHost.endsWith("." + d);
+                });
+                if (isShortener) {
+                  const params = new URLSearchParams(loc.search);
+                  const keys = ["url", "dest", "destination", "go", "link", "target", "out", "redirect", "r", "u"];
+                  for (let i = 0; i < keys.length; i++) {
+                    const val = params.get(keys[i]);
+                    if (!val) continue;
+                    if (/^https?:\/\//i.test(val)) {
+                      loc.replace(val);
+                      return;
                     }
-                  }
-                }
-
-                if (isTopFrame) {
-                  const isShortener = SHORTENER_HOSTS.some(function (d) {
-                    return currentHost === d || currentHost.endsWith("." + d);
-                  });
-                  if (isShortener) {
-                    const params = new URLSearchParams(loc.search);
-                    const keys = ["url", "dest", "destination", "go", "link", "target", "out", "redirect", "r", "u"];
-                    for (let i = 0; i < keys.length; i++) {
-                      const val = params.get(keys[i]);
-                      if (!val) continue;
-                      if (/^https?:\/\//i.test(val)) {
-                        loc.replace(val);
-                        return;
-                      }
-                      const b64 = tryDecodeBase64Url(val);
-                      if (b64) {
-                        loc.replace(b64);
-                        return;
-                      }
+                    const b64 = tryDecodeBase64Url(val);
+                    if (b64) {
+                      loc.replace(b64);
+                      return;
                     }
                   }
                 }
@@ -733,69 +711,77 @@ jobs:
               } catch (_) {}
             }
 
-            // Destructor quirúrgico de 0.02 ms para el cartel "CONFIRMA QUE NO ERES UN ROBOT / Haz clic en el botón"
-            // en Doramasflix y sus reproductores: solo camina los nodos de texto si la frase existe en document.body,
-            // sin hacer querySelector pesados ni tocar jamás el elemento <video> ni el iframe del reproductor.
-            function removeRobotModalFast() {
-              if (!document.body) return;
+            // Destructor especifico para el cuadro de video publicitario "Close ad X" (chatmate.tv) en onlyjerk.net
+            function cleanOnlyJerkCloseAdWidget() {
+              if (!isOnlyJerk || !document.body) return;
               try {
-                const bodyRaw = document.body.textContent || "";
-                if (!/no eres un robot|haz clic en el bot|reclama tu bono|going viral/i.test(bodyRaw)) {
-                  return;
+                const chatmateNodes = document.querySelectorAll("iframe[src*='chatmate' i], a[href*='chatmate' i]");
+                for (let m = chatmateNodes.length - 1; m >= 0; m--) {
+                  const box = chatmateNodes[m].closest("div[style*='fixed'], aside, section") || chatmateNodes[m];
+                  if (box && !box.querySelector(".servers") && !(box.textContent || "").includes("Player 01")) {
+                    box.style.setProperty("display", "none", "important");
+                    box.remove();
+                  }
                 }
+
+                const bodyRaw = document.body.textContent || "";
+                if (!/close\s*ad/i.test(bodyRaw)) return;
+
                 const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-                const toHide = [];
+                const adContainers = [];
                 let txtNode;
                 while ((txtNode = walker.nextNode())) {
-                  const val = txtNode.nodeValue || "";
-                  if (/confirma que no eres un robot|haz clic en el bot[oó]n|reclama tu bono|this simple trick is going viral/i.test(val)) {
-                    let box = txtNode.parentElement;
+                  const val = (txtNode.nodeValue || "").trim();
+                  if (/^close\s*ad$/i.test(val)) {
+                    let container = txtNode.parentElement;
                     while (
-                      box &&
-                      box.parentElement &&
-                      box.parentElement !== document.body &&
-                      box.parentElement !== document.documentElement &&
-                      box.parentElement.id !== "__next" &&
-                      box.parentElement.id !== "root" &&
-                      box.parentElement.id !== "player" &&
-                      box.parentElement.id !== "video_box" &&
-                      (box.parentElement.textContent || "").length < 420 &&
-                      !box.parentElement.querySelector("video")
+                      container &&
+                      container.parentElement &&
+                      container.parentElement !== document.body &&
+                      container.parentElement !== document.documentElement &&
+                      !(container.parentElement.textContent || "").includes("Player 01") &&
+                      !container.parentElement.querySelector("header, nav, main")
                     ) {
-                      box = box.parentElement;
+                      const rect = container.parentElement.getBoundingClientRect();
+                      if (rect.width > 0 && rect.width <= 680 && rect.height > 0 && rect.height <= 520) {
+                        container = container.parentElement;
+                      } else {
+                        break;
+                      }
                     }
-                    if (box && box !== document.body && box.id !== "__next" && box.id !== "root" && !box.querySelector("video")) {
-                      toHide.push(box);
+                    if (container && container !== document.body && !(container.textContent || "").includes("Player 01")) {
+                      adContainers.push(container);
                     }
                   }
                 }
-                for (let i = 0; i < toHide.length; i++) {
-                  toHide[i].style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;width:0!important;height:0!important;";
-                  toHide[i].remove();
-                }
-              } catch (_) {}
-            }
 
-            function unlockByseAndDoramaPlayButton() {
-              if (isChaturbate || isJkAnimeOrPlayer || isLiveCamRips || isOnlyJerk) return;
-              try {
-                const rootEl = document.getElementById("root");
-                if (rootEl && rootEl.parentElement) {
-                  const siblings = rootEl.parentElement.children;
-                  for (let i = siblings.length - 1; i >= 0; i--) {
-                    const sib = siblings[i];
-                    if (sib !== rootEl && sib.tagName !== "SCRIPT" && sib.tagName !== "STYLE" && !sib.querySelector("video")) {
-                      sib.style.setProperty("display", "none", "important");
-                      sib.style.setProperty("pointer-events", "none", "important");
-                      sib.remove();
-                    }
+                for (let i = 0; i < adContainers.length; i++) {
+                  const adBox = adContainers[i];
+                  const vids = adBox.getElementsByTagName("video");
+                  for (let v = 0; v < vids.length; v++) {
+                    try { vids[v].pause(); vids[v].muted = true; vids[v].src = ""; } catch (_) {}
                   }
+                  adBox.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;width:0!important;height:0!important;";
+                  adBox.remove();
                 }
-                removeRobotModalFast();
               } catch (_) {}
             }
 
             const SCAM_TEXT_PATTERNS = [
+              "tu bono ha sido aprobado",
+              "obtener bonificación",
+              "obtener bonificacion",
+              "¡felicidades!",
+              "felicidades!",
+              "¡felicitaciones!",
+              "felicitaciones",
+              "disponible €",
+              "€1500",
+              "transferir dinero",
+              "retirar dinero",
+              "confirma que no eres un robot",
+              "haz clic en el botón",
+              "reclama tu bono",
               "primeros 4 depósitos",
               "cada apuesta, mil emociones",
               "bono 300%",
@@ -806,13 +792,6 @@ jobs:
               "you have 1 new",
               "new message",
               "tienes (1) nuevo",
-              "confirma que no eres un robot",
-              "haz clic en el botón",
-              "reclama tu bono",
-              "felicitaciones",
-              "transferir dinero",
-              "retirar dinero",
-              "€1500",
               "ruleta mundial",
               "empieza a ganar",
               "donde juegan los grandes",
@@ -838,23 +817,170 @@ jobs:
             function isProtectedAppOrPlayerElement(el) {
               if (!el || !el.tagName) return true;
               const tag = el.tagName.toUpperCase();
-              if (tag === "VIDEO" || tag === "BODY" || tag === "HTML" || tag === "MAIN" || tag === "HEADER" || tag === "NAV") {
+              if (tag === "VIDEO" || tag === "BODY" || tag === "HTML" || tag === "MAIN" || tag === "HEADER" || tag === "NAV" || tag === "SCRIPT" || tag === "STYLE") {
+                return true;
+              }
+              if (tag.includes("PLAYER") || tag.includes("MEDIA") || tag.includes("VIDEO")) {
                 return true;
               }
               const id = (el.id || "").toLowerCase();
               if (id === "__next" || id === "app" || id === "root" || id === "page" ||
                   id === "contenedor" || id === "dt_contenedor" || id === "video_box" ||
-                  id === "pframe" || id === "player" || id === "kt_player" || id === "episodes-content") {
+                  id === "pframe" || id === "player" || id === "vplayer" || id === "vstr" ||
+                  id === "kt_player" || id === "episodes-content") {
+                return true;
+              }
+              const cls = (typeof el.className === "string") ? el.className.toLowerCase() : "";
+              if (cls.includes("jwplayer") || cls.includes("video-js") || cls.includes("plyr") ||
+                  cls.includes("art-video-player") || cls.includes("fluid_video_wrapper") ||
+                  cls.includes("player_conte") || cls.includes("servers")) {
                 return true;
               }
               if (el.querySelector && el.querySelector(
-                  "video, iframe[src*='jkplayer'], iframe[src*='um.php'], iframe[src*='desu'], iframe[src*='nozomi'], " +
-                  "#__next, #root, #video_box, #pframe, #kt_player, .fluid_video_wrapper, " +
+                  "video, #__next, #root, #app, #vplayer, #player, #vstr, #video_box, #pframe, #kt_player, " +
+                  ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, " +
                   ".player_conte, .servers, .bg-servers, .anime__item, header, nav"
               )) {
                 return true;
               }
               return false;
+            }
+
+            // Limpiador quirurgico y ultraligero para VOE, Primeload y Doramasflix:
+            // - Elimina los carteles de "777 ¡Felicitaciones! ¡Tu bono ha sido aprobado!",
+            //   "¡Felicidades! BONUS €1500", "CONFIRMA QUE NO ERES UN ROBOT" y el circulo flotante de anime.
+            // - Elimina capas transparentes sobre Primeload sin tocar nunca <video> ni Filemoon/BYSE.
+            function cleanDoramaAndPlayerOverlays() {
+              if (isChaturbate || isJkAnimeOrPlayer || isLiveCamRips || isOnlyJerk || !document.body) return;
+              try {
+                // 1. Revisar Shadow DOMs ya conectados que NO sean un reproductor (Adsterra Social Bar en VOE)
+                const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
+                for (let s = shadowHosts.length - 1; s >= 0; s--) {
+                  const host = shadowHosts[s];
+                  if (!host || !host.isConnected || isProtectedAppOrPlayerElement(host)) continue;
+                  const sr = host.shadowRoot;
+                  if (!sr || sr.querySelector("video")) continue;
+                  const dump = (sr.textContent || "") + " " + (sr.innerHTML || "");
+                  const isFloatingAdShadow = containsScamText(dump) ||
+                    dump.includes("border-radius: 50%") ||
+                    dump.includes("border-radius:50%") ||
+                    dump.includes("2147483647") ||
+                    dump.includes('target="_blank"') ||
+                    dump.includes("target='_blank'");
+                  if (isFloatingAdShadow) {
+                    host.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                    host.remove();
+                  }
+                }
+
+                // 2. Revisar hijos directos de document.body (maximo ~15 nodos: 0% impacto en rendimiento)
+                const rootChildren = document.body.children;
+                for (let i = rootChildren.length - 1; i >= 0; i--) {
+                  const el = rootChildren[i];
+                  if (!el || isProtectedAppOrPlayerElement(el)) continue;
+
+                  const txt = (el.textContent || "").trim();
+                  if (txt.length >= 6 && txt.length <= 450 && containsScamText(txt)) {
+                    el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                    el.remove();
+                    continue;
+                  }
+
+                  // Dentro de un iframe de reproductor (VOE, Primeload, Streamtape, Dood):
+                  // eliminar cualquier hijo directo de body que sea:
+                  // a) Un widget flotante (position: fixed o z-index >= 9999) como el circulo de anime o un banner con X
+                  // b) Una capa transparente vacia de clickjacking tapando el reproductor Primeload
+                  if (!isTopFrame) {
+                    const cs = window.getComputedStyle(el);
+                    const pos = cs.position;
+                    const zIdx = parseInt(cs.zIndex, 10) || 0;
+                    const r = el.getBoundingClientRect();
+
+                    if (pos === "fixed" || ((pos === "absolute") && zIdx >= 9999)) {
+                      const hasNoPlayerButtons = !el.querySelector(".jw-controlbar, .plyr__controls, .vjs-control-bar, .vjs-big-play-button");
+                      if (hasNoPlayerButtons && !txt.toLowerCase().includes("reproducir")) {
+                        const isTransparentOverlay = (parseFloat(cs.opacity) < 0.15) || cs.backgroundColor === "transparent" || cs.backgroundColor === "rgba(0, 0, 0, 0)";
+                        const hasAdWidgetContent = !!(el.querySelector("img, a[target='_blank'], iframe") || isTransparentOverlay || zIdx >= 99999);
+                        if (hasAdWidgetContent && (r.width >= 30 || r.height >= 30)) {
+                          el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                          el.remove();
+                          continue;
+                        }
+                      }
+                    }
+                  }
+                }
+
+                // 3. TreeWalker instantaneo solo si alguna frase scam aparecio dentro de un contenedor mas profundo
+                const bodyRaw = document.body.textContent || "";
+                if (/tu bono ha sido aprobado|obtener bonificaci|disponible €|€1500|transferir dinero|retirar dinero|no eres un robot|haz clic en el bot|reclama tu bono|going viral/i.test(bodyRaw)) {
+                  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+                  const toHide = [];
+                  let txtNode;
+                  while ((txtNode = walker.nextNode())) {
+                    const val = txtNode.nodeValue || "";
+                    if (val.length >= 6 && containsScamText(val)) {
+                      let box = txtNode.parentElement;
+                      while (
+                        box &&
+                        box.parentElement &&
+                        box.parentElement !== document.body &&
+                        box.parentElement !== document.documentElement &&
+                        !isProtectedAppOrPlayerElement(box.parentElement) &&
+                        (box.parentElement.textContent || "").length < 450
+                      ) {
+                        box = box.parentElement;
+                      }
+                      if (box && !isProtectedAppOrPlayerElement(box)) {
+                        toHide.push(box);
+                      }
+                    }
+                  }
+                  for (let k = 0; k < toHide.length; k++) {
+                    toHide[k].style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;width:0!important;height:0!important;";
+                    toHide[k].remove();
+                  }
+                }
+              } catch (_) {}
+            }
+
+            // Perforador de capas transparentes al hacer clic en Primeload / VOE:
+            // Si hay una capa vacia tapando el reproductor en el punto exacto donde pulso el usuario,
+            // desactiva pointer-events en esa capa para que el clic llegue directo a los controles del video.
+            function pierceTransparentOverlayAtPoint(clientX, clientY) {
+              if (isTopFrame || isChaturbate || isJkAnimeOrPlayer || isLiveCamRips || isOnlyJerk) return;
+              if (!clientX || !clientY || typeof document.elementsFromPoint !== "function") return;
+              try {
+                const stack = document.elementsFromPoint(clientX, clientY);
+                let playerIdx = -1;
+                for (let i = 0; i < stack.length; i++) {
+                  const item = stack[i];
+                  const tag = (item.tagName || "").toUpperCase();
+                  if (tag === "VIDEO" || tag === "BUTTON" ||
+                      (typeof item.className === "string" && /jw-|vjs-|plyr|art-|fp-/i.test(item.className))) {
+                    playerIdx = i;
+                    break;
+                  }
+                }
+                if (playerIdx > 0) {
+                  for (let j = 0; j < playerIdx; j++) {
+                    const topEl = stack[j];
+                    if (!topEl || isProtectedAppOrPlayerElement(topEl)) continue;
+                    const cls = (typeof topEl.className === "string") ? topEl.className.toLowerCase() : "";
+                    if (cls.includes("jw-") || cls.includes("vjs-") || cls.includes("plyr") || cls.includes("control") || cls.includes("play")) {
+                      continue;
+                    }
+                    const txt = (topEl.textContent || "").trim();
+                    const isBlankOverlay = (txt.length === 0 && !topEl.querySelector("svg, button"));
+                    const isExternalBlankLink = (topEl.tagName === "A" && (topEl.getAttribute("target") || "").toLowerCase() === "_blank");
+                    if (isBlankOverlay || isExternalBlankLink || containsScamText(txt)) {
+                      topEl.style.setProperty("pointer-events", "none", "important");
+                      topEl.style.setProperty("display", "none", "important");
+                      topEl.remove();
+                    }
+                  }
+                }
+              } catch (_) {}
             }
 
             function cleanJkAnimeSpecificAds() {
@@ -896,13 +1022,15 @@ jobs:
               if (!node || node.nodeType !== 1) return;
               try {
                 if (node.hasAttribute && node.hasAttribute("data-battv-shadow")) {
-                  const sr = node.shadowRoot;
-                  const insideLegit = node.closest && node.closest(
-                    "#root, #__next, #app, #page, #contenedor, #dt_contenedor, #video_box, #pframe, #player, .player, .video-player"
-                  );
-                  if (!insideLegit && (!sr || !sr.querySelector("video"))) {
-                    node.style.setProperty("display", "none", "important");
-                    node.remove();
+                  if (isJkAnimeOrPlayer || isLiveCamRips) {
+                    const sr = node.shadowRoot;
+                    if (!sr || !sr.querySelector("video")) {
+                      node.style.setProperty("display", "none", "important");
+                      node.remove();
+                      return;
+                    }
+                  } else {
+                    cleanDoramaAndPlayerOverlays();
                     return;
                   }
                 }
@@ -921,14 +1049,14 @@ jobs:
                 }
 
                 const txt = (node.textContent || "").trim();
-                if (txt.length > 6 && txt.length < 360 && containsScamText(txt)) {
+                if (txt.length > 6 && txt.length < 400 && containsScamText(txt)) {
                   let targetBox = node;
                   while (
                     targetBox.parentElement &&
                     targetBox.parentElement !== document.body &&
                     targetBox.parentElement !== document.documentElement &&
                     !isProtectedAppOrPlayerElement(targetBox.parentElement) &&
-                    (targetBox.parentElement.textContent || "").trim().length < 420
+                    (targetBox.parentElement.textContent || "").trim().length < 450
                   ) {
                     targetBox = targetBox.parentElement;
                   }
@@ -943,7 +1071,7 @@ jobs:
                   const cs = window.getComputedStyle(node);
                   if (cs.position === "fixed" || cs.position === "sticky") {
                     const r = node.getBoundingClientRect();
-                    if (r.width > 40 && r.width < 520 && r.height > 30 && r.height < 260) {
+                    if (r.width > 40 && r.width < 520 && r.height > 30 && r.height < 300) {
                       if (containsScamText(txt) || node.querySelector("a[target='_blank']")) {
                         node.style.setProperty("display", "none", "important");
                         node.remove();
@@ -957,17 +1085,15 @@ jobs:
             function nukeInPlayerScamOverlaysOnce() {
               if (isCleanLiveStreamSite) return;
               try {
-                unlockByseAndDoramaPlayButton();
+                cleanDoramaAndPlayerOverlays();
+                if (isOnlyJerk) {
+                  cleanOnlyJerkCloseAdWidget();
+                }
                 if (isLiveCamRips || isOnlyJerk) {
                   skipAndFastForwardPreRollAds();
                 }
                 if (isJkAnimeOrPlayer) {
                   cleanJkAnimeSpecificAds();
-                }
-
-                const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
-                for (let i = 0; i < shadowHosts.length; i++) {
-                  inspectNodeForScam(shadowHosts[i]);
                 }
 
                 const blankLinks = document.querySelectorAll("a[target='_blank']");
@@ -1161,7 +1287,7 @@ jobs:
               if (!v) return null;
               return v.closest(
                 ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, " +
-                ".fp-player, .dplayer, .clappr-player, #root, #kt_player, #video_box, #player, .player, .video-player, #main_video_container"
+                ".fp-player, .dplayer, .clappr-player, #root, #vplayer, #kt_player, #video_box, #player, .player, .video-player, #main_video_container"
               ) || v.parentElement || v;
             }
 
@@ -1174,7 +1300,7 @@ jobs:
                 const src = (f.getAttribute("src") || "").toLowerCase();
                 if (src.includes("vidoomy") || src.includes("viwom") || src.includes("exoclick") ||
                     src.includes("exosrv") || src.includes("adsterra") || src.includes("doubleclick") ||
-                    src.includes("disqus") || src.includes("facebook")) {
+                    src.includes("chatmate") || src.includes("disqus") || src.includes("facebook")) {
                   continue;
                 }
                 const r = f.getBoundingClientRect();
@@ -1322,15 +1448,20 @@ jobs:
               });
             }
 
-            document.addEventListener("pointerdown", function () {
+            document.addEventListener("pointerdown", function (e) {
               if (!isCleanLiveStreamSite) {
-                unlockByseAndDoramaPlayButton();
+                cleanDoramaAndPlayerOverlays();
+                pierceTransparentOverlayAtPoint(e.clientX || 0, e.clientY || 0);
+                if (isOnlyJerk) {
+                  cleanOnlyJerkCloseAdWidget();
+                }
               }
             }, true);
 
             document.addEventListener("click", function (e) {
               enableIframeFullscreenAndEagerLoad();
               if (!isCleanLiveStreamSite) {
+                pierceTransparentOverlayAtPoint(e.clientX || 0, e.clientY || 0);
                 nukeInPlayerScamOverlaysOnce();
               }
 
@@ -1356,6 +1487,7 @@ jobs:
 
               if (isOnlyJerk) {
                 setTimeout(enableIframeFullscreenAndEagerLoad, 120);
+                setTimeout(cleanOnlyJerkCloseAdWidget, 250);
                 setTimeout(enableIframeFullscreenAndEagerLoad, 450);
               }
 
@@ -1419,11 +1551,12 @@ jobs:
 
             setInterval(function () {
               try {
-                unlockByseAndDoramaPlayButton();
+                cleanDoramaAndPlayerOverlays();
                 if (isOtherProtectedSite) {
                   nukeInPlayerScamOverlaysOnce();
                 }
                 if (isOnlyJerk) {
+                  cleanOnlyJerkCloseAdWidget();
                   enableIframeFullscreenAndEagerLoad();
                 }
                 if (document.getElementsByTagName("video").length === 0) return;
@@ -1459,7 +1592,7 @@ jobs:
                   });
                 }
               } catch (_) {}
-            }, 900);
+            }, 700);
 
             if (isTopFrame) {
               function extractMediaMetadata() {
@@ -1542,13 +1675,16 @@ jobs:
               }
             }
 
-            // Restaurado a subtree: false en document.body para Doramasflix y DramaChino (igual que en v22.0)
-            // para que la carga de página sea instantánea sin saturar la CPU del televisor.
+            // Observador ultraligero en document.body (subtree: false en Doramasflix/DramaChino para velocidad maxima)
             function setupLightweightRootAdObserver() {
               if (isCleanLiveStreamSite) return;
               try {
                 const obs = new MutationObserver(function (mutations) {
-                  unlockByseAndDoramaPlayButton();
+                  if (!isOtherProtectedSite) {
+                    cleanDoramaAndPlayerOverlays();
+                  } else if (isOnlyJerk) {
+                    cleanOnlyJerkCloseAdWidget();
+                  }
                   for (let i = 0; i < mutations.length; i++) {
                     const added = mutations[i].addedNodes;
                     for (let j = 0; j < added.length; j++) {
