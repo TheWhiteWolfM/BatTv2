@@ -35,14 +35,14 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Actualizar a versionCode 28 (v5.3) y parchar dominios en Kotlin
+      - name: Actualizar a versionCode 29 (v5.4) y parchar dominios en Kotlin
         run: |
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
-          sed -i 's/versionCode [0-9]\+/versionCode 28/g' android-geckoview/app/build.gradle
-          sed -i 's/versionName "[^"]*"/versionName "5.3"/g' android-geckoview/app/build.gradle
-          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v28@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
-          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v28/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/versionCode [0-9]\+/versionCode 29/g' android-geckoview/app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "5.4"/g' android-geckoview/app/build.gradle
+          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v29@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v29/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
           import re
@@ -74,23 +74,37 @@ jobs:
               f.write(mgr)
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v28.0 (JSON-Prune Universal para BYSE y Filemoon + Resto Aislado)
+      - name: Generar Motor Nativo Ultraligero v29.0 (Modo Sigiloso BYSE/Filemoon + Surrogados Reales 200 OK)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v28"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v29"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
+
+          cat << 'EOF_NOOP_JS' > "$SHIELD_DIR/noop.js"
+          (function () {
+            "use strict";
+            try {
+              window.canRunAds = true;
+              window.isAdBlockActive = false;
+              window.adBlockEnabled = false;
+            } catch (_) {}
+          })();
+          EOF_NOOP_JS
+
+          printf 'ok\n' > "$SHIELD_DIR/noop.txt"
+          printf '<VAST version="3.0"></VAST>\n' > "$SHIELD_DIR/vast.xml"
 
           cat << 'EOF_MANIFEST' > "$SHIELD_DIR/manifest.json"
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "28.0.0",
-            "description": "Poda JSON universal (adblock_detection/force_disable_adblock) y deteccion dinamica para BYSE y Filemoon en cualquier dominio rotativo.",
+            "version": "29.0.0",
+            "description": "Modo sigiloso sin destruccion DOM para BYSE y Filemoon con surrogados reales 200 OK y aislamiento del resto de sitios.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v28@battv.browser",
+                "id": "shield_v29@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -103,6 +117,11 @@ jobs:
               "nativeMessaging",
               "nativeMessagingFromContent",
               "geckoViewAddons"
+            ],
+            "web_accessible_resources": [
+              "noop.js",
+              "noop.txt",
+              "vast.xml"
             ],
             "background": {
               "scripts": ["background.js"]
@@ -122,6 +141,16 @@ jobs:
           cat << 'EOF_BG' > "$SHIELD_DIR/background.js"
           (function () {
             "use strict";
+
+            const NOOP_JS_URL = (typeof browser !== "undefined" && browser.runtime && browser.runtime.getURL)
+              ? browser.runtime.getURL("noop.js")
+              : "";
+            const NOOP_TXT_URL = (typeof browser !== "undefined" && browser.runtime && browser.runtime.getURL)
+              ? browser.runtime.getURL("noop.txt")
+              : "";
+            const VAST_XML_URL = (typeof browser !== "undefined" && browser.runtime && browser.runtime.getURL)
+              ? browser.runtime.getURL("vast.xml")
+              : "";
 
             const BLOCKED_AD_DOMAINS = [
               "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
@@ -196,6 +225,7 @@ jobs:
             ];
 
             const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/fingerprint-sw\.js|\/aclib\.js|\/tag\.min\.js|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|rotator-marketing|marketingg\.com|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
+            const ANTI_DEVTOOL_REGEX = /(disable-devtool|devtools-detector|devtools-detect|fuckadblock|blockadblock)/i;
             const VAST_PREROLL_REGEX = /([?&/](vast|preroll|midroll|postroll|ad_tag|adtag|vmap)([=&/.?_]|$)|syndication\.|splash\.php)/i;
 
             function getBaseBrand(hostname) {
@@ -226,22 +256,21 @@ jobs:
                       ? new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "")
                       : "";
 
-                    // 1. Impedir redireccion a /adblock.html en cualquier dominio de Byse/Filemoon
+                    // 1. Impedir redireccion a /adblock.html
                     if (/\/adblock\.html(\?|$)/i.test(parsed.pathname)) {
                       return { cancel: true };
                     }
 
-                    // 2. Devolver XML VAST vacio en anuncios Pre-Roll
-                    if (details.type === "xmlhttprequest" && VAST_PREROLL_REGEX.test(rawUrl)) {
-                      return {
-                        redirectUrl: "data:text/xml;charset=utf-8," + encodeURIComponent('<VAST version="3.0"></VAST>')
-                      };
+                    // 2. Neutralizar scripts anti-devtools / anti-adblock devolviendo noop.js (200 OK real)
+                    if (details.type === "script" && ANTI_DEVTOOL_REGEX.test(rawUrl) && NOOP_JS_URL) {
+                      return { redirectUrl: NOOP_JS_URL };
                     }
 
-                    // 3. Bloquear dominios publicitarios y firmas de popups.
-                    //    En CUALQUIER iframe de video (frameId > 0) fuera de los sitios aislados,
-                    //    devolvemos 200 OK vacio en scripts/XHR para que los dominios rotativos de
-                    //    BYSE y Filemoon no disparen el apagado anti-adblock al segundo siguiente.
+                    // 3. Devolver vast.xml vacio (200 OK real) en anuncios Pre-Roll
+                    if (details.type === "xmlhttprequest" && VAST_PREROLL_REGEX.test(rawUrl)) {
+                      return VAST_XML_URL ? { redirectUrl: VAST_XML_URL } : { cancel: true };
+                    }
+
                     const isIsolatedSite = docHost.includes("chaturbate.com") ||
                                            docHost.includes("jkanime.") ||
                                            docHost.includes("jkdesu.") ||
@@ -249,19 +278,22 @@ jobs:
                                            docHost.includes("livecamrip") ||
                                            docHost.includes("onlyjerk.");
 
+                    // 4. Bloquear dominios publicitarios conocidos.
+                    //    Dentro de iframes de video (BYSE/Filemoon/etc.), usar surrogados reales moz-extension://
+                    //    (200 OK sin error CSP ni CORS) para que el detector anti-adblock nunca apague el reproductor.
                     if (isHostInList(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl) || VAST_PREROLL_REGEX.test(rawUrl)) {
                       if (details.frameId > 0 && !isIsolatedSite) {
-                        if (details.type === "script") {
-                          return { redirectUrl: "data:application/javascript;charset=utf-8," };
+                        if (details.type === "script" && NOOP_JS_URL) {
+                          return { redirectUrl: NOOP_JS_URL };
                         }
-                        if (details.type === "xmlhttprequest") {
-                          return { redirectUrl: "data:text/plain;charset=utf-8,ok" };
+                        if (details.type === "xmlhttprequest" && NOOP_TXT_URL) {
+                          return { redirectUrl: NOOP_TXT_URL };
                         }
                       }
                       return { cancel: true };
                     }
 
-                    // 4. Cortafuegos de scripts y sub-iframes externos en sitios raiz protegidos
+                    // 5. Cortafuegos de scripts y sub-iframes externos en sitios raiz protegidos
                     //    + Primeload, Dood (todos sus espejos) y Streamtape
                     if (docHost && (details.type === "script" || details.type === "sub_frame")) {
                       if (docHost.includes("chaturbate.com") || docHost.includes("onlyjerk.")) {
@@ -295,8 +327,8 @@ jobs:
                               !isHostInList(reqHost, ALLOWED_TECH_CDNS) &&
                               !isHostInList(reqHost, PROTECTED_ROOT_SITES) &&
                               !isHostInList(reqHost, STRICT_PLAYER_AD_HOSTS)) {
-                            if (isStrictAdPlayer) {
-                              return { redirectUrl: "data:application/javascript;charset=utf-8," };
+                            if (isStrictAdPlayer && NOOP_JS_URL) {
+                              return { redirectUrl: NOOP_JS_URL };
                             }
                             return { cancel: true };
                           }
@@ -373,26 +405,9 @@ jobs:
               return currentHost === d || currentHost.endsWith("." + d);
             });
 
-            // Deteccion dinamica de BYSE / Filemoon (funciona aunque cambien a cualquier dominio personalizado nuevo)
-            function isByseOrFilemoonFrame() {
-              if (currentHost.includes("byse") || currentHost.includes("filemoon") ||
-                  currentHost.includes("moonmov") || currentHost.includes("f16px") ||
-                  currentHost.includes("f75s") || currentHost.includes("g9r6") ||
-                  currentHost.includes("dramathical") || currentHost.includes("arbitrarydecisions") ||
-                  currentHost.includes("0vg9r")) {
-                return true;
-              }
-              if (document.documentElement && document.documentElement.getAttribute("data-battv-byse") === "1") {
-                return true;
-              }
-              if (!isTopFrame && document.body && document.body.classList.contains("video-embed-mode")) {
-                return true;
-              }
-              if (!isTopFrame && !isKnownNonByseEmbed && !isOtherProtectedSite && document.getElementById("root")) {
-                return true;
-              }
-              return false;
-            }
+            // Cualquier iframe de video que NO pertenezca a los sitios aislados ni a Primeload/Dood/VOE/Streamtape/Streamwish
+            // entra en Modo Sigiloso BYSE/Filemoon (cubre todos sus dominios rotativos y personalizados sin excepcion).
+            const isByseStealthEmbed = !isTopFrame && !isCleanLiveStreamSite && !isOtherProtectedSite && !isKnownNonByseEmbed;
 
             function injectTvStyles() {
               try {
@@ -441,7 +456,9 @@ jobs:
                   }
                 ` : "";
 
-                const adHideCss = isCleanLiveStreamSite ? `
+                // En Modo Sigiloso BYSE/Filemoon NO inyectamos reglas CSS que oculten elementos cebo
+                // (ins.adsbygoogle, adsterra, popunder) para no disparar detecciones CSS de adblock.
+                const adHideCss = isByseStealthEmbed ? "" : (isCleanLiveStreamSite ? `
                   .chat-holder, .chat-box, #chat, .msg-list-wrapper, .room-list, .endless_page_template {
                     contain: layout style paint !important;
                   }
@@ -486,7 +503,7 @@ jobs:
                     backdrop-filter: none !important;
                     -webkit-backdrop-filter: none !important;
                   }
-                `;
+                `);
 
                 style.textContent = adHideCss + `
                   video, iframe {
@@ -676,23 +693,51 @@ jobs:
                       }
                     } catch(_) {}
                   })();`;
-                } else if (!isCleanLiveStreamSite) {
-                  // Rama para Doramasflix, DramaChino y sus reproductores (BYSE, Filemoon, Primeload, Dood, VOE, Streamtape, Streamwish):
-                  // 1. Poda JSON universal (regla oficial AdGuard/uBlock: json-prune 'adblock_detection force_disable_adblock')
-                  //    en JSON.parse y Response.prototype.json para cualquier dominio personalizado o rotativo de BYSE/Filemoon.
-                  // 2. Marca data-battv-byse="1" automaticamente al detectar /api/videos/ o /embed/settings o claves adblock_detection.
-                  // 3. NO toca attachShadow en iframes que puedan ser BYSE/Filemoon (solo en Primeload/VOE/Dood/Streamtape conocidos).
+                } else if (isByseStealthEmbed) {
+                  // MODO SIGILOSO EXCLUSIVO PARA BYSE Y FILEMOON (cubre cualquier dominio rotativo):
+                  // 1. Camufla todas las funciones como [native code] para pasar verificaciones anti-tamper.
+                  // 2. Neutraliza disable-devtool (outerWidth/outerHeight y DisableDevtool global).
+                  // 3. Poda a false las claves adblock_detection / force_disable_adblock en respuestas JSON.
+                  // 4. Impide el borrado de document.body.innerHTML = "" si algun detector intenta apagar la pantalla.
+                  // 5. No congela propiedades con configurable:false ni toca attachShadow.
                   s.textContent = `(function(){
                     try {
-                      const markByseFrame = function() {
+                      const spoofNative = function(fn, name) {
                         try {
-                          if (document.documentElement) {
-                            document.documentElement.setAttribute("data-battv-byse", "1");
-                          }
+                          Object.defineProperty(fn, "toString", {
+                            value: function() { return "function " + name + "() { [native code] }"; },
+                            configurable: true,
+                            writable: true
+                          });
                         } catch (_) {}
+                        return fn;
                       };
 
-                      const PRUNE_KEYS = new Set([
+                      // 1. Neutralizar disable-devtool (detector de tamano de ventana y global)
+                      try {
+                        Object.defineProperty(window, "outerWidth", {
+                          get: function() { return window.innerWidth; },
+                          configurable: true
+                        });
+                        Object.defineProperty(window, "outerHeight", {
+                          get: function() { return window.innerHeight; },
+                          configurable: true
+                        });
+                      } catch (_) {}
+
+                      const noopDevtool = function() { return { isRunning: false, isSuspend: true }; };
+                      noopDevtool.isRunning = false;
+                      noopDevtool.isSuspend = true;
+                      try {
+                        Object.defineProperty(window, "DisableDevtool", {
+                          get: function() { return noopDevtool; },
+                          set: function() {},
+                          configurable: true
+                        });
+                      } catch (_) {}
+
+                      // 2. Poda segura a false de banderas anti-adblock en JSON de configuracion
+                      const BOOL_DISABLE_KEYS = new Set([
                         "adblock_detection",
                         "force_disable_adblock",
                         "adblock_detect",
@@ -701,11 +746,11 @@ jobs:
                         "detect_adblock"
                       ]);
 
-                      function pruneAdblockConfig(obj, depth) {
+                      function sanitizeEmbedConfig(obj, depth) {
                         if (!obj || typeof obj !== "object" || depth > 7) return obj;
                         if (Array.isArray(obj)) {
                           for (let i = 0; i < obj.length; i++) {
-                            pruneAdblockConfig(obj[i], depth + 1);
+                            sanitizeEmbedConfig(obj[i], depth + 1);
                           }
                           return obj;
                         }
@@ -713,64 +758,105 @@ jobs:
                         for (let k = 0; k < keys.length; k++) {
                           const key = keys[k];
                           const low = key.toLowerCase();
-                          if (PRUNE_KEYS.has(low)) {
-                            markByseFrame();
-                            delete obj[key];
+                          if (BOOL_DISABLE_KEYS.has(low)) {
+                            obj[key] = false;
                             continue;
                           }
                           const val = obj[key];
                           if (val && typeof val === "object") {
-                            pruneAdblockConfig(val, depth + 1);
+                            sanitizeEmbedConfig(val, depth + 1);
                           }
                         }
                         return obj;
                       }
 
-                      // A. Hook ligero sobre JSON.parse (solo inspecciona si el texto contiene "adblock")
                       const origJsonParse = JSON.parse;
-                      JSON.parse = function(text, reviver) {
-                        const result = origJsonParse.apply(this, arguments);
+                      JSON.parse = spoofNative(function(text, reviver) {
+                        const res = origJsonParse.apply(this, arguments);
                         try {
                           if (typeof text === "string" && text.length < 150000 && text.toLowerCase().indexOf("adblock") !== -1) {
-                            pruneAdblockConfig(result, 0);
+                            sanitizeEmbedConfig(res, 0);
                           }
                         } catch (_) {}
-                        return result;
-                      };
+                        return res;
+                      }, "parse");
 
-                      // B. Hook sobre Response.prototype.json (cubre fetch('/api/videos/.../embed/settings') de BYSE/Filemoon)
                       if (window.Response && Response.prototype && typeof Response.prototype.json === "function") {
                         const origRespJson = Response.prototype.json;
-                        Response.prototype.json = function() {
-                          const respUrl = (this && this.url) ? String(this.url) : "";
-                          if (/\/api\/videos\/|\/embed\/settings/i.test(respUrl)) {
-                            markByseFrame();
-                          }
+                        Response.prototype.json = spoofNative(function() {
                           return origRespJson.apply(this, arguments).then(function(data) {
                             try {
                               if (data && typeof data === "object") {
-                                pruneAdblockConfig(data, 0);
+                                sanitizeEmbedConfig(data, 0);
                               }
                             } catch (_) {}
                             return data;
                           });
-                        };
+                        }, "json");
                       }
 
-                      // C. Detectar XHR hacia la API de BYSE/Filemoon
-                      if (window.XMLHttpRequest && XMLHttpRequest.prototype) {
-                        const origXhrOpen = XMLHttpRequest.prototype.open;
-                        XMLHttpRequest.prototype.open = function(method, url) {
+                      // 3. Escudo contra borrado de pantalla completa (document.body.innerHTML = "")
+                      const innerHtmlDesc = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
+                      if (innerHtmlDesc && innerHtmlDesc.set) {
+                        const origInnerHtmlSet = innerHtmlDesc.set;
+                        Object.defineProperty(Element.prototype, "innerHTML", {
+                          get: innerHtmlDesc.get,
+                          set: function(val) {
+                            try {
+                              if ((this === document.body || this === document.documentElement) &&
+                                  typeof val === "string" && val.trim().length === 0 &&
+                                  this.querySelector && this.querySelector("video, #root, #app, #vplayer, #player, .jwplayer, .plyr, .video-js")) {
+                                return;
+                              }
+                            } catch (_) {}
+                            return origInnerHtmlSet.call(this, val);
+                          },
+                          configurable: true
+                        });
+                      }
+
+                      // 4. Escudo fetch() discreto para sondeos publicitarios no-cors
+                      const origFetch = window.fetch;
+                      const AD_PROBE_REGEX = /(googlesyndication|doubleclick|pagead|popads|adsterra|exoclick|exosrv|acscdn|monetag|propellerads|adblock|ads\.js|prebid)/i;
+                      if (typeof origFetch === "function") {
+                        window.fetch = spoofNative(function(input, init) {
                           try {
-                            if (typeof url === "string" && /\/api\/videos\/|\/embed\/settings/i.test(url)) {
-                              markByseFrame();
+                            const urlStr = (typeof input === "string") ? input : (input && input.url ? String(input.url) : "");
+                            if (AD_PROBE_REGEX.test(urlStr)) {
+                              return Promise.resolve(new Response("", { status: 200, statusText: "OK" }));
+                            }
+                            if (init && init.mode === "no-cors") {
+                              return origFetch.apply(this, arguments).catch(function() {
+                                return new Response("", { status: 200, statusText: "OK" });
+                              });
                             }
                           } catch (_) {}
-                          return origXhrOpen.apply(this, arguments);
-                        };
+                          return origFetch.apply(this, arguments);
+                        }, "fetch");
                       }
 
-                      // D. Bloquear window.open (cero popups)
+                      // 5. Ventana simulada configurable y camuflada como [native code]
+                      const dummyWin = {
+                        closed: false,
+                        opener: window,
+                        focus: function(){},
+                        blur: function(){},
+                        close: function(){ this.closed = true; },
+                        postMessage: function(){},
+                        addEventListener: function(){},
+                        location: { href: "about:blank", assign: function(){}, replace: function(){} }
+                      };
+                      window.open = spoofNative(function() { return dummyWin; }, "open");
+
+                      window.canRunAds = true;
+                      window.isAdBlockActive = false;
+                      window.adBlockEnabled = false;
+                    } catch(_) {}
+                  })();`;
+                } else if (!isCleanLiveStreamSite) {
+                  // Rama intacta para Doramasflix/DramaChino (marco principal) y Primeload, Dood, VOE, Streamtape, Streamwish
+                  s.textContent = `(function(){
+                    try {
                       const dummyWin = {
                         closed: false,
                         opener: window,
@@ -793,54 +879,7 @@ jobs:
                         configurable: false
                       });
 
-                      // E. Escudo fetch() contra sondeos anti-adblock
-                      const origFetch = window.fetch;
-                      const AD_PROBE_REGEX = /(googlesyndication|doubleclick|pagead|popads|adsterra|exoclick|exosrv|acscdn|monetag|propellerads|adblock|ads\.js|prebid)/i;
-                      if (typeof origFetch === "function") {
-                        window.fetch = function(input, init) {
-                          try {
-                            const urlStr = (typeof input === "string") ? input : (input && input.url ? String(input.url) : "");
-                            if (/\/api\/videos\/|\/embed\/settings/i.test(urlStr)) {
-                              markByseFrame();
-                            }
-                            if (AD_PROBE_REGEX.test(urlStr)) {
-                              return Promise.resolve(new Response("", { status: 200, statusText: "OK" }));
-                            }
-                            if (init && init.mode === "no-cors") {
-                              return origFetch.apply(this, arguments).catch(function() {
-                                return new Response("", { status: 200, statusText: "OK" });
-                              });
-                            }
-                          } catch (_) {}
-                          return origFetch.apply(this, arguments);
-                        };
-                      }
-
-                      // F. Neutralizar temporizadores anti-adblock / anti-devtools
-                      const ANTI_ADB_FN_REGEX = /(adblock\.html|adblockdetected|adblock_detection|force_disable_adblock|disable-devtool|no\s*ads\s*no\s*video|force\s*disable\s*adblock|disable\s*your\s*adblock)/i;
-                      const origSetTimeout = window.setTimeout;
-                      window.setTimeout = function(fn, delay) {
-                        try {
-                          const fnStr = (typeof fn === "function") ? Function.prototype.toString.call(fn) : String(fn || "");
-                          if (ANTI_ADB_FN_REGEX.test(fnStr)) {
-                            return 0;
-                          }
-                        } catch (_) {}
-                        return origSetTimeout.apply(this, arguments);
-                      };
-
-                      const origSetInterval = window.setInterval;
-                      window.setInterval = function(fn, delay) {
-                        try {
-                          const fnStr = (typeof fn === "function") ? Function.prototype.toString.call(fn) : String(fn || "");
-                          if (ANTI_ADB_FN_REGEX.test(fnStr)) {
-                            return 0;
-                          }
-                        } catch (_) {}
-                        return origSetInterval.apply(this, arguments);
-                      };
-
-                      const adGlobals = ["atOptions", "_pop", "popns", "exoOpts", "adsbyvidoomy", "pJSDom", "__Y", "adcashMacros", "force_disable_adblock"];
+                      const adGlobals = ["atOptions", "_pop", "popns", "exoOpts", "adsbyvidoomy", "pJSDom", "__Y", "adcashMacros"];
                       for (let i = 0; i < adGlobals.length; i++) {
                         try {
                           Object.defineProperty(window, adGlobals[i], {
@@ -850,14 +889,6 @@ jobs:
                           });
                         } catch (_) {}
                       }
-
-                      try {
-                        Object.defineProperty(window, "adblock_detection", {
-                          get: function() { return false; },
-                          set: function() {},
-                          configurable: false
-                        });
-                      } catch (_) {}
 
                       window.canRunAds = true;
                       window.isAdBlockActive = false;
@@ -880,23 +911,13 @@ jobs:
                       window.BlockAdBlock = function() { return fakeAdBlockDetector; };
                       window.FuckAdBlock = function() { return fakeAdBlockDetector; };
 
-                      // Solo abrir Shadow DOM en reproductores conocidos que usan Social Bar (Primeload, VOE, Dood, Streamtape)
-                      // NUNCA tocar attachShadow en dominios desconocidos/rotativos donde corre BYSE/Filemoon
-                      const hostLow = (location.hostname || "").toLowerCase();
-                      const allowShadowInspect = hostLow.includes("doramasflix") || hostLow.includes("dramachino") ||
-                                                 hostLow.includes("primeload") || hostLow.includes("voe.") ||
-                                                 hostLow.includes("dood") || hostLow.includes("d000d") ||
-                                                 hostLow.includes("dsvplay") || hostLow.includes("myvidplay") ||
-                                                 hostLow.includes("streamtape") || hostLow.includes("strtape");
-                      if (allowShadowInspect) {
-                        const origAttachShadow = Element.prototype.attachShadow;
-                        if (origAttachShadow) {
-                          Element.prototype.attachShadow = function(init) {
-                            const root = origAttachShadow.call(this, { mode: "open" });
-                            this.setAttribute("data-battv-shadow", "1");
-                            return root;
-                          };
-                        }
+                      const origAttachShadow = Element.prototype.attachShadow;
+                      if (origAttachShadow) {
+                        Element.prototype.attachShadow = function(init) {
+                          const root = origAttachShadow.call(this, { mode: "open" });
+                          this.setAttribute("data-battv-shadow", "1");
+                          return root;
+                        };
                       }
                     } catch(_) {}
                   })();`;
@@ -960,7 +981,7 @@ jobs:
             const PREROLL_AD_TEXT_REGEX = /(este anuncio terminar[aá] en|this ad will end in|anuncio\s*:\s*0:|ad\s+will\s+end|skip\s+ad|saltar\s+anuncio)/i;
 
             function skipAndFastForwardPreRollAds() {
-              if (isChaturbate || isDoramaTopSite || isByseOrFilemoonFrame()) return;
+              if (isChaturbate || isDoramaTopSite || isByseStealthEmbed) return;
               try {
                 const adLayers = document.querySelectorAll(
                   ".vast_clickthrough_layer, .fluid_ad_cta, .fluid_ad_playing, .vjs-ad-playing .vjs-tech, " +
@@ -1099,10 +1120,7 @@ jobs:
               "limpia tu",
               "haz clic en \"más\"",
               "haz clic en 'más'",
-              "bono de bienvenida",
-              "desactiva tu adblock",
-              "disable your adblock",
-              "adblocker detected"
+              "bono de bienvenida"
             ];
 
             function containsScamText(str) {
@@ -1161,37 +1179,31 @@ jobs:
               return false;
             }
 
-            // Limpiador seguro para Doramasflix, Primeload, Dood, VOE y Streamtape:
-            // - Si el frame es BYSE o Filemoon (detectado dinamicamente), JAMAS borra contenedores
-            //   por tener X o position:fixed; solo elimina texto scam explicito si aparece.
+            // Limpiador solo para Doramasflix/DramaChino (top) y Primeload, Dood, VOE, Streamtape, Streamwish.
+            // JAMAS se ejecuta dentro de BYSE/Filemoon (isByseStealthEmbed).
             function cleanDoramaAndPlayerOverlays() {
-              if (isChaturbate || isJkAnimeOrPlayer || isLiveCamRips || isOnlyJerk || !document.body) return;
-              const onByse = isByseOrFilemoonFrame();
+              if (isByseStealthEmbed || isChaturbate || isJkAnimeOrPlayer || isLiveCamRips || isOnlyJerk || !document.body) return;
               try {
-                // 1. Revisar Shadow DOMs de anuncios (Social Bar en VOE/Primeload/Dood)
-                if (!onByse) {
-                  const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
-                  for (let s = shadowHosts.length - 1; s >= 0; s--) {
-                    const host = shadowHosts[s];
-                    if (!host || !host.isConnected || isProtectedAppOrPlayerElement(host)) continue;
-                    const sr = host.shadowRoot;
-                    if (!sr || sr.querySelector("video, iframe")) continue;
-                    const dump = (sr.textContent || "") + " " + (sr.innerHTML || "");
-                    const isFloatingAdShadow = containsScamText(dump) ||
-                      dump.includes("border-radius: 50%") ||
-                      dump.includes("border-radius:50%") ||
-                      dump.includes("×") ||
-                      dump.includes("✕") ||
-                      dump.includes('target="_blank"') ||
-                      dump.includes("target='_blank'");
-                    if (isFloatingAdShadow) {
-                      host.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
-                      host.remove();
-                    }
+                const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
+                for (let s = shadowHosts.length - 1; s >= 0; s--) {
+                  const host = shadowHosts[s];
+                  if (!host || !host.isConnected || isProtectedAppOrPlayerElement(host)) continue;
+                  const sr = host.shadowRoot;
+                  if (!sr || sr.querySelector("video, iframe")) continue;
+                  const dump = (sr.textContent || "") + " " + (sr.innerHTML || "");
+                  const isFloatingAdShadow = containsScamText(dump) ||
+                    dump.includes("border-radius: 50%") ||
+                    dump.includes("border-radius:50%") ||
+                    dump.includes("×") ||
+                    dump.includes("✕") ||
+                    dump.includes('target="_blank"') ||
+                    dump.includes("target='_blank'");
+                  if (isFloatingAdShadow) {
+                    host.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                    host.remove();
                   }
                 }
 
-                // 2. Revisar hijos directos de document.body
                 const rootChildren = document.body.children;
                 for (let i = rootChildren.length - 1; i >= 0; i--) {
                   const el = rootChildren[i];
@@ -1204,8 +1216,7 @@ jobs:
                     continue;
                   }
 
-                  // Solo en reproductores conocidos que NO son BYSE/Filemoon (Primeload, Dood, VOE, Streamtape)
-                  if (isKnownNonByseEmbed && !onByse) {
+                  if (isKnownNonByseEmbed) {
                     const cs = window.getComputedStyle(el);
                     const pos = cs.position;
                     const zIdx = parseInt(cs.zIndex, 10) || 0;
@@ -1219,7 +1230,6 @@ jobs:
                   }
                 }
 
-                // 3. TreeWalker instantaneo solo cuando existe texto de anuncio confirmado
                 const bodyRaw = document.body.textContent || "";
                 if (/tengo 18 a|soy mayor de 18|i am 18|aventura sexy|empieza ahora|tu bono ha sido aprobado|obtener bonificaci|disponible €|€1500|transferir dinero|retirar dinero|no eres un robot|haz clic en el bot|reclama tu bono|going viral/i.test(bodyRaw)) {
                   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
@@ -1252,9 +1262,8 @@ jobs:
               } catch (_) {}
             }
 
-            // Perforador no destructivo solo para Primeload / VOE / Dood / Streamtape (nunca toca BYSE/Filemoon)
             function pierceTransparentOverlayAtPoint(clientX, clientY) {
-              if (!isKnownNonByseEmbed || isByseOrFilemoonFrame() || isChaturbate || isOtherProtectedSite) return;
+              if (!isKnownNonByseEmbed || isByseStealthEmbed || isChaturbate || isOtherProtectedSite) return;
               if (!clientX || !clientY || typeof document.elementsFromPoint !== "function") return;
               try {
                 const stack = document.elementsFromPoint(clientX, clientY);
@@ -1324,8 +1333,7 @@ jobs:
             }
 
             function inspectNodeForScam(node) {
-              if (!node || node.nodeType !== 1) return;
-              const onByse = isByseOrFilemoonFrame();
+              if (!node || node.nodeType !== 1 || isByseStealthEmbed) return;
               try {
                 if (node.hasAttribute && node.hasAttribute("data-battv-shadow")) {
                   if (isJkAnimeOrPlayer || isLiveCamRips) {
@@ -1335,14 +1343,14 @@ jobs:
                       node.remove();
                       return;
                     }
-                  } else if (!onByse) {
+                  } else {
                     cleanDoramaAndPlayerOverlays();
                     return;
                   }
                 }
                 if (isProtectedAppOrPlayerElement(node)) return;
 
-                if (node.tagName === "A" && (node.getAttribute("target") || "").toLowerCase() === "_blank" && !isOnlyJerk && !onByse) {
+                if (node.tagName === "A" && (node.getAttribute("target") || "").toLowerCase() === "_blank" && !isOnlyJerk) {
                   const href = (node.getAttribute("href") || "").trim();
                   if (href.startsWith("http")) {
                     const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
@@ -1373,7 +1381,7 @@ jobs:
                   return;
                 }
 
-                if (node.parentElement === document.body && !onByse) {
+                if (node.parentElement === document.body) {
                   const cs = window.getComputedStyle(node);
                   if (cs.position === "fixed" || cs.position === "sticky") {
                     const r = node.getBoundingClientRect();
@@ -1389,8 +1397,7 @@ jobs:
             }
 
             function nukeInPlayerScamOverlaysOnce() {
-              if (isCleanLiveStreamSite) return;
-              const onByse = isByseOrFilemoonFrame();
+              if (isCleanLiveStreamSite || isByseStealthEmbed) return;
               try {
                 cleanDoramaAndPlayerOverlays();
                 if (isOnlyJerk) {
@@ -1403,29 +1410,27 @@ jobs:
                   cleanJkAnimeSpecificAds();
                 }
 
-                if (!onByse) {
-                  const blankLinks = document.querySelectorAll("a[target='_blank']");
-                  for (let j = blankLinks.length - 1; j >= 0; j--) {
-                    const el = blankLinks[j];
-                    if (el.classList.contains("servers") || el.closest(".servers, .bg-servers, .dropdown-menu")) {
-                      el.removeAttribute("target");
-                      continue;
-                    }
-                    const href = (el.getAttribute("href") || "").trim();
-                    if (!href || href === "#" || href.startsWith("javascript:")) {
-                      el.removeAttribute("target");
-                      continue;
-                    }
-                    try {
-                      const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
-                      if (dstHost === currentHost || dstHost.endsWith("." + currentHost)) {
-                        el.removeAttribute("target");
-                      } else if (!isOnlyJerk) {
-                        el.style.setProperty("display", "none", "important");
-                        el.remove();
-                      }
-                    } catch (_) {}
+                const blankLinks = document.querySelectorAll("a[target='_blank']");
+                for (let j = blankLinks.length - 1; j >= 0; j--) {
+                  const el = blankLinks[j];
+                  if (el.classList.contains("servers") || el.closest(".servers, .bg-servers, .dropdown-menu")) {
+                    el.removeAttribute("target");
+                    continue;
                   }
+                  const href = (el.getAttribute("href") || "").trim();
+                  if (!href || href === "#" || href.startsWith("javascript:")) {
+                    el.removeAttribute("target");
+                    continue;
+                  }
+                  try {
+                    const dstHost = new URL(href, location.href).hostname.toLowerCase().replace(/^www\./, "");
+                    if (dstHost === currentHost || dstHost.endsWith("." + currentHost)) {
+                      el.removeAttribute("target");
+                    } else if (!isOnlyJerk) {
+                      el.style.setProperty("display", "none", "important");
+                      el.remove();
+                    }
+                  } catch (_) {}
                 }
 
                 if (document.body) {
@@ -1759,7 +1764,7 @@ jobs:
             }
 
             document.addEventListener("pointerdown", function (e) {
-              if (!isCleanLiveStreamSite) {
+              if (!isCleanLiveStreamSite && !isByseStealthEmbed) {
                 cleanDoramaAndPlayerOverlays();
                 pierceTransparentOverlayAtPoint(e.clientX || 0, e.clientY || 0);
                 if (isOnlyJerk) {
@@ -1770,7 +1775,7 @@ jobs:
 
             document.addEventListener("click", function (e) {
               enableIframeFullscreenAndEagerLoad();
-              if (!isCleanLiveStreamSite) {
+              if (!isCleanLiveStreamSite && !isByseStealthEmbed) {
                 pierceTransparentOverlayAtPoint(e.clientX || 0, e.clientY || 0);
                 nukeInPlayerScamOverlaysOnce();
               }
@@ -1861,13 +1866,15 @@ jobs:
 
             setInterval(function () {
               try {
-                cleanDoramaAndPlayerOverlays();
-                if (isOtherProtectedSite) {
-                  nukeInPlayerScamOverlaysOnce();
-                }
-                if (isOnlyJerk) {
-                  cleanOnlyJerkCloseAdWidget();
-                  enableIframeFullscreenAndEagerLoad();
+                if (!isByseStealthEmbed) {
+                  cleanDoramaAndPlayerOverlays();
+                  if (isOtherProtectedSite) {
+                    nukeInPlayerScamOverlaysOnce();
+                  }
+                  if (isOnlyJerk) {
+                    cleanOnlyJerkCloseAdWidget();
+                    enableIframeFullscreenAndEagerLoad();
+                  }
                 }
                 if (document.getElementsByTagName("video").length === 0) return;
                 const v = findActiveVideo();
@@ -1925,7 +1932,7 @@ jobs:
                 ensureBridgeConnected();
                 extractMediaMetadata();
                 enableIframeFullscreenAndEagerLoad();
-                if (!isCleanLiveStreamSite) {
+                if (!isCleanLiveStreamSite && !isByseStealthEmbed) {
                   nukeInPlayerScamOverlaysOnce();
                 }
               });
@@ -1986,7 +1993,7 @@ jobs:
             }
 
             function setupLightweightRootAdObserver() {
-              if (isCleanLiveStreamSite) return;
+              if (isCleanLiveStreamSite || isByseStealthEmbed) return;
               try {
                 const obs = new MutationObserver(function (mutations) {
                   if (!isOtherProtectedSite) {
@@ -2032,14 +2039,14 @@ jobs:
               document.addEventListener("DOMContentLoaded", function () {
                 injectTvStyles();
                 enableIframeFullscreenAndEagerLoad();
-                if (!isCleanLiveStreamSite) {
+                if (!isCleanLiveStreamSite && !isByseStealthEmbed) {
                   nukeInPlayerScamOverlaysOnce();
                 }
               });
             } else {
               injectTvStyles();
               enableIframeFullscreenAndEagerLoad();
-              if (!isCleanLiveStreamSite) {
+              if (!isCleanLiveStreamSite && !isByseStealthEmbed) {
                 nukeInPlayerScamOverlaysOnce();
               }
             }
@@ -2047,6 +2054,7 @@ jobs:
           EOF_CONTENT
 
           python3 -m json.tool "$SHIELD_DIR/manifest.json" > /dev/null
+          node --check "$SHIELD_DIR/noop.js"
           node --check "$SHIELD_DIR/background.js"
           node --check "$SHIELD_DIR/content_start.js"
           ls -la "$SHIELD_DIR"
