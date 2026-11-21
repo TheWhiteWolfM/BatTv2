@@ -48,14 +48,14 @@ jobs:
           -keep class com.battv.browser.** { *; }
           EOF_PROGUARD
 
-      - name: Actualizar a versionCode 30 (v5.5), activar R8 y cierre completo en Kotlin
+      - name: Actualizar a versionCode 31 (v5.6), activar R8, skip-to-next-key-frame y cierre completo
         run: |
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
-          sed -i 's/versionCode [0-9]\+/versionCode 30/g' android-geckoview/app/build.gradle
-          sed -i 's/versionName "[^"]*"/versionName "5.5"/g' android-geckoview/app/build.gradle
-          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v30@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
-          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v30/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/versionCode [0-9]\+/versionCode 31/g' android-geckoview/app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "5.6"/g' android-geckoview/app/build.gradle
+          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v31@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v31/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
           import re
@@ -141,10 +141,15 @@ jobs:
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
 
-          # 3. Parchar BatTvGeckoViewManager.kt (dominios extra + limpieza profunda de caches al cerrar)
+          # 3. Parchar BatTvGeckoViewManager.kt (skip-to-next-key-frame=true para directos fluidos + limpieza de caches)
           mgr_path = "android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
           with open(mgr_path, "r", encoding="utf-8") as f:
               mgr = f.read()
+
+          mgr = mgr.replace(
+              "media.decoder.skip-to-next-key-frame.enabled: false",
+              "media.decoder.skip-to-next-key-frame.enabled: true"
+          )
 
           extra_domains = '"chatmate.tv", "chatmate.com", "t6r-rotator-marketingg.com", "rotator-marketingg.com", "rotator-marketing"'
           if "t6r-rotator-marketingg.com" not in mgr:
@@ -210,14 +215,14 @@ jobs:
           with open(mgr_path, "w", encoding="utf-8") as f:
               f.write(mgr)
 
-          print("Parches v5.5 aplicados correctamente.")
+          print("Parches v5.6 aplicados correctamente.")
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v30.0 (Chaturbate Fluido Max Calidad + Controles FS + Resto Intacto)
+      - name: Generar Motor Nativo Ultraligero v31.0 (Chaturbate Fluido Sin Congelamiento + Controles FS + Resto Intacto)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v30"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v31"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
 
@@ -239,11 +244,11 @@ jobs:
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "30.0.0",
-            "description": "Chaturbate fluido maxima calidad con controles visibles en pantalla completa, cierre total y aislamiento del resto de sitios.",
+            "version": "31.0.0",
+            "description": "Chaturbate fluido estilo YouTube Live con controles completos en pantalla completa + resto de paginas intactas.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v30@battv.browser",
+                "id": "shield_v31@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -585,6 +590,11 @@ jobs:
                   }
                 ` : "";
 
+                // En Chaturbate:
+                // - .__battv_cb_fs_hidden apaga con display:none todo el resto de la pagina en fullscreen
+                //   (chat, GIFs animados de la bio, cabecera y miniaturas), dejando 100% de CPU/GPU para el directo.
+                // - .__battv_cb_fs_player expande el contenedor completo del reproductor (video + barra de audio + calidad)
+                //   sin bloquear los menues desplegables de calidad renderizados en document.body.
                 const adHideCss = isByseStealthEmbed ? "" : (isCleanLiveStreamSite ? `
                   .chat-holder, .chat-box, #chat, .msg-list-wrapper, .room-list, .endless_page_template {
                     contain: layout style paint !important;
@@ -594,16 +604,7 @@ jobs:
                     animation: none !important;
                     transition: none !important;
                   }
-                  html.__battv_lock_scroll .chat-holder,
-                  html.__battv_lock_scroll .chat-box,
-                  html.__battv_lock_scroll #chat,
-                  html.__battv_lock_scroll .msg-list-wrapper,
-                  html.__battv_lock_scroll #header,
-                  html.__battv_lock_scroll .nav-bar,
-                  html.__battv_lock_scroll .bio-container,
-                  html.__battv_lock_scroll .room-list,
-                  html.__battv_lock_scroll .more_rooms,
-                  html.__battv_lock_scroll footer {
+                  .__battv_cb_fs_hidden {
                     display: none !important;
                     pointer-events: none !important;
                   }
@@ -634,9 +635,6 @@ jobs:
                     max-width: 100% !important;
                     max-height: 100% !important;
                     object-fit: contain !important;
-                    transform: none !important;
-                    will-change: auto !important;
-                    z-index: 1 !important;
                   }
                   .__battv_cb_fs_player button,
                   .__battv_cb_fs_player [role="button"],
@@ -652,7 +650,7 @@ jobs:
                   .__battv_cb_fs_player [class*="volume" i],
                   .__battv_cb_fs_player [class*="settings" i],
                   .__battv_cb_fs_player [class*="menu" i] {
-                    z-index: 2147483645 !important;
+                    z-index: 2147483644 !important;
                     pointer-events: auto !important;
                   }
                   html.__battv_lock_scroll body > div[role="dialog"],
@@ -711,15 +709,12 @@ jobs:
                   }
                 `);
 
-                const gpuAccelCss = isChaturbate ? "" : `
+                style.textContent = adHideCss + `
                   video, iframe {
                     will-change: transform;
                     transform: translateZ(0);
                     backface-visibility: hidden;
                   }
-                `;
-
-                style.textContent = adHideCss + gpuAccelCss + `
                   html.__battv_lock_scroll,
                   html.__battv_lock_scroll body {
                     overflow: hidden !important;
@@ -779,11 +774,9 @@ jobs:
               try {
                 const s = document.createElement("script");
                 if (isChaturbate) {
-                  // Motor exclusivo para Chaturbate en Android TV:
-                  // 1. Fuerza hls.js (MSE) desactivando HLS nativo.
-                  // 2. Bloquea playbackRate en 1.0 (elimina aceleraciones 1.05x que entrecortan audio y vacian bufer).
-                  // 3. Configura Hls con maxima calidad (capLevelToPlayerSize: false + estimacion 15 Mbps)
-                  //    y bufer estable sin pausas (lowLatencyMode: false, liveSyncDurationCount: 4).
+                  // Rama limpia y probada para Chaturbate (v5.4):
+                  // Solo fuerza MSE/hls.js (para conservar selector de calidad y controles completos)
+                  // SIN tocar playbackRate ni window.Hls para que nunca se congele como foto.
                   s.textContent = `(function(){
                     try {
                       const origCanPlay = HTMLMediaElement.prototype.canPlayType;
@@ -791,79 +784,6 @@ jobs:
                         if (type && /mpegurl/i.test(type)) return "";
                         return origCanPlay.apply(this, arguments);
                       };
-
-                      const rateDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "playbackRate");
-                      if (rateDesc && rateDesc.set && rateDesc.get) {
-                        Object.defineProperty(HTMLMediaElement.prototype, "playbackRate", {
-                          get: function() { return 1.0; },
-                          set: function() {
-                            try { rateDesc.set.call(this, 1.0); } catch (_) {}
-                          },
-                          configurable: true
-                        });
-                      }
-
-                      const defRateDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "defaultPlaybackRate");
-                      if (defRateDesc && defRateDesc.set) {
-                        Object.defineProperty(HTMLMediaElement.prototype, "defaultPlaybackRate", {
-                          get: function() { return 1.0; },
-                          set: function() {
-                            try { defRateDesc.set.call(this, 1.0); } catch (_) {}
-                          },
-                          configurable: true
-                        });
-                      }
-
-                      function tuneHlsConfig(cfg) {
-                        const merged = Object.assign({}, cfg || {});
-                        merged.lowLatencyMode = false;
-                        merged.liveSyncDurationCount = 4;
-                        merged.liveMaxLatencyDurationCount = 10;
-                        merged.maxLiveSyncPlaybackRate = 1;
-                        merged.maxBufferLength = 24;
-                        merged.maxMaxBufferLength = 36;
-                        merged.backBufferLength = 8;
-                        merged.maxBufferHole = 0.8;
-                        merged.nudgeOffset = 0.2;
-                        merged.nudgeMaxRetry = 8;
-                        merged.capLevelToPlayerSize = false;
-                        merged.abrEwmaDefaultEstimate = 15000000;
-                        merged.abrBandWidthFactor = 0.9;
-                        merged.abrBandWidthUpFactor = 0.85;
-                        merged.startFragPrefetch = true;
-                        merged.fragLoadingMaxRetry = 6;
-                        merged.manifestLoadingMaxRetry = 6;
-                        return merged;
-                      }
-
-                      function wrapHlsClass(OrigHls) {
-                        if (!OrigHls || OrigHls.__battvWrapped) return OrigHls;
-                        try {
-                          if (OrigHls.DefaultConfig && typeof OrigHls.DefaultConfig === "object") {
-                            Object.assign(OrigHls.DefaultConfig, tuneHlsConfig({}));
-                          }
-                        } catch (_) {}
-                        try {
-                          const wrapped = new Proxy(OrigHls, {
-                            construct: function(target, args, newTarget) {
-                              const nextArgs = Array.prototype.slice.call(args || []);
-                              nextArgs[0] = tuneHlsConfig(nextArgs[0]);
-                              return Reflect.construct(target, nextArgs, newTarget);
-                            }
-                          });
-                          wrapped.__battvWrapped = true;
-                          return wrapped;
-                        } catch (_) {
-                          return OrigHls;
-                        }
-                      }
-
-                      let currentHls = window.Hls ? wrapHlsClass(window.Hls) : undefined;
-                      Object.defineProperty(window, "Hls", {
-                        get: function() { return currentHls; },
-                        set: function(val) { currentHls = wrapHlsClass(val); },
-                        configurable: true
-                      });
                     } catch(_) {}
                   })();`;
                 } else if (isOtherProtectedSite) {
@@ -1354,22 +1274,33 @@ jobs:
               } catch (_) {}
             }
 
-            // Poda de mensajes antiguos en el chat de Chaturbate (max 25 nodos) para evitar lag y pausas de RAM
-            function pruneChaturbateChatBloat() {
+            // En Chaturbate: recorta mensajes viejos del chat (max 20) y pausa vistas previas secundarias
+            // para evitar lag de CPU/RAM en Google TV.
+            function keepChaturbateLightweight() {
               if (!isChaturbate || !document.body) return;
               try {
                 const lists = document.querySelectorAll("[data-testid='chat-message-list'], .msg-list-wrapper, .chat-list");
                 for (let i = 0; i < lists.length; i++) {
                   const list = lists[i];
-                  while (list.children.length > 25) {
+                  while (list.children.length > 20) {
                     list.removeChild(list.firstElementChild);
+                  }
+                }
+                const mainVid = findChaturbateVideoAnyState();
+                const allVids = document.getElementsByTagName("video");
+                if (mainVid && allVids.length > 1) {
+                  for (let k = 0; k < allVids.length; k++) {
+                    const other = allVids[k];
+                    if (other !== mainVid && !other.paused) {
+                      try { other.pause(); } catch (_) {}
+                    }
                   }
                 }
               } catch (_) {}
             }
 
             if (isChaturbate) {
-              setInterval(pruneChaturbateChatBloat, 4000);
+              setInterval(keepChaturbateLightweight, 3500);
             }
 
             const SCAM_TEXT_PATTERNS = [
@@ -1793,11 +1724,37 @@ jobs:
               } catch (_) {}
             }
 
-            function markFullscreenAncestors(el) {
-              let curr = el ? el.parentElement : null;
+            function isFloatingMenuPortal(el) {
+              if (!el || !el.tagName) return true;
+              const tag = el.tagName.toUpperCase();
+              if (tag === "SCRIPT" || tag === "STYLE" || tag === "LINK" || tag === "NOSCRIPT") return true;
+              const role = (el.getAttribute("role") || "").toLowerCase();
+              if (role === "menu" || role === "listbox" || role === "dialog" || role === "tooltip") return true;
+              if (el.hasAttribute("data-popper-placement")) return true;
+              const cls = (typeof el.className === "string") ? el.className.toLowerCase() : "";
+              if (cls.includes("popover") || cls.includes("dropdown") || cls.includes("menu") || cls.includes("modal") || cls.includes("tooltip")) {
+                return true;
+              }
+              return false;
+            }
+
+            function markFullscreenAncestors(el, hideNonPlayerSiblings) {
+              let curr = el;
               while (curr && curr !== document.body && curr !== document.documentElement) {
-                curr.classList.add("__battv_fs_ancestor");
-                curr = curr.parentElement;
+                const parent = curr.parentElement;
+                if (hideNonPlayerSiblings && parent) {
+                  const siblings = parent.children;
+                  for (let i = 0; i < siblings.length; i++) {
+                    const sib = siblings[i];
+                    if (sib !== curr && !isFloatingMenuPortal(sib)) {
+                      sib.classList.add("__battv_cb_fs_hidden");
+                    }
+                  }
+                }
+                if (parent && parent !== document.body && parent !== document.documentElement) {
+                  parent.classList.add("__battv_fs_ancestor");
+                }
+                curr = parent;
               }
               if (document.documentElement) {
                 document.documentElement.classList.add("__battv_lock_scroll");
@@ -1809,22 +1766,23 @@ jobs:
                 if (document.documentElement) {
                   document.documentElement.classList.remove("__battv_lock_scroll");
                 }
-                const nodes = document.querySelectorAll(".__battv_iframe_fullscreen, .__battv_player_fill_frame, .__battv_cb_fs_player, .__battv_fs_ancestor");
+                const nodes = document.querySelectorAll(".__battv_iframe_fullscreen, .__battv_player_fill_frame, .__battv_cb_fs_player, .__battv_cb_fs_hidden, .__battv_fs_ancestor");
                 for (let i = 0; i < nodes.length; i++) {
-                  nodes[i].classList.remove("__battv_iframe_fullscreen", "__battv_player_fill_frame", "__battv_cb_fs_player", "__battv_fs_ancestor");
+                  nodes[i].classList.remove("__battv_iframe_fullscreen", "__battv_player_fill_frame", "__battv_cb_fs_player", "__battv_cb_fs_hidden", "__battv_fs_ancestor");
                 }
               } catch (_) {}
             }
 
             function onDomFullscreenChanged() {
               const isDomFs = !!(document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement);
-              if (!isDomFs && !document.querySelector(".__battv_cb_fs_player")) {
+              const isCbFs = !!document.querySelector(".__battv_cb_fs_player");
+              if (!isDomFs && !isCbFs) {
                 clearCustomFullscreenClasses();
               }
               if (isTopFrame) {
                 postToNative({
                   type: "WEB_FULLSCREEN_STATE",
-                  enabled: isDomFs || !!document.querySelector(".__battv_cb_fs_player")
+                  enabled: isDomFs || isCbFs
                 });
               }
               setTimeout(function () {
@@ -1835,16 +1793,51 @@ jobs:
             document.addEventListener("fullscreenchange", onDomFullscreenChanged, true);
             document.addEventListener("mozfullscreenchange", onDomFullscreenChanged, true);
 
+            function findChaturbateVideoAnyState() {
+              const all = document.getElementsByTagName("video");
+              if (all.length === 0) return null;
+              let best = null;
+              let bestScore = -1;
+              for (let i = 0; i < all.length; i++) {
+                const v = all[i];
+                const w = v.clientWidth || v.videoWidth || 0;
+                const h = v.clientHeight || v.videoHeight || 0;
+                if (w < 140 || h < 80) continue;
+                const score = (w * h) + (v.paused ? 0 : 400000) + (v.readyState >= 2 ? 200000 : 0);
+                if (score > bestScore) {
+                  bestScore = score;
+                  best = v;
+                }
+              }
+              return best || all[0] || null;
+            }
+
             function isLiveOrLongContentVideo(v) {
               if (!v) return false;
-              const w = isChaturbate ? (v.videoWidth || v.clientWidth || 0) : v.getBoundingClientRect().width;
-              const h = isChaturbate ? (v.videoHeight || v.clientHeight || 0) : v.getBoundingClientRect().height;
+              const w = isChaturbate ? (v.clientWidth || v.videoWidth || 0) : v.getBoundingClientRect().width;
+              const h = isChaturbate ? (v.clientHeight || v.videoHeight || 0) : v.getBoundingClientRect().height;
               if (w < 180 || h < 100) return false;
               const dur = v.duration;
               if (!Number.isFinite(dur) || dur <= 0) {
                 return v.readyState >= 2 || v.currentTime > 0.1;
               }
               return dur >= 20;
+            }
+
+            function triggerFullscreenPromptForVideo(v, dur, isLive) {
+              const inDomFullscreen = !!(document.fullscreenElement || document.mozFullScreenElement);
+              const inCustomFullscreen = document.querySelector(".__battv_player_fill_frame, .__battv_cb_fs_player") !== null;
+              const now = Date.now();
+              if (!inDomFullscreen && !inCustomFullscreen &&
+                  !promptedVideosSet.has(v) && (now - lastFullscreenPromptMs > 4500)) {
+                promptedVideosSet.add(v);
+                lastFullscreenPromptMs = now;
+                postToNative({
+                  type: "VIDEO_PLAY_STARTED_PROMPT_FS",
+                  duration: dur,
+                  isLive: isLive
+                });
+              }
             }
 
             function attachStreamStabilizer(v) {
@@ -1855,53 +1848,16 @@ jobs:
               try {
                 v.preload = "auto";
                 v.playsInline = true;
-                if (v.playbackRate !== 1.0) v.playbackRate = 1.0;
               } catch (_) {}
 
               if (isChaturbate) {
-                let stallTimer = null;
-
-                const clearStallTimer = function () {
-                  if (stallTimer) {
-                    clearTimeout(stallTimer);
-                    stallTimer = null;
-                  }
-                };
-
-                // Recuperacion suave de micro-huecos MSE sin alterar playbackRate ni cortar audio
-                const scheduleGapRecovery = function () {
-                  if (stallTimer || Date.now() < userPausedManuallyUntil || v.ended) return;
-                  stallTimer = setTimeout(function () {
-                    stallTimer = null;
-                    if (Date.now() < userPausedManuallyUntil || v.ended) return;
-                    try {
-                      const ct = v.currentTime;
-                      const buf = v.buffered;
-                      if (buf && buf.length > 0) {
-                        for (let b = 0; b < buf.length; b++) {
-                          const start = buf.start(b);
-                          const end = buf.end(b);
-                          if (start > ct && (start - ct) < 4.0) {
-                            v.currentTime = start + 0.05;
-                            break;
-                          }
-                          if (end > ct + 0.5 && v.readyState < 3 && (end - ct) > 6.0) {
-                            v.currentTime = Math.max(start, end - 3.5);
-                            break;
-                          }
-                        }
-                      }
-                      if (v.paused) {
-                        v.play().catch(function () {});
-                      }
-                    } catch (_) {}
-                  }, 1400);
-                };
-
-                v.addEventListener("waiting", scheduleGapRecovery);
-                v.addEventListener("stalled", scheduleGapRecovery);
-                v.addEventListener("playing", clearStallTimer);
-                v.addEventListener("timeupdate", clearStallTimer);
+                v.addEventListener("playing", function () {
+                  setTimeout(function () {
+                    if (!v.paused && v.readyState >= 2) {
+                      triggerFullscreenPromptForVideo(v, 0, true);
+                    }
+                  }, 500);
+                });
 
                 v.addEventListener("pause", function () {
                   if (Date.now() >= userPausedManuallyUntil && !v.ended) {
@@ -1924,8 +1880,8 @@ jobs:
                 const v = all[i];
                 if (!isLiveOrLongContentVideo(v)) continue;
                 attachStreamStabilizer(v);
-                const w = isChaturbate ? (v.videoWidth || v.clientWidth || 320) : v.getBoundingClientRect().width;
-                const h = isChaturbate ? (v.videoHeight || v.clientHeight || 180) : v.getBoundingClientRect().height;
+                const w = isChaturbate ? (v.clientWidth || v.videoWidth || 320) : v.getBoundingClientRect().width;
+                const h = isChaturbate ? (v.clientHeight || v.videoHeight || 180) : v.getBoundingClientRect().height;
                 const score = (w * h) + (v.paused ? 0 : 500000);
                 if (score > bestScore) {
                   bestScore = score;
@@ -1935,9 +1891,8 @@ jobs:
               return best;
             }
 
-            // En Chaturbate localiza el contenedor externo exacto que incluye el <video>
-            // junto con TODOS los controles (audio, engranaje de calidad, ajustes, pausa)
-            // sin absorber el chat ni la cabecera.
+            // Localiza el contenedor de Chaturbate que envuelve tanto el <video> como
+            // TODOS sus controles (calidad, volumen, silencio, ajustes) sin absorber el chat ni el encabezado.
             function getChaturbatePlayerRoot(v) {
               if (!v) return null;
               const direct = v.closest(
@@ -2001,21 +1956,21 @@ jobs:
                 injectTvStyles();
                 enableIframeFullscreenAndEagerLoad();
 
-                const v = findActiveVideo();
+                const v = findActiveVideo() || (isChaturbate ? findChaturbateVideoAnyState() : null);
                 if (v) {
+                  attachStreamStabilizer(v);
                   const playerRoot = getPlayerRootContainer(v);
                   if (playerRoot) {
                     if (isChaturbate) {
-                      // En Chaturbate usamos capa dedicada sin bloquear el top-layer nativo:
-                      // asi TODOS los controles (audio, calidad y menues desplegables) salen visibles y clicables.
+                      clearCustomFullscreenClasses();
                       playerRoot.classList.add("__battv_cb_fs_player");
-                      markFullscreenAncestors(playerRoot);
+                      markFullscreenAncestors(playerRoot, true);
                       try {
                         playerRoot.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 200, clientY: 200 }));
                       } catch (_) {}
                     } else {
                       playerRoot.classList.add("__battv_player_fill_frame");
-                      markFullscreenAncestors(playerRoot);
+                      markFullscreenAncestors(playerRoot, false);
                       const reqFn = playerRoot.requestFullscreen || playerRoot.mozRequestFullScreen || playerRoot.webkitRequestFullscreen;
                       if (reqFn && !document.fullscreenElement && !document.mozFullScreenElement) {
                         try {
@@ -2040,7 +1995,7 @@ jobs:
                     const alreadyDomFs = !!(document.fullscreenElement || document.mozFullScreenElement);
                     if (!alreadyDomFs) {
                       playerIframe.classList.add("__battv_iframe_fullscreen");
-                      markFullscreenAncestors(playerIframe);
+                      markFullscreenAncestors(playerIframe, false);
                       const reqFn = playerIframe.requestFullscreen || playerIframe.mozRequestFullScreen || playerIframe.webkitRequestFullscreen;
                       if (reqFn) {
                         try {
@@ -2190,7 +2145,13 @@ jobs:
                 if (isChaturbate) {
                   e.preventDefault();
                   e.stopPropagation();
-                  postToNative({ type: "REQUEST_UNIFIED_FULLSCREEN", enable: !(hasCustomFs || hasDomFs) });
+                  const shouldEnable = !(hasCustomFs || hasDomFs);
+                  if (shouldEnable) {
+                    enterFullscreenInCurrentFrame();
+                  } else {
+                    exitFullscreenInCurrentFrame();
+                  }
+                  postToNative({ type: "REQUEST_UNIFIED_FULLSCREEN", enable: shouldEnable });
                   return;
                 }
                 setTimeout(function () {
@@ -2278,22 +2239,11 @@ jobs:
                   duration: dur
                 });
 
-                const inDomFullscreen = !!(document.fullscreenElement || document.mozFullScreenElement);
-                const inCustomFullscreen = document.querySelector(".__battv_player_fill_frame, .__battv_cb_fs_player") !== null;
-                const now = Date.now();
-                if (isPlaying && v.currentTime >= 0.4 && (isLive || dur >= 20) &&
-                    !inDomFullscreen && !inCustomFullscreen &&
-                    !promptedVideosSet.has(v) && (now - lastFullscreenPromptMs > 4500)) {
-                  promptedVideosSet.add(v);
-                  lastFullscreenPromptMs = now;
-                  postToNative({
-                    type: "VIDEO_PLAY_STARTED_PROMPT_FS",
-                    duration: dur,
-                    isLive: isLive
-                  });
+                if (isPlaying && v.currentTime >= 0.4 && (isLive || dur >= 20)) {
+                  triggerFullscreenPromptForVideo(v, dur, isLive);
                 }
               } catch (_) {}
-            }, isChaturbate ? 1400 : 650);
+            }, isChaturbate ? 1200 : 650);
 
             if (isTopFrame) {
               function extractMediaMetadata() {
@@ -2359,7 +2309,7 @@ jobs:
                   exitFullscreenInCurrentFrame();
                   return;
                 }
-                const v = findActiveVideo();
+                const v = findActiveVideo() || (isChaturbate ? findChaturbateVideoAnyState() : null);
                 if (!v) return;
                 if (msg.action === "SEEK_TO" && typeof msg.time === "number" && Number.isFinite(v.duration)) {
                   const targetSec = Math.max(0, Math.min(v.duration || msg.time, msg.time));
