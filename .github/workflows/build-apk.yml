@@ -75,7 +75,12 @@ jobs:
               "        }\n"
               "    }"
           )
-          g = re.sub(r"buildTypes\s*\{\s*release\s*\{[\s\S]*?\}\s*\}", new_build_types, g, count=1)
+          g = re.sub(
+              r"buildTypes\s*\{\s*release\s*\{[\s\S]*?\}\s*\}",
+              lambda _: new_build_types,
+              g,
+              count=1
+          )
           with open(gradle_path, "w", encoding="utf-8") as f:
               f.write(g)
 
@@ -86,7 +91,7 @@ jobs:
 
           code = re.sub(
               r"if \(geckoManager\.isKnownAdOrPopupUri\(url\) \|\| \(!isInitialNavigationInProgress && !geckoManager\.isSameOrTrustedNavigationTarget\(currentUrl, url\)\)\)",
-              "if (geckoManager.isKnownAdOrPopupUri(url))",
+              lambda _: "if (geckoManager.isKnownAdOrPopupUri(url))",
               code
           )
 
@@ -109,7 +114,6 @@ jobs:
                   1
               )
 
-          # Reemplazar promptAutoFullscreenIfEligible con control por playerKey y proteccion anti-fantasma al cambiar pagina
           new_prompt_fn = (
               "private fun promptAutoFullscreenIfEligible(playerKey: String = \"\") {\n"
               "    if (isHomeScreenVisible || isFullScreenVideo) return\n"
@@ -154,12 +158,11 @@ jobs:
           )
           code = re.sub(
               r"private fun promptAutoFullscreenIfEligible\(\)\s*\{[\s\S]*?\n  \}",
-              new_prompt_fn,
+              lambda _: new_prompt_fn,
               code,
               count=1
           )
 
-          # Enviar ENTER_FULLSCREEN una sola vez para no alternar dos veces el boton del reproductor
           new_enter_fs = (
               "private fun enterVideoFullscreenAutomatically() {\n"
               "    applyFullScreenState(true)\n"
@@ -168,19 +171,17 @@ jobs:
           )
           code = re.sub(
               r"private fun enterVideoFullscreenAutomatically\(\)\s*\{[\s\S]*?\n  \}",
-              new_enter_fs,
+              lambda _: new_enter_fs,
               code,
               count=1
           )
 
-          # Al salir de fullscreen, recordar que se cerro para ese servidor concreto (permitiendo avisar si cambia de servidor)
           code = code.replace(
               "fullscreenPromptDismissedForPage = true\n    lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()",
               "fullscreenPromptDismissedForPage = true\n    lastDismissedPlayerKey = lastPromptedPlayerKey\n    lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()",
               1
           )
 
-          # Reiniciar estado de video y cancelar avisos pendientes tambien en cambios de ruta SPA (onLocationChange, ej. Doramasflix)
           old_loc_assign = (
               "          currentUrl = url\n"
               "          if (url.startsWith(\"http\", ignoreCase = true)) {\n"
@@ -210,7 +211,6 @@ jobs:
           if old_loc_assign in code:
               code = code.replace(old_loc_assign, new_loc_assign, 1)
 
-          # Reiniciar claves del reproductor tambien en onPageStart y loadUrlOrSearch
           code = code.replace(
               "fullscreenPromptDismissedForPage = false\n          latestExtractedHeading = \"\"",
               "fullscreenPromptDismissedForPage = false\n          lastDismissedPlayerKey = \"\"\n          lastPromptedPlayerKey = \"\"\n          lastTopNavChangeUptimeMs = SystemClock.uptimeMillis()\n          latestExtractedHeading = \"\"",
@@ -222,25 +222,32 @@ jobs:
               1
           )
 
-          # Eliminar disparos fantasma desde MediaSession.onPlay / onPositionState / VIDEO_STATE
-          # para que SOLO VIDEO_PLAY_STARTED_PROMPT_FS (verificado con video visible real y playerKey) muestre el aviso
           code = re.sub(
               r"if \(vodDurationSec >= 20\.0 \|\| isLiveStreamVideo\) \{\s*promptAutoFullscreenIfEligible\(\)\s*\}",
-              "",
+              lambda _: "",
               code
           )
           code = re.sub(
               r"if \(vodIsPlaying && state\.position >= 0\.4\) \{\s*promptAutoFullscreenIfEligible\(\)\s*\}",
-              "",
-              code
-          )
-          code = re.sub(
-              r"if \(startedPlayingNow && \(hasActiveVodVideo \|\| isLiveStreamVideo\)\) \{[\s\S]*?promptAutoFullscreenIfEligible\(\)\s*\}",
-              "if (startedPlayingNow && (hasActiveVodVideo || isLiveStreamVideo)) {\n                    loadingProgressBar.visibility = View.GONE\n                    if (!isSmoothDpadLoopRunning) {\n                      mainHandler.removeCallbacks(hideCursorRunnable)\n                      mainHandler.postDelayed(hideCursorRunnable, 900L)\n                    }\n                  }",
+              lambda _: "",
               code
           )
 
-          # Pasar playerKey en VIDEO_PLAY_STARTED_PROMPT_FS
+          new_started_playing = (
+              "if (startedPlayingNow && (hasActiveVodVideo || isLiveStreamVideo)) {\n"
+              "                    loadingProgressBar.visibility = View.GONE\n"
+              "                    if (!isSmoothDpadLoopRunning) {\n"
+              "                      mainHandler.removeCallbacks(hideCursorRunnable)\n"
+              "                      mainHandler.postDelayed(hideCursorRunnable, 900L)\n"
+              "                    }\n"
+              "                  }"
+          )
+          code = re.sub(
+              r"if \(startedPlayingNow && \(hasActiveVodVideo \|\| isLiveStreamVideo\)\) \{[\s\S]*?promptAutoFullscreenIfEligible\(\)\s*\}",
+              lambda _: new_started_playing,
+              code
+          )
+
           old_prompt_msg = (
               '              "VIDEO_PLAY_STARTED_PROMPT_FS" -> {\n'
               '                val dur = json.optDouble("duration", 0.0)\n'
@@ -275,15 +282,24 @@ jobs:
           if old_prompt_msg in code:
               code = code.replace(old_prompt_msg, new_prompt_msg, 1)
 
-          # Evitar bucles de ENTER_FULLSCREEN en onFullScreen / mediaSessionDelegate.onFullscreen
+          new_fs_exit_only = (
+              "if (!fullScreen) {\n"
+              "            sendVideoCommandToWeb(\"EXIT_FULLSCREEN\", 0.0)\n"
+              "          }"
+          )
+          new_enabled_exit_only = (
+              "if (!enabled) {\n"
+              "            sendVideoCommandToWeb(\"EXIT_FULLSCREEN\", 0.0)\n"
+              "          }"
+          )
           code = re.sub(
               r"if \(fullScreen\) \{\s*sendVideoCommandToWeb\(\"ENTER_FULLSCREEN\", 0\.0\)\s*\} else \{\s*sendVideoCommandToWeb\(\"EXIT_FULLSCREEN\", 0\.0\)\s*\}",
-              "if (!fullScreen) {\n            sendVideoCommandToWeb(\"EXIT_FULLSCREEN\", 0.0)\n          }",
+              lambda _: new_fs_exit_only,
               code
           )
           code = re.sub(
               r"if \(enabled\) \{\s*sendVideoCommandToWeb\(\"ENTER_FULLSCREEN\", 0\.0\)\s*\} else \{\s*sendVideoCommandToWeb\(\"EXIT_FULLSCREEN\", 0\.0\)\s*\}",
-              "if (!enabled) {\n            sendVideoCommandToWeb(\"EXIT_FULLSCREEN\", 0.0)\n          }",
+              lambda _: new_enabled_exit_only,
               code
           )
 
@@ -301,8 +317,8 @@ jobs:
               )
 
           if "override fun onStop()" not in code:
-              on_stop_addition = (
-                  "\\1\n\n"
+              on_stop_suffix = (
+                  "\n\n"
                   "  override fun onStop() {\n"
                   "    super.onStop()\n"
                   "    if (!isChangingConfigurations && !isExitingCompletely) {\n"
@@ -310,7 +326,12 @@ jobs:
                   "    }\n"
                   "  }"
               )
-              code = re.sub(r"(override fun onPause\(\)\s*\{[\s\S]*?\n  \})", on_stop_addition, code, count=1)
+              code = re.sub(
+                  r"(override fun onPause\(\)\s*\{[\s\S]*?\n  \})",
+                  lambda m: m.group(1) + on_stop_suffix,
+                  code,
+                  count=1
+              )
 
           new_exit_fn = (
               "private fun exitBrowserCleanly() {\n"
@@ -339,7 +360,12 @@ jobs:
               "    }, 180L)\n"
               "  }"
           )
-          code = re.sub(r"private fun exitBrowserCleanly\(\)\s*\{[\s\S]*?\n  \}", new_exit_fn, code, count=1)
+          code = re.sub(
+              r"private fun exitBrowserCleanly\(\)\s*\{[\s\S]*?\n  \}",
+              lambda _: new_exit_fn,
+              code,
+              count=1
+          )
 
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
@@ -435,7 +461,12 @@ jobs:
               "        } catch (_: Exception) {}\n"
               "    }"
           )
-          mgr = re.sub(r"fun closeSessionCleanly\(\)\s*\{[\s\S]*?\n    \}", new_close_fn, mgr, count=1)
+          mgr = re.sub(
+              r"fun closeSessionCleanly\(\)\s*\{[\s\S]*?\n    \}",
+              lambda _: new_close_fn,
+              mgr,
+              count=1
+          )
 
           with open(mgr_path, "w", encoding="utf-8") as f:
               f.write(mgr)
@@ -595,12 +626,9 @@ jobs:
               "tapecontent.net", "stape.fun", "streamadblockplus.com", "strcloud.in"
             ];
 
-            // Firmas genericas de redes publicitarias (Adsterra, Monetag, Propeller, Hilltop, ExoClick, PopAds, Social Bar, In-Page Push)
             const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/fingerprint-sw\.js|\/aclib\.js|\/tag\.min\.js|\/ntfc\.php|\/pfe\/current\/|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/push-sdk|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|rotator-marketing|marketingg\.com|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
             const ANTI_DEVTOOL_REGEX = /(disable-devtool|devtools-detector|devtools-detect|fuckadblock|blockadblock)/i;
             const VAST_PREROLL_REGEX = /([?&/](vast|preroll|midroll|postroll|ad_tag|adtag|vmap)([=&/.?_]|$)|syndication\.|splash\.php)/i;
-
-            // Rutas legitimas de librerias de reproductores de video (permite CDNs secundarios de video sin dejar pasar scripts de anuncios)
             const LEGIT_PLAYER_SCRIPT_PATH_REGEX = /(hls(\.min)?\.js|jwplayer|video(\.min)?\.js|plyr|vidstack|fluidplayer|artplayer|dplayer|clappr|shaka|dash\.all|jquery|bootstrap|react|vue|\/assets\/(index|app|main|vendor|player|chunk)[^/]*\.js|\/dist\/player|\/embed\/[^/]*\.js)/i;
 
             function getBaseBrand(hostname) {
@@ -650,7 +678,6 @@ jobs:
                                            docHost.includes("livecamrip") ||
                                            docHost.includes("onlyjerk.");
 
-                    // 1. Bloquear dominios publicitarios conocidos y firmas genericas de popups/social-bar
                     if (isHostInList(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl) || VAST_PREROLL_REGEX.test(rawUrl)) {
                       if (details.frameId > 0 && !isIsolatedSite) {
                         if (details.type === "script" && NOOP_JS_URL) {
@@ -674,7 +701,6 @@ jobs:
                                          (getBaseBrand(reqHost) === getBaseBrand(docHost));
 
                       if (!isSameSite) {
-                        // 2. Bloquear beacons/telemetria de terceros en sitios protegidos y reproductores (libera CPU/red)
                         if (details.type === "beacon" || details.type === "ping") {
                           return { cancel: true };
                         }
@@ -691,11 +717,6 @@ jobs:
                                                  docHost.includes("streamtape") ||
                                                  docHost.includes("strtape");
 
-                        // 3. CORTAFUEGOS GENERICO DE SCRIPTS DE TERCEROS:
-                        //    - En la pagina principal (frameId === 0) de Doramasflix, DramaChino, JKAnime, LiveCamRips
-                        //    - Y TAMBIEN dentro de TODOS los iframes de video (frameId > 0: BYSE, Filemoon, VOE, Streamwish, Primeload, Dood, Streamtape)
-                        //      devolviendo noop.js (200 OK real) para bloquear CUALQUIER red publicitaria rotativa
-                        //      sin disparar anti-adblock ni romper librerias de reproductores.
                         if (details.type === "script") {
                           const onProtectedRoot = (details.frameId === 0 && isHostInList(docHost, PROTECTED_ROOT_SITES)) ||
                                                   docHost.includes("jkdesu.") ||
@@ -836,8 +857,6 @@ jobs:
                   }
                 ` : "";
 
-                // Optimizacion GPU/RAM exclusiva para Doramasflix y DramaChino en Google TV:
-                // apaga animaciones/sombras/desenfoques pesados al navegar por portadas y aisla secciones fuera de vista
                 const doramaTvPerfCss = isDoramaTopSite ? `
                   *, *::before, *::after {
                     animation-duration: 0.001ms !important;
@@ -1001,7 +1020,6 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (isOtherProtectedSite) {
-                  // Rama AISLADA e INTACTA para JKAnime, LiveCamRips y OnlyJerk
                   s.textContent = `(function(){
                     try {
                       const dummyWin = {
@@ -1115,9 +1133,6 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (isByseStealthEmbed) {
-                  // MODO SIGILOSO PARA BYSE Y FILEMOON:
-                  // - Conserva el bypass JSON (adblock_detection=false), anti-devtool y proteccion innerHTML.
-                  // - Bloquea registro de ServiceWorker y Notification push para impedir inyeccion de anuncios en segundo plano.
                   s.textContent = `(function(){
                     try {
                       const spoofNative = function(fn, name) {
@@ -1278,7 +1293,6 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (!isCleanLiveStreamSite) {
-                  // Rama para Doramasflix/DramaChino (top) y Primeload, Dood, VOE, Streamtape, Streamwish
                   s.textContent = `(function(){
                     try {
                       const dummyWin = {
@@ -1651,13 +1665,10 @@ jobs:
               return false;
             }
 
-            // Inspeccion ULTRA-LIGERA de un unico nodo hijo directo de <body> (costo < 0.05ms, CERO escaneo de pagina completa):
-            // Funciona tanto en Doramasflix/DramaChino como en BYSE/Filemoon (siempre respetando #root y el reproductor).
             function inspectSingleRootAdNode(el) {
               if (!el || el.nodeType !== 1 || !el.isConnected) return;
               if (isProtectedAppOrPlayerElement(el)) return;
               try {
-                // Shadow DOM publicitario (Adsterra Social Bar)
                 if (el.hasAttribute && el.hasAttribute("data-battv-shadow")) {
                   const sr = el.shadowRoot;
                   if (sr && !sr.querySelector("video, iframe")) {
@@ -1671,7 +1682,6 @@ jobs:
                   }
                 }
 
-                // Texto scam / fake captcha ("motocicletas") / fake cleaner ("Limpia tu Unknown Unknown")
                 const txt = (el.textContent || "").trim();
                 if (txt.length >= 5 && txt.length <= 500 && containsScamText(txt)) {
                   el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
@@ -1679,8 +1689,6 @@ jobs:
                   return;
                 }
 
-                // En iframes de video (BYSE, Filemoon, Primeload, VOE, Dood, Streamtape):
-                // eliminar cualquier overlay flotante inyectado como hermano directo de #root/reproductor
                 if (!isTopFrame) {
                   const cs = window.getComputedStyle(el);
                   const pos = cs.position;
@@ -1694,7 +1702,6 @@ jobs:
                     }
                   }
                 } else if (el.parentElement === document.body) {
-                  // En pagina principal (Doramasflix / DramaChino): eliminar tarjetas push flotantes en esquinas
                   const cs = window.getComputedStyle(el);
                   if (cs.position === "fixed" || cs.position === "sticky") {
                     const w = el.offsetWidth || 0;
@@ -1710,7 +1717,6 @@ jobs:
               } catch (_) {}
             }
 
-            // Barrido ligero SOLO de hijos directos de document.body (max ~15 elementos, sin tocar #__next ni #root)
             function sweepDirectBodyAdsOnce() {
               if (isChaturbate || isOtherProtectedSite || !document.body) return;
               try {
@@ -1869,7 +1875,6 @@ jobs:
               } catch (_) {}
             }
 
-            // Marca imagenes con decodificacion asincrona en Doramasflix/DramaChino para no trabar el scroll
             function optimizeImagesAsyncDecoding() {
               if (!isDoramaTopSite) return;
               try {
@@ -2028,7 +2033,6 @@ jobs:
               return best || all[0] || null;
             }
 
-            // Verifica sin reflow pesado que exista un video REAL decodificado y visible en pantalla
             function isLiveOrLongContentVideo(v) {
               if (!v || !v.isConnected) return false;
               const w = v.clientWidth || v.videoWidth || 0;
@@ -2049,7 +2053,6 @@ jobs:
             function triggerFullscreenPromptForVideo(v, dur, isLive) {
               if (!v || !v.isConnected || document.visibilityState === "hidden") return;
               if (v.paused || v.ended || v.readyState < 2) return;
-              // Requerir fotogramas reales decodificados y contenedor visible (evita avisos fantasma sin video)
               if ((v.videoWidth || 0) < 120 || (v.videoHeight || 0) < 80) return;
               if ((v.clientWidth || 0) < 180 || (v.clientHeight || 0) < 100) return;
               try {
@@ -2083,8 +2086,6 @@ jobs:
                 v.playsInline = true;
               } catch (_) {}
 
-              // Al pulsar Play en cualquier reproductor (incluyendo al cambiar de servidor),
-              // esperar 550ms para confirmar reproduccion real y lanzar el aviso de pantalla completa.
               v.addEventListener("playing", function () {
                 setTimeout(function () {
                   if (!v.isConnected || v.paused || v.ended || v.readyState < 2) return;
@@ -2502,7 +2503,6 @@ jobs:
               } catch (_) {}
             }
 
-            // Sondeo ultraligero (CERO document.body.textContent, CERO reflows en Doramasflix/DramaChino/BYSE)
             setInterval(function () {
               try {
                 if (isOtherProtectedSite) {
@@ -2627,11 +2627,6 @@ jobs:
               }
             }
 
-            // Observador dirigido de costo minimo:
-            // - En Doramasflix, DramaChino y TODOS los embeds de video (incluido BYSE/Filemoon):
-            //   observa UNICAMENTE nuevos hijos directos de <body> (subtree:false) e inspecciona solo cada nodo nuevo
-            //   (nunca toca #root ni escanea la pagina completa -> 0 lag y bloquea captchas/modales falsos al instante).
-            // - En JKAnime, LiveCamRips y OnlyJerk: mantiene exactamente su rama aislada.
             function setupLightweightRootAdObserver() {
               if (isCleanLiveStreamSite) return;
               try {
