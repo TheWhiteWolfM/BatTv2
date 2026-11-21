@@ -48,14 +48,14 @@ jobs:
           -keep class com.battv.browser.** { *; }
           EOF_PROGUARD
 
-      - name: Actualizar a versionCode 31 (v5.6), activar R8, skip-to-next-key-frame y cierre completo
+      - name: Actualizar a versionCode 33 (v5.8), optimizar memoria Google TV, aviso FS exacto y cierre total
         run: |
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
-          sed -i 's/versionCode [0-9]\+/versionCode 31/g' android-geckoview/app/build.gradle
-          sed -i 's/versionName "[^"]*"/versionName "5.6"/g' android-geckoview/app/build.gradle
-          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v31@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
-          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v31/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/versionCode [0-9]\+/versionCode 33/g' android-geckoview/app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "5.8"/g' android-geckoview/app/build.gradle
+          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v33@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v33/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
           import re
@@ -79,7 +79,7 @@ jobs:
           with open(gradle_path, "w", encoding="utf-8") as f:
               f.write(g)
 
-          # 2. Parchar MainActivity.kt para cierre 100% completo al salir o volver al menu/Home del TV
+          # 2. Parchar MainActivity.kt (aviso FS por playerKey sin fantasmas, limpieza SPA en onLocationChange, cursor 4.5s y cierre total)
           main_path = "android-geckoview/app/src/main/java/com/battv/browser/MainActivity.kt"
           with open(main_path, "r", encoding="utf-8") as f:
               code = f.read()
@@ -90,10 +90,213 @@ jobs:
               code
           )
 
+          code = code.replace(
+              "private const val CURSOR_AUTO_HIDE_MS = 2500L",
+              "private const val CURSOR_AUTO_HIDE_MS = 4500L"
+          )
+
           if "private var isExitingCompletely" not in code:
               code = code.replace(
                   "private var isFullScreenVideo: Boolean = false",
                   "private var isFullScreenVideo: Boolean = false\n  private var isExitingCompletely: Boolean = false",
+                  1
+              )
+
+          if "private var lastDismissedPlayerKey" not in code:
+              code = code.replace(
+                  "private var lastFullscreenExitUptimeMs: Long = 0L",
+                  "private var lastFullscreenExitUptimeMs: Long = 0L\n  private var lastDismissedPlayerKey: String = \"\"\n  private var lastPromptedPlayerKey: String = \"\"\n  private var lastTopNavChangeUptimeMs: Long = 0L",
+                  1
+              )
+
+          # Reemplazar promptAutoFullscreenIfEligible con control por playerKey y proteccion anti-fantasma al cambiar pagina
+          new_prompt_fn = (
+              "private fun promptAutoFullscreenIfEligible(playerKey: String = \"\") {\n"
+              "    if (isHomeScreenVisible || isFullScreenVideo) return\n"
+              "    if (fullscreenPromptDialog?.isShowing == true) return\n"
+              "    val now = SystemClock.uptimeMillis()\n"
+              "    if (now - lastTopNavChangeUptimeMs < 900L) return\n"
+              "    val isNewPlayer = playerKey.isNotBlank() && playerKey != lastDismissedPlayerKey && playerKey != lastPromptedPlayerKey\n"
+              "    if (isNewPlayer) {\n"
+              "      fullscreenPromptDismissedForPage = false\n"
+              "    } else {\n"
+              "      if (fullscreenPromptDismissedForPage) return\n"
+              "      if (playerKey.isNotBlank() && playerKey == lastDismissedPlayerKey) return\n"
+              "      if (now - lastFullscreenExitUptimeMs < 3500L) return\n"
+              "    }\n"
+              "    lastPromptedPlayerKey = playerKey\n"
+              "    stopSmoothDpadMovement(immediate = true)\n"
+              "    val dialog = AlertDialog.Builder(this)\n"
+              "      .setTitle(\"\\uD83C\\uDFAC Reproducir en pantalla completa\")\n"
+              "      .setMessage(\"\\u00BFQuieres abrir el v\\u00EDdeo en pantalla completa ahora?\")\n"
+              "      .setCancelable(true)\n"
+              "      .setPositiveButton(\"Aceptar\") { d, _ ->\n"
+              "        d.dismiss()\n"
+              "        fullscreenPromptDialog = null\n"
+              "        enterVideoFullscreenAutomatically()\n"
+              "      }\n"
+              "      .setNegativeButton(\"Cancelar\") { d, _ ->\n"
+              "        fullscreenPromptDismissedForPage = true\n"
+              "        lastDismissedPlayerKey = playerKey\n"
+              "        d.dismiss()\n"
+              "        fullscreenPromptDialog = null\n"
+              "      }\n"
+              "      .setOnCancelListener {\n"
+              "        fullscreenPromptDismissedForPage = true\n"
+              "        lastDismissedPlayerKey = playerKey\n"
+              "        fullscreenPromptDialog = null\n"
+              "      }\n"
+              "      .create()\n"
+              "    fullscreenPromptDialog = dialog\n"
+              "    dialog.show()\n"
+              "    dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.requestFocus()\n"
+              "  }"
+          )
+          code = re.sub(
+              r"private fun promptAutoFullscreenIfEligible\(\)\s*\{[\s\S]*?\n  \}",
+              new_prompt_fn,
+              code,
+              count=1
+          )
+
+          # Enviar ENTER_FULLSCREEN una sola vez para no alternar dos veces el boton del reproductor
+          new_enter_fs = (
+              "private fun enterVideoFullscreenAutomatically() {\n"
+              "    applyFullScreenState(true)\n"
+              "    sendVideoCommandToWeb(\"ENTER_FULLSCREEN\", 0.0)\n"
+              "  }"
+          )
+          code = re.sub(
+              r"private fun enterVideoFullscreenAutomatically\(\)\s*\{[\s\S]*?\n  \}",
+              new_enter_fs,
+              code,
+              count=1
+          )
+
+          # Al salir de fullscreen, recordar que se cerro para ese servidor concreto (permitiendo avisar si cambia de servidor)
+          code = code.replace(
+              "fullscreenPromptDismissedForPage = true\n    lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()",
+              "fullscreenPromptDismissedForPage = true\n    lastDismissedPlayerKey = lastPromptedPlayerKey\n    lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()",
+              1
+          )
+
+          # Reiniciar estado de video y cancelar avisos pendientes tambien en cambios de ruta SPA (onLocationChange, ej. Doramasflix)
+          old_loc_assign = (
+              "          currentUrl = url\n"
+              "          if (url.startsWith(\"http\", ignoreCase = true)) {\n"
+              "            isInitialNavigationInProgress = false\n"
+              "          }"
+          )
+          new_loc_assign = (
+              "          val changedPage = (url != currentUrl)\n"
+              "          if (changedPage) {\n"
+              "            dismissFullscreenPromptDialog()\n"
+              "            fullscreenPromptDismissedForPage = false\n"
+              "            lastDismissedPlayerKey = \"\"\n"
+              "            lastPromptedPlayerKey = \"\"\n"
+              "            lastTopNavChangeUptimeMs = SystemClock.uptimeMillis()\n"
+              "            hasActiveVodVideo = false\n"
+              "            isLiveStreamVideo = false\n"
+              "            vodIsPlaying = false\n"
+              "            vodDurationSec = 0.0\n"
+              "            videoSeekOverlay.hideOverlayImmediate()\n"
+              "            if (isFullScreenVideo) { applyFullScreenState(false) }\n"
+              "          }\n"
+              "          currentUrl = url\n"
+              "          if (url.startsWith(\"http\", ignoreCase = true)) {\n"
+              "            isInitialNavigationInProgress = false\n"
+              "          }"
+          )
+          if old_loc_assign in code:
+              code = code.replace(old_loc_assign, new_loc_assign, 1)
+
+          # Reiniciar claves del reproductor tambien en onPageStart y loadUrlOrSearch
+          code = code.replace(
+              "fullscreenPromptDismissedForPage = false\n          latestExtractedHeading = \"\"",
+              "fullscreenPromptDismissedForPage = false\n          lastDismissedPlayerKey = \"\"\n          lastPromptedPlayerKey = \"\"\n          lastTopNavChangeUptimeMs = SystemClock.uptimeMillis()\n          latestExtractedHeading = \"\"",
+              1
+          )
+          code = code.replace(
+              "fullscreenPromptDismissedForPage = false\n    isInitialNavigationInProgress = true",
+              "fullscreenPromptDismissedForPage = false\n    lastDismissedPlayerKey = \"\"\n    lastPromptedPlayerKey = \"\"\n    lastTopNavChangeUptimeMs = SystemClock.uptimeMillis()\n    hasActiveVodVideo = false\n    isLiveStreamVideo = false\n    vodIsPlaying = false\n    vodDurationSec = 0.0\n    isInitialNavigationInProgress = true",
+              1
+          )
+
+          # Eliminar disparos fantasma desde MediaSession.onPlay / onPositionState / VIDEO_STATE
+          # para que SOLO VIDEO_PLAY_STARTED_PROMPT_FS (verificado con video visible real y playerKey) muestre el aviso
+          code = re.sub(
+              r"if \(vodDurationSec >= 20\.0 \|\| isLiveStreamVideo\) \{\s*promptAutoFullscreenIfEligible\(\)\s*\}",
+              "",
+              code
+          )
+          code = re.sub(
+              r"if \(vodIsPlaying && state\.position >= 0\.4\) \{\s*promptAutoFullscreenIfEligible\(\)\s*\}",
+              "",
+              code
+          )
+          code = re.sub(
+              r"if \(startedPlayingNow && \(hasActiveVodVideo \|\| isLiveStreamVideo\)\) \{[\s\S]*?promptAutoFullscreenIfEligible\(\)\s*\}",
+              "if (startedPlayingNow && (hasActiveVodVideo || isLiveStreamVideo)) {\n                    loadingProgressBar.visibility = View.GONE\n                    if (!isSmoothDpadLoopRunning) {\n                      mainHandler.removeCallbacks(hideCursorRunnable)\n                      mainHandler.postDelayed(hideCursorRunnable, 900L)\n                    }\n                  }",
+              code
+          )
+
+          # Pasar playerKey en VIDEO_PLAY_STARTED_PROMPT_FS
+          old_prompt_msg = (
+              '              "VIDEO_PLAY_STARTED_PROMPT_FS" -> {\n'
+              '                val dur = json.optDouble("duration", 0.0)\n'
+              '                val isLive = json.optBoolean("isLive", false)\n'
+              '                runOnUiThread {\n'
+              '                  isLiveStreamVideo = isLive\n'
+              '                  hasActiveVodVideo = !isLive && dur >= 20.0\n'
+              '                  if (dur > 0.0) vodDurationSec = dur\n'
+              '                  loadingProgressBar.visibility = View.GONE\n'
+              '                  if (isLive || dur >= 20.0) {\n'
+              '                    promptAutoFullscreenIfEligible()\n'
+              '                  }\n'
+              '                }\n'
+              '              }'
+          )
+          new_prompt_msg = (
+              '              "VIDEO_PLAY_STARTED_PROMPT_FS" -> {\n'
+              '                val dur = json.optDouble("duration", 0.0)\n'
+              '                val isLive = json.optBoolean("isLive", false)\n'
+              '                val pKey = json.optString("playerKey", "")\n'
+              '                runOnUiThread {\n'
+              '                  isLiveStreamVideo = isLive\n'
+              '                  hasActiveVodVideo = !isLive && dur >= 20.0\n'
+              '                  if (dur > 0.0) vodDurationSec = dur\n'
+              '                  loadingProgressBar.visibility = View.GONE\n'
+              '                  if (isLive || dur >= 20.0) {\n'
+              '                    promptAutoFullscreenIfEligible(pKey)\n'
+              '                  }\n'
+              '                }\n'
+              '              }'
+          )
+          if old_prompt_msg in code:
+              code = code.replace(old_prompt_msg, new_prompt_msg, 1)
+
+          # Evitar bucles de ENTER_FULLSCREEN en onFullScreen / mediaSessionDelegate.onFullscreen
+          code = re.sub(
+              r"if \(fullScreen\) \{\s*sendVideoCommandToWeb\(\"ENTER_FULLSCREEN\", 0\.0\)\s*\} else \{\s*sendVideoCommandToWeb\(\"EXIT_FULLSCREEN\", 0\.0\)\s*\}",
+              "if (!fullScreen) {\n            sendVideoCommandToWeb(\"EXIT_FULLSCREEN\", 0.0)\n          }",
+              code
+          )
+          code = re.sub(
+              r"if \(enabled\) \{\s*sendVideoCommandToWeb\(\"ENTER_FULLSCREEN\", 0\.0\)\s*\} else \{\s*sendVideoCommandToWeb\(\"EXIT_FULLSCREEN\", 0\.0\)\s*\}",
+              "if (!enabled) {\n            sendVideoCommandToWeb(\"EXIT_FULLSCREEN\", 0.0)\n          }",
+              code
+          )
+
+          if "EXPAND_PLAYER_IFRAME_FALLBACK" not in code:
+              code = code.replace(
+                  '"WEB_FULLSCREEN_STATE" -> {',
+                  '"EXPAND_PLAYER_IFRAME_FALLBACK" -> {\n'
+                  '                runOnUiThread {\n'
+                  '                  applyFullScreenState(true)\n'
+                  '                  sendVideoCommandToWeb("EXPAND_PLAYER_IFRAME_FALLBACK", 0.0)\n'
+                  '                }\n'
+                  '              }\n'
+                  '              "WEB_FULLSCREEN_STATE" -> {',
                   1
               )
 
@@ -141,15 +344,37 @@ jobs:
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
 
-          # 3. Parchar BatTvGeckoViewManager.kt (skip-to-next-key-frame=true para directos fluidos + limpieza de caches)
+          # 3. Parchar BatTvGeckoViewManager.kt (perfil ligero anti-lag para Google TV de poca RAM + purga de caches)
           mgr_path = "android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
           with open(mgr_path, "r", encoding="utf-8") as f:
               mgr = f.read()
 
-          mgr = mgr.replace(
-              "media.decoder.skip-to-next-key-frame.enabled: false",
-              "media.decoder.skip-to-next-key-frame.enabled: true"
-          )
+          pref_replacements = [
+              ("browser.cache.memory.capacity: 20480", "browser.cache.memory.capacity: 16384"),
+              ("content.notify.interval: 16666", "content.notify.interval: 50000"),
+              ("media.cache_size: 49152", "media.cache_size: 24576"),
+              ("media.memory_cache_max_size: 24576", "media.memory_cache_max_size: 16384"),
+              ("media.memory_caches_combined_limit_kb: 49152", "media.memory_caches_combined_limit_kb: 24576"),
+              ("media.cache_readahead_limit: 50", "media.cache_readahead_limit: 20"),
+              ("media.cache_resume_threshold: 6", "media.cache_resume_threshold: 8"),
+              ("media.decoder.skip-to-next-key-frame.enabled: false", "media.decoder.skip-to-next-key-frame.enabled: true"),
+              ("network.http.max-connections: 36", "network.http.max-connections: 24"),
+              ("network.http.max-persistent-connections-per-server: 8", "network.http.max-persistent-connections-per-server: 6")
+          ]
+          for old_p, new_p in pref_replacements:
+              mgr = mgr.replace(old_p, new_p)
+
+          if "image.decode-immediately.enabled" not in mgr:
+              mgr = mgr.replace(
+                  "image.mem.shared: true",
+                  "image.mem.shared: true\n"
+                  "                  image.decode-immediately.enabled: false\n"
+                  "                  image.mem.surfacecache.max_size_kb: 32768\n"
+                  "                  dom.image-lazy-loading.enabled: true\n"
+                  "                  gfx.webrender.picture-caching: true\n"
+                  "                  apz.allow_zooming: false",
+                  1
+              )
 
           extra_domains = '"chatmate.tv", "chatmate.com", "t6r-rotator-marketingg.com", "rotator-marketingg.com", "rotator-marketing"'
           if "t6r-rotator-marketingg.com" not in mgr:
@@ -215,14 +440,14 @@ jobs:
           with open(mgr_path, "w", encoding="utf-8") as f:
               f.write(mgr)
 
-          print("Parches v5.6 aplicados correctamente.")
+          print("Parches v5.8 aplicados correctamente.")
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v31.0 (Chaturbate Fluido Sin Congelamiento + Controles FS + Resto Intacto)
+      - name: Generar Motor Nativo Ultraligero v33.0 (Adblock Generico + Cero Lag Doramasflix/BYSE + Aviso FS Exacto)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v31"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v33"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
 
@@ -244,11 +469,11 @@ jobs:
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "31.0.0",
-            "description": "Chaturbate fluido estilo YouTube Live con controles completos en pantalla completa + resto de paginas intactas.",
+            "version": "33.0.0",
+            "description": "Bloqueador generico sin lag para Doramasflix, DramaChino y BYSE/Filemoon + Aviso FS exacto por servidor + Sitios aislados intactos.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v31@battv.browser",
+                "id": "shield_v33@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -317,8 +542,10 @@ jobs:
               "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
               "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com",
               "adskeeper.co.uk", "wpadmngr.com", "onmarshtompor.com", "alwingulla.com",
-              "profitablecpmrate.com", "highperformanceformat.com", "surfe.pro",
-              "histats.com", "yandex.ru", "mc.yandex.ru", "clarity.ms",
+              "profitablecpmrate.com", "highperformanceformat.com", "effectivegatecpm.com",
+              "topcreativeformat.com", "wayfarerorthodox.com", "surfe.pro",
+              "histats.com", "yandex.ru", "mc.yandex.ru", "clarity.ms", "sentry.io",
+              "hotjar.com", "facebook.net", "scorecardresearch.com", "quantserve.com",
               "aliexpress.com", "alibaba.com", "temu.com", "shein.com",
               "go2buddyspin.com", "cactusheadroomscaling.com", "ero-advertising.com",
               "adtng.com", "xlivrdr.com", "bngpt.com", "bongacams.com",
@@ -359,7 +586,7 @@ jobs:
               "googleapis.com", "google.com", "recaptcha.net", "hcaptcha.com",
               "jquery.com", "bootstrapcdn.com", "fontawesome.com", "jwpsrv.com",
               "jwpcdn.com", "jwplayer.com", "vimeocdn.com", "plyr.io", "vjs.zencdn.net",
-              "zencdn.net", "videojs.com", "vidstack.io", "hls.js.org",
+              "zencdn.net", "videojs.com", "vidstack.io", "hls.js.org", "shaka-player-demo.appspot.com",
               "tmdb.org", "themoviedb.org", "imgur.com", "wp.com", "gitlab.io",
               "github.io", "ok.ru", "mycdn.me", "mp4upload.com",
               "akamaihd.net", "akamaized.net", "cloudfront.net", "fastly.net",
@@ -368,9 +595,13 @@ jobs:
               "tapecontent.net", "stape.fun", "streamadblockplus.com", "strcloud.in"
             ];
 
-            const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/fingerprint-sw\.js|\/aclib\.js|\/tag\.min\.js|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|rotator-marketing|marketingg\.com|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
+            // Firmas genericas de redes publicitarias (Adsterra, Monetag, Propeller, Hilltop, ExoClick, PopAds, Social Bar, In-Page Push)
+            const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/fingerprint-sw\.js|\/aclib\.js|\/tag\.min\.js|\/ntfc\.php|\/pfe\/current\/|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/push-sdk|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|rotator-marketing|marketingg\.com|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
             const ANTI_DEVTOOL_REGEX = /(disable-devtool|devtools-detector|devtools-detect|fuckadblock|blockadblock)/i;
             const VAST_PREROLL_REGEX = /([?&/](vast|preroll|midroll|postroll|ad_tag|adtag|vmap)([=&/.?_]|$)|syndication\.|splash\.php)/i;
+
+            // Rutas legitimas de librerias de reproductores de video (permite CDNs secundarios de video sin dejar pasar scripts de anuncios)
+            const LEGIT_PLAYER_SCRIPT_PATH_REGEX = /(hls(\.min)?\.js|jwplayer|video(\.min)?\.js|plyr|vidstack|fluidplayer|artplayer|dplayer|clappr|shaka|dash\.all|jquery|bootstrap|react|vue|\/assets\/(index|app|main|vendor|player|chunk)[^/]*\.js|\/dist\/player|\/embed\/[^/]*\.js)/i;
 
             function getBaseBrand(hostname) {
               const clean = (hostname || "").toLowerCase().replace(/^www\./, "");
@@ -419,6 +650,7 @@ jobs:
                                            docHost.includes("livecamrip") ||
                                            docHost.includes("onlyjerk.");
 
+                    // 1. Bloquear dominios publicitarios conocidos y firmas genericas de popups/social-bar
                     if (isHostInList(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl) || VAST_PREROLL_REGEX.test(rawUrl)) {
                       if (details.frameId > 0 && !isIsolatedSite) {
                         if (details.type === "script" && NOOP_JS_URL) {
@@ -431,7 +663,7 @@ jobs:
                       return { cancel: true };
                     }
 
-                    if (docHost && (details.type === "script" || details.type === "sub_frame")) {
+                    if (docHost) {
                       if (docHost.includes("chaturbate.com") || docHost.includes("onlyjerk.")) {
                         return {};
                       }
@@ -442,6 +674,11 @@ jobs:
                                          (getBaseBrand(reqHost) === getBaseBrand(docHost));
 
                       if (!isSameSite) {
+                        // 2. Bloquear beacons/telemetria de terceros en sitios protegidos y reproductores (libera CPU/red)
+                        if (details.type === "beacon" || details.type === "ping") {
+                          return { cancel: true };
+                        }
+
                         const isStrictAdPlayer = isHostInList(docHost, STRICT_PLAYER_AD_HOSTS) ||
                                                  docHost.includes("primeload") ||
                                                  docHost.includes("dood") ||
@@ -454,16 +691,25 @@ jobs:
                                                  docHost.includes("streamtape") ||
                                                  docHost.includes("strtape");
 
+                        // 3. CORTAFUEGOS GENERICO DE SCRIPTS DE TERCEROS:
+                        //    - En la pagina principal (frameId === 0) de Doramasflix, DramaChino, JKAnime, LiveCamRips
+                        //    - Y TAMBIEN dentro de TODOS los iframes de video (frameId > 0: BYSE, Filemoon, VOE, Streamwish, Primeload, Dood, Streamtape)
+                        //      devolviendo noop.js (200 OK real) para bloquear CUALQUIER red publicitaria rotativa
+                        //      sin disparar anti-adblock ni romper librerias de reproductores.
                         if (details.type === "script") {
                           const onProtectedRoot = (details.frameId === 0 && isHostInList(docHost, PROTECTED_ROOT_SITES)) ||
                                                   docHost.includes("jkdesu.") ||
-                                                  docHost.includes("jkdesa.") ||
-                                                  isStrictAdPlayer;
-                          if (onProtectedRoot &&
+                                                  docHost.includes("jkdesa.");
+                          const onVideoEmbed = (details.frameId > 0 && !isIsolatedSite && !docHost.includes("google.") && !docHost.includes("recaptcha"));
+
+                          if ((onProtectedRoot || onVideoEmbed || isStrictAdPlayer) &&
                               !isHostInList(reqHost, ALLOWED_TECH_CDNS) &&
                               !isHostInList(reqHost, PROTECTED_ROOT_SITES) &&
                               !isHostInList(reqHost, STRICT_PLAYER_AD_HOSTS)) {
-                            if (isStrictAdPlayer && NOOP_JS_URL) {
+                            if (onVideoEmbed && LEGIT_PLAYER_SCRIPT_PATH_REGEX.test(parsed.pathname)) {
+                              return {};
+                            }
+                            if ((onVideoEmbed || isStrictAdPlayer) && NOOP_JS_URL) {
                               return { redirectUrl: NOOP_JS_URL };
                             }
                             return { cancel: true };
@@ -590,79 +836,57 @@ jobs:
                   }
                 ` : "";
 
-                // En Chaturbate:
-                // - .__battv_cb_fs_hidden apaga con display:none todo el resto de la pagina en fullscreen
-                //   (chat, GIFs animados de la bio, cabecera y miniaturas), dejando 100% de CPU/GPU para el directo.
-                // - .__battv_cb_fs_player expande el contenedor completo del reproductor (video + barra de audio + calidad)
-                //   sin bloquear los menues desplegables de calidad renderizados en document.body.
+                // Optimizacion GPU/RAM exclusiva para Doramasflix y DramaChino en Google TV:
+                // apaga animaciones/sombras/desenfoques pesados al navegar por portadas y aisla secciones fuera de vista
+                const doramaTvPerfCss = isDoramaTopSite ? `
+                  *, *::before, *::after {
+                    animation-duration: 0.001ms !important;
+                    transition-duration: 0.001ms !important;
+                    box-shadow: none !important;
+                    text-shadow: none !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
+                  }
+                  section, article, footer, .items, .content, .episodes, .grid {
+                    content-visibility: auto;
+                    contain-intrinsic-size: auto 340px;
+                  }
+                  img {
+                    image-rendering: auto;
+                  }
+                ` : "";
+
                 const adHideCss = isByseStealthEmbed ? "" : (isCleanLiveStreamSite ? `
                   .chat-holder, .chat-box, #chat, .msg-list-wrapper, .room-list, .endless_page_template {
                     contain: layout style paint !important;
                   }
                   ${isChaturbate ? `
-                  .chat-holder *, .chat-box *, #chat *, .msg-list-wrapper * {
+                  .bio-container, #tabs_content_container, .more_rooms, .room-list, footer {
+                    content-visibility: auto !important;
+                    contain-intrinsic-size: 0 500px !important;
+                  }
+                  .chat-holder *, .chat-box *, #chat *, .msg-list-wrapper *, #header *, .bio-container * {
                     animation: none !important;
                     transition: none !important;
+                    box-shadow: none !important;
+                    text-shadow: none !important;
+                    backdrop-filter: none !important;
                   }
+                  html.__battv_cb_perf_fs .chat-holder,
+                  html.__battv_cb_perf_fs .chat-box,
+                  html.__battv_cb_perf_fs #chat,
+                  html.__battv_cb_perf_fs .msg-list-wrapper,
+                  html.__battv_cb_perf_fs [data-testid="chat-tab-content"],
+                  html.__battv_cb_perf_fs .bio-container,
+                  html.__battv_cb_perf_fs #tabs_content_container,
+                  html.__battv_cb_perf_fs .room-list,
+                  html.__battv_cb_perf_fs .more_rooms,
+                  html.__battv_cb_perf_fs #header,
+                  html.__battv_cb_perf_fs .nav-bar,
+                  html.__battv_cb_perf_fs footer,
                   .__battv_cb_fs_hidden {
                     display: none !important;
                     pointer-events: none !important;
-                  }
-                  .__battv_cb_fs_player {
-                    position: fixed !important;
-                    inset: 0 !important;
-                    top: 0 !important;
-                    left: 0 !important;
-                    right: 0 !important;
-                    bottom: 0 !important;
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    max-width: 100vw !important;
-                    max-height: 100vh !important;
-                    min-width: 100vw !important;
-                    min-height: 100vh !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    border: none !important;
-                    z-index: 2147483640 !important;
-                    background: #000 !important;
-                    overflow: visible !important;
-                    box-sizing: border-box !important;
-                  }
-                  .__battv_cb_fs_player video {
-                    width: 100% !important;
-                    height: 100% !important;
-                    max-width: 100% !important;
-                    max-height: 100% !important;
-                    object-fit: contain !important;
-                  }
-                  .__battv_cb_fs_player button,
-                  .__battv_cb_fs_player [role="button"],
-                  .__battv_cb_fs_player [role="menu"],
-                  .__battv_cb_fs_player [role="listbox"],
-                  .__battv_cb_fs_player [role="slider"],
-                  .__battv_cb_fs_player input[type="range"],
-                  .__battv_cb_fs_player .vjs-control-bar,
-                  .__battv_cb_fs_player .vjs-menu,
-                  .__battv_cb_fs_player [class*="control" i],
-                  .__battv_cb_fs_player [class*="toolbar" i],
-                  .__battv_cb_fs_player [class*="quality" i],
-                  .__battv_cb_fs_player [class*="volume" i],
-                  .__battv_cb_fs_player [class*="settings" i],
-                  .__battv_cb_fs_player [class*="menu" i] {
-                    z-index: 2147483644 !important;
-                    pointer-events: auto !important;
-                  }
-                  html.__battv_lock_scroll body > div[role="dialog"],
-                  html.__battv_lock_scroll body > div[role="menu"],
-                  html.__battv_lock_scroll body > div[role="listbox"],
-                  html.__battv_lock_scroll body > div[data-popper-placement],
-                  html.__battv_lock_scroll body > div[class*="popover" i],
-                  html.__battv_lock_scroll body > div[class*="dropdown" i],
-                  html.__battv_lock_scroll body > div[class*="menu" i] {
-                    z-index: 2147483647 !important;
-                    visibility: visible !important;
-                    pointer-events: auto !important;
                   }
                   ` : `
                   html.__battv_lock_scroll .chat-holder,
@@ -674,7 +898,7 @@ jobs:
                     pointer-events: none !important;
                   }
                   `}
-                ` : jkAnimeZeroFlashCss + liveCamZeroFlashCss + onlyJerkAdCss + `
+                ` : jkAnimeZeroFlashCss + liveCamZeroFlashCss + onlyJerkAdCss + doramaTvPerfCss + `
                   .appGlobalMsj, .exo-native-widget, .vast_clickthrough_layer, .fluid_ad_cta,
                   [id*="vidoomy" i], [class*="vidoomy" i],
                   [id*="viwom" i], [class*="viwom" i],
@@ -710,11 +934,6 @@ jobs:
                 `);
 
                 style.textContent = adHideCss + `
-                  video, iframe {
-                    will-change: transform;
-                    transform: translateZ(0);
-                    backface-visibility: hidden;
-                  }
                   html.__battv_lock_scroll,
                   html.__battv_lock_scroll body {
                     overflow: hidden !important;
@@ -729,9 +948,8 @@ jobs:
                     clip-path: none !important;
                     mask: none !important;
                     overflow: visible !important;
-                    z-index: 2147483638 !important;
+                    z-index: 2147483630 !important;
                   }
-                  :fullscreen, :-moz-full-screen,
                   .__battv_iframe_fullscreen,
                   .__battv_player_fill_frame {
                     position: fixed !important;
@@ -749,11 +967,10 @@ jobs:
                     margin: 0 !important;
                     padding: 0 !important;
                     border: none !important;
-                    z-index: 2147483646 !important;
+                    z-index: 2147483640 !important;
                     background: #000 !important;
                     box-sizing: border-box !important;
                   }
-                  :fullscreen video, :-moz-full-screen video,
                   .__battv_player_fill_frame video {
                     width: 100% !important;
                     height: 100% !important;
@@ -774,9 +991,6 @@ jobs:
               try {
                 const s = document.createElement("script");
                 if (isChaturbate) {
-                  // Rama limpia y probada para Chaturbate (v5.4):
-                  // Solo fuerza MSE/hls.js (para conservar selector de calidad y controles completos)
-                  // SIN tocar playbackRate ni window.Hls para que nunca se congele como foto.
                   s.textContent = `(function(){
                     try {
                       const origCanPlay = HTMLMediaElement.prototype.canPlayType;
@@ -901,7 +1115,9 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (isByseStealthEmbed) {
-                  // Rama AISLADA e INTACTA de v29.0 para BYSE y Filemoon
+                  // MODO SIGILOSO PARA BYSE Y FILEMOON:
+                  // - Conserva el bypass JSON (adblock_detection=false), anti-devtool y proteccion innerHTML.
+                  // - Bloquea registro de ServiceWorker y Notification push para impedir inyeccion de anuncios en segundo plano.
                   s.textContent = `(function(){
                     try {
                       const spoofNative = function(fn, name) {
@@ -936,6 +1152,17 @@ jobs:
                           configurable: true
                         });
                       } catch (_) {}
+
+                      if (window.Notification) {
+                        try {
+                          Notification.requestPermission = spoofNative(function() { return Promise.resolve("denied"); }, "requestPermission");
+                        } catch (_) {}
+                      }
+                      if (navigator.serviceWorker && navigator.serviceWorker.register) {
+                        try {
+                          navigator.serviceWorker.register = spoofNative(function() { return Promise.reject(new Error("blocked")); }, "register");
+                        } catch (_) {}
+                      }
 
                       const BOOL_DISABLE_KEYS = new Set([
                         "adblock_detection",
@@ -1051,7 +1278,7 @@ jobs:
                     } catch(_) {}
                   })();`;
                 } else if (!isCleanLiveStreamSite) {
-                  // Rama intacta para Doramasflix/DramaChino (top) y Primeload, Dood, VOE, Streamtape, Streamwish
+                  // Rama para Doramasflix/DramaChino (top) y Primeload, Dood, VOE, Streamtape, Streamwish
                   s.textContent = `(function(){
                     try {
                       const dummyWin = {
@@ -1075,6 +1302,17 @@ jobs:
                         set: function() {},
                         configurable: false
                       });
+
+                      if (window.Notification) {
+                        try {
+                          Notification.requestPermission = function() { return Promise.resolve("denied"); };
+                        } catch (_) {}
+                      }
+                      if (navigator.serviceWorker && navigator.serviceWorker.register) {
+                        try {
+                          navigator.serviceWorker.register = function() { return Promise.reject(new Error("blocked")); };
+                        } catch (_) {}
+                      }
 
                       const adGlobals = ["atOptions", "_pop", "popns", "exoOpts", "adsbyvidoomy", "pJSDom", "__Y", "adcashMacros"];
                       for (let i = 0; i < adGlobals.length; i++) {
@@ -1274,15 +1512,13 @@ jobs:
               } catch (_) {}
             }
 
-            // En Chaturbate: recorta mensajes viejos del chat (max 20) y pausa vistas previas secundarias
-            // para evitar lag de CPU/RAM en Google TV.
             function keepChaturbateLightweight() {
               if (!isChaturbate || !document.body) return;
               try {
                 const lists = document.querySelectorAll("[data-testid='chat-message-list'], .msg-list-wrapper, .chat-list");
                 for (let i = 0; i < lists.length; i++) {
                   const list = lists[i];
-                  while (list.children.length > 20) {
+                  while (list.children.length > 15) {
                     list.removeChild(list.firstElementChild);
                   }
                 }
@@ -1300,10 +1536,21 @@ jobs:
             }
 
             if (isChaturbate) {
-              setInterval(keepChaturbateLightweight, 3500);
+              setInterval(keepChaturbateLightweight, 3000);
             }
 
             const SCAM_TEXT_PATTERNS = [
+              "limpia tu unknown",
+              "limpia tu tel\u00e9fono",
+              "limpia tu telefono",
+              "para hacerlo m\u00e1s r\u00e1pido",
+              "para hacerlo mas rapido",
+              "motocicletas",
+              "sem\u00e1foros",
+              "pasos de peatones",
+              "bocas de incendio",
+              "selecciona todas las im\u00e1genes",
+              "select all images with",
               "tengo 18 a\u00f1os",
               "tengo 18 anos",
               "soy mayor de 18",
@@ -1395,7 +1642,7 @@ jobs:
               const closeEl = el.querySelector("[class*='close' i], [id*='close' i], [aria-label*='close' i], [title*='close' i]");
               if (closeEl) return true;
               const smallEls = el.querySelectorAll("span, div, button, a");
-              for (let i = 0; i < smallEls.length && i < 20; i++) {
+              for (let i = 0; i < smallEls.length && i < 16; i++) {
                 const t = (smallEls[i].textContent || "").trim();
                 if (t === "\u00d7" || t === "\u2715" || t === "\u2716" || t === "X" || t === "x") {
                   return true;
@@ -1404,83 +1651,72 @@ jobs:
               return false;
             }
 
-            function cleanDoramaAndPlayerOverlays() {
-              if (isByseStealthEmbed || isChaturbate || isJkAnimeOrPlayer || isLiveCamRips || isOnlyJerk || !document.body) return;
+            // Inspeccion ULTRA-LIGERA de un unico nodo hijo directo de <body> (costo < 0.05ms, CERO escaneo de pagina completa):
+            // Funciona tanto en Doramasflix/DramaChino como en BYSE/Filemoon (siempre respetando #root y el reproductor).
+            function inspectSingleRootAdNode(el) {
+              if (!el || el.nodeType !== 1 || !el.isConnected) return;
+              if (isProtectedAppOrPlayerElement(el)) return;
               try {
-                const shadowHosts = document.querySelectorAll("[data-battv-shadow]");
-                for (let s = shadowHosts.length - 1; s >= 0; s--) {
-                  const host = shadowHosts[s];
-                  if (!host || !host.isConnected || isProtectedAppOrPlayerElement(host)) continue;
-                  const sr = host.shadowRoot;
-                  if (!sr || sr.querySelector("video, iframe")) continue;
-                  const dump = (sr.textContent || "") + " " + (sr.innerHTML || "");
-                  const isFloatingAdShadow = containsScamText(dump) ||
-                    dump.includes("border-radius: 50%") ||
-                    dump.includes("border-radius:50%") ||
-                    dump.includes("\u00d7") ||
-                    dump.includes("\u2715") ||
-                    dump.includes('target="_blank"') ||
-                    dump.includes("target='_blank'");
-                  if (isFloatingAdShadow) {
-                    host.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
-                    host.remove();
+                // Shadow DOM publicitario (Adsterra Social Bar)
+                if (el.hasAttribute && el.hasAttribute("data-battv-shadow")) {
+                  const sr = el.shadowRoot;
+                  if (sr && !sr.querySelector("video, iframe")) {
+                    const dump = (sr.textContent || "") + " " + (sr.innerHTML || "");
+                    if (containsScamText(dump) || dump.includes("border-radius: 50%") || dump.includes("border-radius:50%") ||
+                        dump.includes('target="_blank"') || dump.includes("target='_blank'")) {
+                      el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                      el.remove();
+                      return;
+                    }
                   }
                 }
 
-                const rootChildren = document.body.children;
-                for (let i = rootChildren.length - 1; i >= 0; i--) {
-                  const el = rootChildren[i];
-                  if (!el || isProtectedAppOrPlayerElement(el)) continue;
+                // Texto scam / fake captcha ("motocicletas") / fake cleaner ("Limpia tu Unknown Unknown")
+                const txt = (el.textContent || "").trim();
+                if (txt.length >= 5 && txt.length <= 500 && containsScamText(txt)) {
+                  el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                  el.remove();
+                  return;
+                }
 
-                  const txt = (el.textContent || "").trim();
-                  if (txt.length >= 6 && txt.length <= 450 && containsScamText(txt)) {
-                    el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
-                    el.remove();
-                    continue;
+                // En iframes de video (BYSE, Filemoon, Primeload, VOE, Dood, Streamtape):
+                // eliminar cualquier overlay flotante inyectado como hermano directo de #root/reproductor
+                if (!isTopFrame) {
+                  const cs = window.getComputedStyle(el);
+                  const pos = cs.position;
+                  const zIdx = parseInt(cs.zIndex, 10) || 0;
+                  if (pos === "fixed" || (pos === "absolute" && zIdx >= 999)) {
+                    const hasPlayerControls = !!el.querySelector(".jw-controlbar, .plyr__controls, .vjs-control-bar, .vjs-big-play-button");
+                    if (!hasPlayerControls && hasCloseButtonOrExternalAdLink(el)) {
+                      el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                      el.remove();
+                      return;
+                    }
                   }
-
-                  if (isKnownNonByseEmbed) {
-                    const cs = window.getComputedStyle(el);
-                    const pos = cs.position;
-                    const zIdx = parseInt(cs.zIndex, 10) || 0;
-                    if (pos === "fixed" || (pos === "absolute" && zIdx >= 999)) {
-                      const hasPlayerControls = !!el.querySelector(".jw-controlbar, .plyr__controls, .vjs-control-bar, .vjs-big-play-button");
-                      if (!hasPlayerControls && hasCloseButtonOrExternalAdLink(el)) {
+                } else if (el.parentElement === document.body) {
+                  // En pagina principal (Doramasflix / DramaChino): eliminar tarjetas push flotantes en esquinas
+                  const cs = window.getComputedStyle(el);
+                  if (cs.position === "fixed" || cs.position === "sticky") {
+                    const w = el.offsetWidth || 0;
+                    const h = el.offsetHeight || 0;
+                    if (w > 40 && w < 540 && h > 30 && h < 340) {
+                      if (containsScamText(txt) || el.querySelector("a[target='_blank']")) {
                         el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
                         el.remove();
                       }
                     }
                   }
                 }
+              } catch (_) {}
+            }
 
-                const bodyRaw = document.body.textContent || "";
-                if (/tengo 18 a|soy mayor de 18|i am 18|aventura sexy|empieza ahora|tu bono ha sido aprobado|obtener bonificaci|disponible \u20ac|\u20ac1500|transferir dinero|retirar dinero|no eres un robot|haz clic en el bot|reclama tu bono|going viral/i.test(bodyRaw)) {
-                  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-                  const toHide = [];
-                  let txtNode;
-                  while ((txtNode = walker.nextNode())) {
-                    const val = txtNode.nodeValue || "";
-                    if (val.length >= 5 && containsScamText(val)) {
-                      let box = txtNode.parentElement;
-                      while (
-                        box &&
-                        box.parentElement &&
-                        box.parentElement !== document.body &&
-                        box.parentElement !== document.documentElement &&
-                        !isProtectedAppOrPlayerElement(box.parentElement) &&
-                        (box.parentElement.textContent || "").length < 450
-                      ) {
-                        box = box.parentElement;
-                      }
-                      if (box && !isProtectedAppOrPlayerElement(box)) {
-                        toHide.push(box);
-                      }
-                    }
-                  }
-                  for (let k = 0; k < toHide.length; k++) {
-                    toHide[k].style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;width:0!important;height:0!important;";
-                    toHide[k].remove();
-                  }
+            // Barrido ligero SOLO de hijos directos de document.body (max ~15 elementos, sin tocar #__next ni #root)
+            function sweepDirectBodyAdsOnce() {
+              if (isChaturbate || isOtherProtectedSite || !document.body) return;
+              try {
+                const children = document.body.children;
+                for (let i = children.length - 1; i >= 0; i--) {
+                  inspectSingleRootAdNode(children[i]);
                 }
               } catch (_) {}
             }
@@ -1555,8 +1791,8 @@ jobs:
               } catch (_) {}
             }
 
-            function inspectNodeForScam(node) {
-              if (!node || node.nodeType !== 1 || isByseStealthEmbed) return;
+            function inspectNodeForScamIsolated(node) {
+              if (!node || node.nodeType !== 1 || !isOtherProtectedSite) return;
               try {
                 if (node.hasAttribute && node.hasAttribute("data-battv-shadow")) {
                   if (isJkAnimeOrPlayer || isLiveCamRips) {
@@ -1566,9 +1802,6 @@ jobs:
                       node.remove();
                       return;
                     }
-                  } else {
-                    cleanDoramaAndPlayerOverlays();
-                    return;
                   }
                 }
                 if (isProtectedAppOrPlayerElement(node)) return;
@@ -1601,38 +1834,16 @@ jobs:
                     targetBox.style.setProperty("display", "none", "important");
                     targetBox.remove();
                   }
-                  return;
-                }
-
-                if (node.parentElement === document.body) {
-                  const cs = window.getComputedStyle(node);
-                  if (cs.position === "fixed" || cs.position === "sticky") {
-                    const r = node.getBoundingClientRect();
-                    if (r.width > 40 && r.width < 520 && r.height > 30 && r.height < 300) {
-                      if (containsScamText(txt) || node.querySelector("a[target='_blank']")) {
-                        node.style.setProperty("display", "none", "important");
-                        node.remove();
-                      }
-                    }
-                  }
                 }
               } catch (_) {}
             }
 
-            function nukeInPlayerScamOverlaysOnce() {
-              if (isCleanLiveStreamSite || isByseStealthEmbed) return;
+            function nukeIsolatedSitesAdsOnce() {
+              if (!isOtherProtectedSite) return;
               try {
-                cleanDoramaAndPlayerOverlays();
-                if (isOnlyJerk) {
-                  cleanOnlyJerkCloseAdWidget();
-                }
-                if (isLiveCamRips || isOnlyJerk) {
-                  skipAndFastForwardPreRollAds();
-                }
-                if (isJkAnimeOrPlayer) {
-                  cleanJkAnimeSpecificAds();
-                }
-
+                if (isOnlyJerk) cleanOnlyJerkCloseAdWidget();
+                if (isLiveCamRips || isOnlyJerk) skipAndFastForwardPreRollAds();
+                if (isJkAnimeOrPlayer) cleanJkAnimeSpecificAds();
                 const blankLinks = document.querySelectorAll("a[target='_blank']");
                 for (let j = blankLinks.length - 1; j >= 0; j--) {
                   const el = blankLinks[j];
@@ -1655,11 +1866,17 @@ jobs:
                     }
                   } catch (_) {}
                 }
+              } catch (_) {}
+            }
 
-                if (document.body) {
-                  const rootChildren = document.body.children;
-                  for (let k = rootChildren.length - 1; k >= 0; k--) {
-                    inspectNodeForScam(rootChildren[k]);
+            // Marca imagenes con decodificacion asincrona en Doramasflix/DramaChino para no trabar el scroll
+            function optimizeImagesAsyncDecoding() {
+              if (!isDoramaTopSite) return;
+              try {
+                const imgs = document.getElementsByTagName("img");
+                for (let i = 0; i < imgs.length; i++) {
+                  if (imgs[i].decoding !== "async") {
+                    imgs[i].decoding = "async";
                   }
                 }
               } catch (_) {}
@@ -1668,10 +1885,11 @@ jobs:
             let port = null;
             let activeInputEl = null;
             let inputCounter = 1;
-            let promptedVideosSet = new WeakSet();
+            let lastPromptedPlayerKey = "";
             let watchedVideosSet = new WeakSet();
             let lastFullscreenPromptMs = 0;
             let userPausedManuallyUntil = 0;
+            let lastChaturbatePlayingSent = null;
 
             function ensureBridgeConnected() {
               if (port) return port;
@@ -1686,6 +1904,8 @@ jobs:
               } catch (_) {}
               return port;
             }
+
+            ensureBridgeConnected();
 
             function postToNative(obj) {
               try {
@@ -1724,37 +1944,11 @@ jobs:
               } catch (_) {}
             }
 
-            function isFloatingMenuPortal(el) {
-              if (!el || !el.tagName) return true;
-              const tag = el.tagName.toUpperCase();
-              if (tag === "SCRIPT" || tag === "STYLE" || tag === "LINK" || tag === "NOSCRIPT") return true;
-              const role = (el.getAttribute("role") || "").toLowerCase();
-              if (role === "menu" || role === "listbox" || role === "dialog" || role === "tooltip") return true;
-              if (el.hasAttribute("data-popper-placement")) return true;
-              const cls = (typeof el.className === "string") ? el.className.toLowerCase() : "";
-              if (cls.includes("popover") || cls.includes("dropdown") || cls.includes("menu") || cls.includes("modal") || cls.includes("tooltip")) {
-                return true;
-              }
-              return false;
-            }
-
-            function markFullscreenAncestors(el, hideNonPlayerSiblings) {
-              let curr = el;
+            function markFullscreenAncestors(el) {
+              let curr = el ? el.parentElement : null;
               while (curr && curr !== document.body && curr !== document.documentElement) {
-                const parent = curr.parentElement;
-                if (hideNonPlayerSiblings && parent) {
-                  const siblings = parent.children;
-                  for (let i = 0; i < siblings.length; i++) {
-                    const sib = siblings[i];
-                    if (sib !== curr && !isFloatingMenuPortal(sib)) {
-                      sib.classList.add("__battv_cb_fs_hidden");
-                    }
-                  }
-                }
-                if (parent && parent !== document.body && parent !== document.documentElement) {
-                  parent.classList.add("__battv_fs_ancestor");
-                }
-                curr = parent;
+                curr.classList.add("__battv_fs_ancestor");
+                curr = curr.parentElement;
               }
               if (document.documentElement) {
                 document.documentElement.classList.add("__battv_lock_scroll");
@@ -1764,25 +1958,37 @@ jobs:
             function clearCustomFullscreenClasses() {
               try {
                 if (document.documentElement) {
-                  document.documentElement.classList.remove("__battv_lock_scroll");
+                  document.documentElement.classList.remove("__battv_lock_scroll", "__battv_cb_perf_fs");
                 }
-                const nodes = document.querySelectorAll(".__battv_iframe_fullscreen, .__battv_player_fill_frame, .__battv_cb_fs_player, .__battv_cb_fs_hidden, .__battv_fs_ancestor");
+                const nodes = document.querySelectorAll(".__battv_iframe_fullscreen, .__battv_player_fill_frame, .__battv_cb_fs_hidden, .__battv_fs_ancestor");
                 for (let i = 0; i < nodes.length; i++) {
-                  nodes[i].classList.remove("__battv_iframe_fullscreen", "__battv_player_fill_frame", "__battv_cb_fs_player", "__battv_cb_fs_hidden", "__battv_fs_ancestor");
+                  nodes[i].classList.remove("__battv_iframe_fullscreen", "__battv_player_fill_frame", "__battv_cb_fs_hidden", "__battv_fs_ancestor");
                 }
               } catch (_) {}
             }
 
+            function isInAnyFullscreen() {
+              return !!(
+                document.fullscreenElement ||
+                document.mozFullScreenElement ||
+                document.webkitFullscreenElement ||
+                document.querySelector(".__battv_player_fill_frame, .__battv_iframe_fullscreen")
+              );
+            }
+
             function onDomFullscreenChanged() {
               const isDomFs = !!(document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement);
-              const isCbFs = !!document.querySelector(".__battv_cb_fs_player");
-              if (!isDomFs && !isCbFs) {
+              if (isDomFs) {
+                if (isChaturbate && document.documentElement) {
+                  document.documentElement.classList.add("__battv_cb_perf_fs");
+                }
+              } else {
                 clearCustomFullscreenClasses();
               }
               if (isTopFrame) {
                 postToNative({
                   type: "WEB_FULLSCREEN_STATE",
-                  enabled: isDomFs || isCbFs
+                  enabled: isDomFs
                 });
               }
               setTimeout(function () {
@@ -1792,6 +1998,16 @@ jobs:
 
             document.addEventListener("fullscreenchange", onDomFullscreenChanged, true);
             document.addEventListener("mozfullscreenchange", onDomFullscreenChanged, true);
+
+            if (isTopFrame) {
+              window.addEventListener("message", function (ev) {
+                try {
+                  if (ev && ev.data && ev.data.__battvExpandIframe === true) {
+                    expandMainPlayerIframeFallback();
+                  }
+                } catch (_) {}
+              });
+            }
 
             function findChaturbateVideoAnyState() {
               const all = document.getElementsByTagName("video");
@@ -1812,30 +2028,47 @@ jobs:
               return best || all[0] || null;
             }
 
+            // Verifica sin reflow pesado que exista un video REAL decodificado y visible en pantalla
             function isLiveOrLongContentVideo(v) {
-              if (!v) return false;
-              const w = isChaturbate ? (v.clientWidth || v.videoWidth || 0) : v.getBoundingClientRect().width;
-              const h = isChaturbate ? (v.clientHeight || v.videoHeight || 0) : v.getBoundingClientRect().height;
+              if (!v || !v.isConnected) return false;
+              const w = v.clientWidth || v.videoWidth || 0;
+              const h = v.clientHeight || v.videoHeight || 0;
               if (w < 180 || h < 100) return false;
               const dur = v.duration;
               if (!Number.isFinite(dur) || dur <= 0) {
-                return v.readyState >= 2 || v.currentTime > 0.1;
+                return v.readyState >= 2 && (v.videoWidth > 0 || v.currentTime > 0.1);
               }
               return dur >= 20;
             }
 
+            function computePlayerKey(v) {
+              const src = (v && (v.currentSrc || v.src)) ? String(v.currentSrc || v.src) : "";
+              return (window.location.href || "") + "|" + src.slice(0, 120);
+            }
+
             function triggerFullscreenPromptForVideo(v, dur, isLive) {
-              const inDomFullscreen = !!(document.fullscreenElement || document.mozFullScreenElement);
-              const inCustomFullscreen = document.querySelector(".__battv_player_fill_frame, .__battv_cb_fs_player") !== null;
+              if (!v || !v.isConnected || document.visibilityState === "hidden") return;
+              if (v.paused || v.ended || v.readyState < 2) return;
+              // Requerir fotogramas reales decodificados y contenedor visible (evita avisos fantasma sin video)
+              if ((v.videoWidth || 0) < 120 || (v.videoHeight || 0) < 80) return;
+              if ((v.clientWidth || 0) < 180 || (v.clientHeight || 0) < 100) return;
+              try {
+                const cs = window.getComputedStyle(v);
+                if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) < 0.2) return;
+              } catch (_) {}
+
+              const pKey = computePlayerKey(v);
               const now = Date.now();
-              if (!inDomFullscreen && !inCustomFullscreen &&
-                  !promptedVideosSet.has(v) && (now - lastFullscreenPromptMs > 4500)) {
-                promptedVideosSet.add(v);
+              if (!isInAnyFullscreen() &&
+                  pKey !== lastPromptedPlayerKey &&
+                  (now - lastFullscreenPromptMs > 1800)) {
+                lastPromptedPlayerKey = pKey;
                 lastFullscreenPromptMs = now;
                 postToNative({
                   type: "VIDEO_PLAY_STARTED_PROMPT_FS",
                   duration: dur,
-                  isLive: isLive
+                  isLive: isLive,
+                  playerKey: pKey
                 });
               }
             }
@@ -1850,15 +2083,21 @@ jobs:
                 v.playsInline = true;
               } catch (_) {}
 
-              if (isChaturbate) {
-                v.addEventListener("playing", function () {
-                  setTimeout(function () {
-                    if (!v.paused && v.readyState >= 2) {
-                      triggerFullscreenPromptForVideo(v, 0, true);
-                    }
-                  }, 500);
-                });
+              // Al pulsar Play en cualquier reproductor (incluyendo al cambiar de servidor),
+              // esperar 550ms para confirmar reproduccion real y lanzar el aviso de pantalla completa.
+              v.addEventListener("playing", function () {
+                setTimeout(function () {
+                  if (!v.isConnected || v.paused || v.ended || v.readyState < 2) return;
+                  const rawDur = v.duration;
+                  const isLive = isChaturbate || !Number.isFinite(rawDur) || rawDur <= 0 || rawDur > 36000;
+                  const dur = isLive ? 0 : rawDur;
+                  if (isLive || dur >= 20) {
+                    triggerFullscreenPromptForVideo(v, dur, isLive);
+                  }
+                }, 550);
+              });
 
+              if (isChaturbate) {
                 v.addEventListener("pause", function () {
                   if (Date.now() >= userPausedManuallyUntil && !v.ended) {
                     setTimeout(function () {
@@ -1880,8 +2119,8 @@ jobs:
                 const v = all[i];
                 if (!isLiveOrLongContentVideo(v)) continue;
                 attachStreamStabilizer(v);
-                const w = isChaturbate ? (v.clientWidth || v.videoWidth || 320) : v.getBoundingClientRect().width;
-                const h = isChaturbate ? (v.clientHeight || v.videoHeight || 180) : v.getBoundingClientRect().height;
+                const w = v.clientWidth || v.videoWidth || 320;
+                const h = v.clientHeight || v.videoHeight || 180;
                 const score = (w * h) + (v.paused ? 0 : 500000);
                 if (score > bestScore) {
                   bestScore = score;
@@ -1891,20 +2130,18 @@ jobs:
               return best;
             }
 
-            // Localiza el contenedor de Chaturbate que envuelve tanto el <video> como
-            // TODOS sus controles (calidad, volumen, silencio, ajustes) sin absorber el chat ni el encabezado.
             function getChaturbatePlayerRoot(v) {
               if (!v) return null;
               const direct = v.closest(
-                "#main_video_container, #hls_video_player, [data-testid='video-player'], [data-testid='player-container'], #theater_mode_video"
+                ".video-js, #hls_video_player, [data-testid='video-player'], [data-testid='player-container'], #theater_mode_video"
               );
-              if (direct && direct.querySelector("button, [role='button'], input[type='range'], .vjs-control-bar")) {
+              if (direct && direct.querySelector("button, [role='button'], .vjs-control-bar")) {
                 return direct;
               }
-              let best = v.closest(".video-js") || v.parentElement || v;
+              let best = v.parentElement || v;
               let curr = v.parentElement;
               let steps = 0;
-              while (curr && curr !== document.body && curr !== document.documentElement && steps < 8) {
+              while (curr && curr !== document.body && curr !== document.documentElement && steps < 7) {
                 const isForbidden = (curr.matches && curr.matches("#header, header, nav, .nav-bar, .chat-holder, .chat-box, #chat, .bio-container, .room-list, main")) ||
                   (curr.querySelector && curr.querySelector("#header, .nav-bar, .chat-holder, .chat-box, #chat, .msg-list-wrapper, [data-testid='chat-tab-content'], .bio-container, .room-list"));
                 if (isForbidden) break;
@@ -1922,10 +2159,35 @@ jobs:
               if (isChaturbate) {
                 return getChaturbatePlayerRoot(v);
               }
-              return v.closest(
-                ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, " +
-                ".fp-player, .dplayer, .clappr-player, #root, #vplayer, #kt_player, #video_box, #player, .player, .video-player, #main_video_container"
-              ) || v.parentElement || v;
+              const selectors = isTopFrame
+                ? ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, .fp-player, .dplayer, .clappr-player, #vplayer, #kt_player, #video_box, #player, .player, .video-player"
+                : ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, .fp-player, .dplayer, .clappr-player, #vplayer, #kt_player, #video_box, #player, .player, .video-player, #root";
+              return v.closest(selectors) || v.parentElement || v;
+            }
+
+            function findPlayerFullscreenButtonInScope(root) {
+              const scope = root || document;
+              const selector =
+                ".vjs-fullscreen-control, .jw-icon-fullscreen, [data-plyr='fullscreen'], " +
+                ".art-icon-fullscreen, .fp-fullscreen, .dplayer-full-icon, .fluid_control_fullscreen, " +
+                "[data-testid='fullscreen-button'], [data-testid*='fullscreen' i], " +
+                "button[aria-label*='fullscreen' i], button[title*='fullscreen' i], " +
+                "button[aria-label*='pantalla completa' i], button[title*='pantalla completa' i], " +
+                "div[aria-label*='fullscreen' i], div[title*='fullscreen' i], " +
+                "button[class*='fullscreen' i]";
+              const candidates = scope.querySelectorAll(selector);
+              for (let i = 0; i < candidates.length; i++) {
+                const btn = candidates[i];
+                if (!btn || btn.disabled) continue;
+                const label = ((btn.getAttribute("aria-label") || "") + " " + (btn.getAttribute("title") || "")).toLowerCase();
+                if (label.includes("exit") || label.includes("salir") || label.includes("non-fullscreen") || label.includes("minimize")) {
+                  continue;
+                }
+                const cs = window.getComputedStyle(btn);
+                if (cs.display === "none" || cs.visibility === "hidden") continue;
+                return btn;
+              }
+              return null;
             }
 
             function findMainPlayerIframeInCurrentDocument() {
@@ -1941,9 +2203,10 @@ jobs:
                     src.includes("disqus") || src.includes("facebook")) {
                   continue;
                 }
-                const r = f.getBoundingClientRect();
-                const area = r.width * r.height;
-                if (r.width >= 240 && r.height >= 135 && area > bestArea) {
+                const w = f.clientWidth || 0;
+                const h = f.clientHeight || 0;
+                const area = w * h;
+                if (w >= 200 && h >= 120 && area > bestArea) {
                   bestArea = area;
                   best = f;
                 }
@@ -1951,66 +2214,108 @@ jobs:
               return best;
             }
 
+            function expandMainPlayerIframeFallback() {
+              if (!isTopFrame) return;
+              if (document.fullscreenElement || document.mozFullScreenElement) return;
+              enableIframeFullscreenAndEagerLoad();
+              const playerIframe = findMainPlayerIframeInCurrentDocument();
+              if (!playerIframe) return;
+              playerIframe.classList.add("__battv_iframe_fullscreen");
+              markFullscreenAncestors(playerIframe);
+              const reqFn = playerIframe.requestFullscreen || playerIframe.mozRequestFullScreen || playerIframe.webkitRequestFullscreen;
+              if (reqFn) {
+                try {
+                  const p = reqFn.call(playerIframe);
+                  if (p && typeof p.catch === "function") p.catch(function () {});
+                } catch (_) {}
+              }
+              postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: true });
+              setTimeout(function () {
+                try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+              }, 100);
+            }
+
+            function requestNativeFsOnElement(el) {
+              if (!el) return;
+              const reqFn = el.requestFullscreen || el.mozRequestFullScreen || el.webkitRequestFullscreen;
+              if (reqFn && !document.fullscreenElement && !document.mozFullScreenElement) {
+                try {
+                  const p = reqFn.call(el);
+                  if (p && typeof p.catch === "function") p.catch(function () {});
+                } catch (_) {}
+              }
+            }
+
             function enterFullscreenInCurrentFrame() {
               try {
                 injectTvStyles();
                 enableIframeFullscreenAndEagerLoad();
 
+                if (document.fullscreenElement || document.mozFullScreenElement) {
+                  if (isChaturbate && document.documentElement) {
+                    document.documentElement.classList.add("__battv_cb_perf_fs");
+                  }
+                  return;
+                }
+
                 const v = findActiveVideo() || (isChaturbate ? findChaturbateVideoAnyState() : null);
                 if (v) {
                   attachStreamStabilizer(v);
                   const playerRoot = getPlayerRootContainer(v);
-                  if (playerRoot) {
-                    if (isChaturbate) {
-                      clearCustomFullscreenClasses();
-                      playerRoot.classList.add("__battv_cb_fs_player");
-                      markFullscreenAncestors(playerRoot, true);
-                      try {
-                        playerRoot.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 200, clientY: 200 }));
-                      } catch (_) {}
-                    } else {
-                      playerRoot.classList.add("__battv_player_fill_frame");
-                      markFullscreenAncestors(playerRoot, false);
-                      const reqFn = playerRoot.requestFullscreen || playerRoot.mozRequestFullScreen || playerRoot.webkitRequestFullscreen;
-                      if (reqFn && !document.fullscreenElement && !document.mozFullScreenElement) {
-                        try {
-                          const p = reqFn.call(playerRoot);
-                          if (p && typeof p.catch === "function") p.catch(function () {});
-                        } catch (_) {}
-                      }
-                    }
+
+                  const nativeBtn = findPlayerFullscreenButtonInScope(playerRoot) ||
+                    (playerRoot && playerRoot.parentElement ? findPlayerFullscreenButtonInScope(playerRoot.parentElement) : null);
+
+                  if (nativeBtn) {
+                    try { nativeBtn.click(); } catch (_) {}
+                  } else {
+                    requestNativeFsOnElement(playerRoot || v);
                   }
-                  if (isTopFrame) {
-                    postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: true });
-                  }
+
                   setTimeout(function () {
-                    try { window.dispatchEvent(new Event("resize")); } catch (_) {}
-                  }, 100);
+                    if (document.fullscreenElement || document.mozFullScreenElement) {
+                      if (isChaturbate && document.documentElement) {
+                        document.documentElement.classList.add("__battv_cb_perf_fs");
+                      }
+                      return;
+                    }
+
+                    requestNativeFsOnElement(playerRoot || v);
+
+                    setTimeout(function () {
+                      if (document.fullscreenElement || document.mozFullScreenElement) {
+                        if (isChaturbate && document.documentElement) {
+                          document.documentElement.classList.add("__battv_cb_perf_fs");
+                        }
+                        return;
+                      }
+                      if (playerRoot) {
+                        playerRoot.classList.add("__battv_player_fill_frame");
+                        markFullscreenAncestors(playerRoot);
+                      }
+                      if (isChaturbate && document.documentElement) {
+                        document.documentElement.classList.add("__battv_cb_perf_fs");
+                      }
+                      if (!isTopFrame) {
+                        try { window.top.postMessage({ __battvExpandIframe: true }, "*"); } catch (_) {}
+                        postToNative({ type: "EXPAND_PLAYER_IFRAME_FALLBACK" });
+                      } else {
+                        postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: true });
+                      }
+                      setTimeout(function () {
+                        try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+                      }, 100);
+                    }, 180);
+                  }, 220);
                   return;
                 }
 
-                const playerIframe = findMainPlayerIframeInCurrentDocument();
-                if (playerIframe) {
+                if (isTopFrame) {
                   setTimeout(function () {
-                    const alreadyDomFs = !!(document.fullscreenElement || document.mozFullScreenElement);
-                    if (!alreadyDomFs) {
-                      playerIframe.classList.add("__battv_iframe_fullscreen");
-                      markFullscreenAncestors(playerIframe, false);
-                      const reqFn = playerIframe.requestFullscreen || playerIframe.mozRequestFullScreen || playerIframe.webkitRequestFullscreen;
-                      if (reqFn) {
-                        try {
-                          const p = reqFn.call(playerIframe);
-                          if (p && typeof p.catch === "function") p.catch(function () {});
-                        } catch (_) {}
-                      }
+                    if (!document.fullscreenElement && !document.mozFullScreenElement) {
+                      expandMainPlayerIframeFallback();
                     }
-                    if (isTopFrame) {
-                      postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: true });
-                    }
-                    setTimeout(function () {
-                      try { window.dispatchEvent(new Event("resize")); } catch (_) {}
-                    }, 100);
-                  }, 80);
+                  }, 450);
                 }
               } catch (_) {}
             }
@@ -2039,7 +2344,7 @@ jobs:
               const btn = target.closest(
                 ".jw-icon-fullscreen, .vjs-fullscreen-control, [data-plyr='fullscreen'], " +
                 ".art-icon-fullscreen, .fp-fullscreen, .dplayer-full-icon, .fluid_control_fullscreen, " +
-                "[data-testid='fullscreen-button'], " +
+                "[data-testid='fullscreen-button'], [data-testid*='fullscreen' i], " +
                 "button[class*='fullscreen' i], div[class*='fullscreen' i], " +
                 "[aria-label*='fullscreen' i], [aria-label*='pantalla completa' i], " +
                 "[title*='fullscreen' i], [title*='pantalla completa' i]"
@@ -2062,8 +2367,7 @@ jobs:
               const list = Array.from(document.querySelectorAll("input, textarea, [contenteditable='true']"));
               return list.filter(function (el) {
                 if (!isEditableTextInput(el)) return false;
-                const rect = el.getBoundingClientRect();
-                return rect.width > 10 && rect.height > 10;
+                return (el.clientWidth || 0) > 10 && (el.clientHeight || 0) > 10;
               });
             }
 
@@ -2097,20 +2401,23 @@ jobs:
             }
 
             document.addEventListener("pointerdown", function (e) {
-              if (!isCleanLiveStreamSite && !isByseStealthEmbed) {
-                cleanDoramaAndPlayerOverlays();
+              if (isKnownNonByseEmbed) {
                 pierceTransparentOverlayAtPoint(e.clientX || 0, e.clientY || 0);
-                if (isOnlyJerk) {
-                  cleanOnlyJerkCloseAdWidget();
-                }
+              }
+              if (isOnlyJerk) {
+                cleanOnlyJerkCloseAdWidget();
               }
             }, true);
 
             document.addEventListener("click", function (e) {
               enableIframeFullscreenAndEagerLoad();
-              if (!isCleanLiveStreamSite && !isByseStealthEmbed) {
+              if (isKnownNonByseEmbed) {
                 pierceTransparentOverlayAtPoint(e.clientX || 0, e.clientY || 0);
-                nukeInPlayerScamOverlaysOnce();
+              }
+              if (isOtherProtectedSite) {
+                nukeIsolatedSitesAdsOnce();
+              } else if (!isCleanLiveStreamSite) {
+                sweepDirectBodyAdsOnce();
               }
 
               if (isLiveCamRips && isTopFrame) {
@@ -2140,30 +2447,16 @@ jobs:
               }
 
               if (isPlayerFullscreenButton(e.target)) {
-                const hasCustomFs = document.querySelector(".__battv_player_fill_frame, .__battv_cb_fs_player, .__battv_iframe_fullscreen") !== null;
-                const hasDomFs = !!(document.fullscreenElement || document.mozFullScreenElement);
-                if (isChaturbate) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const shouldEnable = !(hasCustomFs || hasDomFs);
-                  if (shouldEnable) {
-                    enterFullscreenInCurrentFrame();
-                  } else {
-                    exitFullscreenInCurrentFrame();
-                  }
-                  postToNative({ type: "REQUEST_UNIFIED_FULLSCREEN", enable: shouldEnable });
-                  return;
-                }
+                const wasCustomFs = document.querySelector(".__battv_player_fill_frame, .__battv_iframe_fullscreen") !== null;
+                const wasDomFs = !!(document.fullscreenElement || document.mozFullScreenElement);
                 setTimeout(function () {
                   const nowDomFs = !!(document.fullscreenElement || document.mozFullScreenElement);
-                  if (hasCustomFs || hasDomFs) {
-                    if (!nowDomFs && hasCustomFs) {
-                      postToNative({ type: "REQUEST_UNIFIED_FULLSCREEN", enable: false });
-                    }
-                  } else if (!nowDomFs) {
+                  if (wasCustomFs && !nowDomFs) {
+                    postToNative({ type: "REQUEST_UNIFIED_FULLSCREEN", enable: false });
+                  } else if (!wasDomFs && !wasCustomFs && !nowDomFs) {
                     postToNative({ type: "REQUEST_UNIFIED_FULLSCREEN", enable: true });
                   }
-                }, 160);
+                }, 260);
                 return;
               }
 
@@ -2209,19 +2502,17 @@ jobs:
               } catch (_) {}
             }
 
+            // Sondeo ultraligero (CERO document.body.textContent, CERO reflows en Doramasflix/DramaChino/BYSE)
             setInterval(function () {
               try {
-                if (!isByseStealthEmbed && !isChaturbate) {
-                  cleanDoramaAndPlayerOverlays();
-                  if (isOtherProtectedSite) {
-                    nukeInPlayerScamOverlaysOnce();
-                  }
-                  if (isOnlyJerk) {
-                    cleanOnlyJerkCloseAdWidget();
-                    enableIframeFullscreenAndEagerLoad();
-                  }
+                if (isOtherProtectedSite) {
+                  nukeIsolatedSitesAdsOnce();
+                  if (isOnlyJerk) enableIframeFullscreenAndEagerLoad();
                 }
-                if (document.getElementsByTagName("video").length === 0) return;
+
+                const videos = document.getElementsByTagName("video");
+                if (videos.length === 0) return;
+
                 const v = findActiveVideo();
                 if (!v) return;
 
@@ -2230,20 +2521,23 @@ jobs:
                 const isLive = isChaturbate || !Number.isFinite(rawDur) || rawDur <= 0 || rawDur > 36000;
                 const dur = isLive ? 0 : rawDur;
 
-                postToNative({
-                  type: "VIDEO_STATE",
-                  hasVod: !isLive && dur >= 20,
-                  isLive: isLive,
-                  playing: isPlaying,
-                  currentTime: isLive ? 0 : (v.currentTime || 0),
-                  duration: dur
-                });
+                if (!isChaturbate || lastChaturbatePlayingSent !== isPlaying) {
+                  lastChaturbatePlayingSent = isPlaying;
+                  postToNative({
+                    type: "VIDEO_STATE",
+                    hasVod: !isLive && dur >= 20,
+                    isLive: isLive,
+                    playing: isPlaying,
+                    currentTime: isLive ? 0 : (v.currentTime || 0),
+                    duration: dur
+                  });
+                }
 
                 if (isPlaying && v.currentTime >= 0.4 && (isLive || dur >= 20)) {
                   triggerFullscreenPromptForVideo(v, dur, isLive);
                 }
               } catch (_) {}
-            }, isChaturbate ? 1200 : 650);
+            }, isChaturbate ? 1800 : 1000);
 
             if (isTopFrame) {
               function extractMediaMetadata() {
@@ -2266,8 +2560,11 @@ jobs:
                 ensureBridgeConnected();
                 extractMediaMetadata();
                 enableIframeFullscreenAndEagerLoad();
-                if (!isCleanLiveStreamSite && !isByseStealthEmbed) {
-                  nukeInPlayerScamOverlaysOnce();
+                optimizeImagesAsyncDecoding();
+                if (isOtherProtectedSite) {
+                  nukeIsolatedSitesAdsOnce();
+                } else if (!isCleanLiveStreamSite) {
+                  sweepDirectBodyAdsOnce();
                 }
               });
             }
@@ -2305,6 +2602,10 @@ jobs:
                   enterFullscreenInCurrentFrame();
                   return;
                 }
+                if (msg.action === "EXPAND_PLAYER_IFRAME_FALLBACK") {
+                  expandMainPlayerIframeFallback();
+                  return;
+                }
                 if (msg.action === "EXIT_FULLSCREEN") {
                   exitFullscreenInCurrentFrame();
                   return;
@@ -2326,29 +2627,34 @@ jobs:
               }
             }
 
+            // Observador dirigido de costo minimo:
+            // - En Doramasflix, DramaChino y TODOS los embeds de video (incluido BYSE/Filemoon):
+            //   observa UNICAMENTE nuevos hijos directos de <body> (subtree:false) e inspecciona solo cada nodo nuevo
+            //   (nunca toca #root ni escanea la pagina completa -> 0 lag y bloquea captchas/modales falsos al instante).
+            // - En JKAnime, LiveCamRips y OnlyJerk: mantiene exactamente su rama aislada.
             function setupLightweightRootAdObserver() {
-              if (isCleanLiveStreamSite || isByseStealthEmbed) return;
+              if (isCleanLiveStreamSite) return;
               try {
                 const obs = new MutationObserver(function (mutations) {
-                  if (!isOtherProtectedSite) {
-                    cleanDoramaAndPlayerOverlays();
-                  } else if (isOnlyJerk) {
-                    cleanOnlyJerkCloseAdWidget();
-                  }
                   for (let i = 0; i < mutations.length; i++) {
                     const added = mutations[i].addedNodes;
                     for (let j = 0; j < added.length; j++) {
                       const n = added[j];
                       if (!n || n.nodeType !== 1) continue;
-                      if (isLiveCamRips && n.tagName === "SCRIPT" && !n.src) {
-                        const code = n.textContent || "";
-                        if (code.includes("window.open") || code.includes("yellowishgather") || code.includes("popunder")) {
-                          n.textContent = "";
-                          n.remove();
-                          continue;
+                      if (isOtherProtectedSite) {
+                        if (isLiveCamRips && n.tagName === "SCRIPT" && !n.src) {
+                          const code = n.textContent || "";
+                          if (code.includes("window.open") || code.includes("yellowishgather") || code.includes("popunder")) {
+                            n.textContent = "";
+                            n.remove();
+                            continue;
+                          }
                         }
+                        if (isOnlyJerk) cleanOnlyJerkCloseAdWidget();
+                        inspectNodeForScamIsolated(n);
+                      } else {
+                        inspectSingleRootAdNode(n);
                       }
-                      inspectNodeForScam(n);
                     }
                   }
                 });
@@ -2371,17 +2677,25 @@ jobs:
 
             if (document.readyState === "loading") {
               document.addEventListener("DOMContentLoaded", function () {
+                ensureBridgeConnected();
                 injectTvStyles();
                 enableIframeFullscreenAndEagerLoad();
-                if (!isCleanLiveStreamSite && !isByseStealthEmbed) {
-                  nukeInPlayerScamOverlaysOnce();
+                optimizeImagesAsyncDecoding();
+                if (isOtherProtectedSite) {
+                  nukeIsolatedSitesAdsOnce();
+                } else if (!isCleanLiveStreamSite) {
+                  sweepDirectBodyAdsOnce();
                 }
               });
             } else {
+              ensureBridgeConnected();
               injectTvStyles();
               enableIframeFullscreenAndEagerLoad();
-              if (!isCleanLiveStreamSite && !isByseStealthEmbed) {
-                nukeInPlayerScamOverlaysOnce();
+              optimizeImagesAsyncDecoding();
+              if (isOtherProtectedSite) {
+                nukeIsolatedSitesAdsOnce();
+              } else if (!isCleanLiveStreamSite) {
+                sweepDirectBodyAdsOnce();
               }
             }
           })();
