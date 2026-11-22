@@ -48,14 +48,14 @@ jobs:
           -keep class com.battv.browser.** { *; }
           EOF_PROGUARD
 
-      - name: Actualizar a versionCode 35 (v6.0), VSync/MediaCodec nivel Mozilla, UA nativo y cierre total
+      - name: Actualizar a versionCode 36 (v6.1) conservando intacta la base v6.0 en Kotlin
         run: |
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
-          sed -i 's/versionCode [0-9]\+/versionCode 35/g' android-geckoview/app/build.gradle
-          sed -i 's/versionName "[^"]*"/versionName "6.0"/g' android-geckoview/app/build.gradle
-          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v35@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
-          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v35/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/versionCode [0-9]\+/versionCode 36/g' android-geckoview/app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "6.1"/g' android-geckoview/app/build.gradle
+          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v36@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v36/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
           import re
@@ -84,7 +84,7 @@ jobs:
           with open(gradle_path, "w", encoding="utf-8") as f:
               f.write(g)
 
-          # 2. Parchar MainActivity.kt (aviso FS exacto por playerKey, scroll tactil sin invalidaciones extra y cierre total)
+          # 2. Parchar MainActivity.kt (base exacta v6.0)
           main_path = "android-geckoview/app/src/main/java/com/battv/browser/MainActivity.kt"
           with open(main_path, "r", encoding="utf-8") as f:
               code = f.read()
@@ -100,7 +100,6 @@ jobs:
               "private const val CURSOR_AUTO_HIDE_MS = 4500L"
           )
 
-          # Evitar llamadas repetidas a visibility = GONE en cada ACTION_MOVE al hacer scroll vertical
           old_hide_cursor = (
               "    fun hideCursorUntilMoved() {\n"
               "      cursorVisible = false\n"
@@ -394,12 +393,11 @@ jobs:
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
 
-          # 3. Parchar BatTvGeckoViewManager.kt (VSync nativo -1, MediaCodec sin recycle, UA nativo Firefox en modo movil, caches GPU/JS)
+          # 3. Parchar BatTvGeckoViewManager.kt (base exacta v6.0 sin tocar preferencias globales)
           mgr_path = "android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
           with open(mgr_path, "r", encoding="utf-8") as f:
               mgr = f.read()
 
-          # Usar User-Agent nativo de Firefox Android en modo movil (cuadra con Mozilla Firefox en Doramasflix)
           mgr = mgr.replace(
               ".userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else TV_MODE_USER_AGENT)",
               ".userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else null)"
@@ -432,7 +430,6 @@ jobs:
               "appContext.externalCacheDir?.let { deleteDirectoryContents(it) }"
           )
 
-          # Alinear VSync, MediaCodec, APZ y red con Mozilla Firefox Android para eliminar tirones al abrir reproductores
           pref_replacements = [
               ("browser.cache.disk.enable: false", "browser.cache.disk.enable: true"),
               ("browser.cache.disk.capacity: 0", "browser.cache.disk.capacity: 32768"),
@@ -522,14 +519,14 @@ jobs:
           with open(mgr_path, "w", encoding="utf-8") as f:
               f.write(mgr)
 
-          print("Parches v6.0 aplicados correctamente.")
+          print("Parches v6.1 aplicados correctamente.")
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v35.0 (DOOD Play OK + Cero Lag al Abrir Reproductores + Resto Aislado)
+      - name: Generar Motor Nativo Ultraligero v36.0 (Optimizacion Exclusiva Chaturbate 1080p en Chromecast HD + Resto Intacto)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v35"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v36"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
 
@@ -551,11 +548,11 @@ jobs:
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "35.0.0",
-            "description": "Boton Play restaurado en DOOD, cero lag al abrir reproductores y video fuera de fullscreen en Doramasflix/DramaChino.",
+            "version": "36.0.0",
+            "description": "Optimizacion exclusiva para directos 1080p en Chaturbate sobre Chromecast HD conservando intactas todas las demas paginas.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v35@battv.browser",
+                "id": "shield_v36@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -657,7 +654,6 @@ jobs:
               "tapeblocker.com", "shavetape.cash", "adblocktape.wiki", "streamadblockplus.com"
             ]);
 
-            // Incluye todos los CDNs de activos y controles de DOOD (video.js / boton Play)
             const ALLOWED_TECH_CDNS = new Set([
               "jkanime.net", "jkanime.bz", "jkdesa.com", "jkdesu.com",
               "doramasflix.io", "doramasflix.co", "dramachino.com", "tudorama.com",
@@ -689,8 +685,6 @@ jobs:
             const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/fingerprint-sw\.js|\/aclib\.js|\/tag\.min\.js|\/ntfc\.php|\/pfe\/current\/|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/push-sdk|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|rotator-marketing|marketingg\.com|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
             const ANTI_DEVTOOL_REGEX = /(disable-devtool|devtools-detector|devtools-detect|fuckadblock|blockadblock)/i;
             const VAST_PREROLL_REGEX = /([?&/](vast|preroll|midroll|postroll|ad_tag|adtag|vmap)([=&/.?_]|$)|syndication\.|splash\.php)/i;
-
-            // Permite scripts de controles/reproductor en DOOD, Primeload y Streamtape (ej. video.js, player.js, jquery, hls)
             const LEGIT_PLAYER_SCRIPT_PATH_REGEX = /(video(\.min)?\.js|videojs|vjs|hls(\.min)?\.js|jwplayer|plyr|vidstack|fluidplayer|artplayer|dplayer|clappr|shaka|dash\.all|jquery|bootstrap|dood|player|\/assets\/|\/static\/|\/dist\/|\/lib\/|\/js\/(video|player|main|app|embed|jquery))/i;
 
             function getBaseBrand(hostname) {
@@ -716,6 +710,18 @@ jobs:
                   try {
                     const rawUrl = details.url || "";
                     if (rawUrl.charCodeAt(0) !== 104) return {};
+
+                    // Via rapida exclusiva para Chaturbate (evita pausas IPC/URL en cada fragmento 1080p .m4s/.ts/.m3u8)
+                    if (details.type === "xmlhttprequest") {
+                      const docQuick = details.originUrl || details.documentUrl || "";
+                      if (docQuick.indexOf("chaturbate.com") !== -1) {
+                        if (rawUrl.indexOf(".m4s") !== -1 || rawUrl.indexOf(".m3u8") !== -1 ||
+                            rawUrl.indexOf(".ts") !== -1 || rawUrl.indexOf("mmcdn.com") !== -1 ||
+                            rawUrl.indexOf("chaturbate.com") !== -1) {
+                          return {};
+                        }
+                      }
+                    }
 
                     const parsed = new URL(rawUrl);
                     const reqHost = parsed.hostname.toLowerCase().replace(/^www\./, "");
@@ -796,7 +802,6 @@ jobs:
                               !isHostInSet(reqHost, ALLOWED_TECH_CDNS) &&
                               !isHostInSet(reqHost, PROTECTED_ROOT_SITES) &&
                               !isHostInSet(reqHost, STRICT_PLAYER_AD_HOSTS)) {
-                            // No bloquear librerias legitimas de reproductor/controles (soluciona boton Play en DOOD)
                             if (isStrictAdPlayer && LEGIT_PLAYER_SCRIPT_PATH_REGEX.test(parsed.pathname)) {
                               return {};
                             }
@@ -844,7 +849,6 @@ jobs:
             const isTopFrame = (window === window.top);
             const currentHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
 
-            // Salir inmediatamente en iframes de verificacion automatica / captchas reales
             if (currentHost.includes("challenges.cloudflare.com") ||
                 currentHost.includes("recaptcha") ||
                 currentHost.includes("hcaptcha.com") ||
@@ -943,10 +947,6 @@ jobs:
                   }
                 ` : "";
 
-                // Aislamiento de capa GPU exclusivo para Doramasflix y DramaChino:
-                // - Promueve el iframe del reproductor a su propia capa para que el scroll vertical no repinte
-                //   toda la pagina cuando el video esta abierto o reproduciendose fuera de pantalla completa.
-                // - Quita desenfoques y sombras pesadas SIN romper animaciones ni spinners de carga.
                 const doramaTvPerfCss = isDoramaTopSite ? `
                   .Backdrop, .backdrop, .bg-blur, [class*="backdrop" i], [class*="blur" i], header, nav {
                     filter: none !important;
@@ -965,6 +965,8 @@ jobs:
                   }
                 ` : "";
 
+                // En Chaturbate: recorte de chat antiguo por CSS puro (sin romper React con removeChild)
+                // y apagado total de chat/bio/miniaturas al ver el directo en pantalla completa.
                 const adHideCss = isByseStealthEmbed ? "" : (isCleanLiveStreamSite ? `
                   .chat-holder, .chat-box, #chat, .msg-list-wrapper, .room-list, .endless_page_template {
                     contain: layout style paint !important;
@@ -973,6 +975,11 @@ jobs:
                   .bio-container, #tabs_content_container, .more_rooms, .room-list, footer {
                     content-visibility: auto !important;
                     contain-intrinsic-size: 0 500px !important;
+                  }
+                  [data-testid="chat-message-list"] > :nth-last-child(n+26),
+                  .msg-list-wrapper > :nth-last-child(n+26),
+                  .chat-list > :nth-last-child(n+26) {
+                    display: none !important;
                   }
                   .chat-holder *, .chat-box *, #chat *, .msg-list-wrapper *, #header *, .bio-container * {
                     animation: none !important;
@@ -986,6 +993,8 @@ jobs:
                   html.__battv_cb_perf_fs #chat,
                   html.__battv_cb_perf_fs .msg-list-wrapper,
                   html.__battv_cb_perf_fs [data-testid="chat-tab-content"],
+                  html.__battv_cb_perf_fs [data-testid="room-chat"],
+                  html.__battv_cb_perf_fs [data-testid="bio-tab-content"],
                   html.__battv_cb_perf_fs .bio-container,
                   html.__battv_cb_perf_fs #tabs_content_container,
                   html.__battv_cb_perf_fs .room-list,
@@ -1094,6 +1103,14 @@ jobs:
               try {
                 const s = document.createElement("script");
                 if (isChaturbate) {
+                  // Motor exclusivo para estabilidad 1080p en Chaturbate sobre Chromecast HD (1.5 GB RAM):
+                  // 1. Fuerza MSE/hls.js conservando el selector de calidad completo.
+                  // 2. Amplia dinamicamente PART-HOLD-BACK (hasta 3.6s, tope 42% de la ventana real del directo)
+                  //    y HOLD-BACK (hasta 5.2s, tope 55%) en listas .m3u8 para que 1080p tenga 3x mas colchon
+                  //    contra micro-cortes sin congelarse ni romper LL-HLS.
+                  // 3. Aplica ajustes seguros de RAM/Worker a Hls.DefaultConfig y videojs(el, opts)
+                  //    (enableWorker:true, backBufferLength:6, maxBufferHole:0.6, maxLiveSyncPlaybackRate:1.03)
+                  //    SIN desactivar lowLatencyMode ni bloquear playbackRate.
                   s.textContent = `(function(){
                     try {
                       const origCanPlay = HTMLMediaElement.prototype.canPlayType;
@@ -1101,6 +1118,167 @@ jobs:
                         if (type && /mpegurl/i.test(type)) return "";
                         return origCanPlay.apply(this, arguments);
                       };
+
+                      // Ajuste dinamico de colchon LL-HLS en playlists .m3u8 de Chaturbate
+                      function widenLiveHoldBackSafely(playlistText) {
+                        if (typeof playlistText !== "string" ||
+                            playlistText.indexOf("#EXTM3U") !== 0 ||
+                            playlistText.indexOf("#EXT-X-SERVER-CONTROL:") === -1 ||
+                            playlistText.indexOf("#EXTINF:") === -1) {
+                          return playlistText;
+                        }
+                        let totalDur = 0;
+                        const extInfRe = /#EXTINF:([0-9.]+)/g;
+                        let m;
+                        while ((m = extInfRe.exec(playlistText)) !== null) {
+                          const d = parseFloat(m[1]);
+                          if (Number.isFinite(d) && d > 0) totalDur += d;
+                        }
+                        // Solo ampliar el colchon si el servidor entrega al menos 6s de ventana activa
+                        if (totalDur < 6.0) return playlistText;
+
+                        const safePartTarget = Math.min(3.6, Number((totalDur * 0.42).toFixed(3)));
+                        const safeHoldTarget = Math.min(5.2, Number((totalDur * 0.55).toFixed(3)));
+
+                        let out = playlistText.replace(/PART-HOLD-BACK=([0-9.]+)/g, function(full, num) {
+                          const orig = parseFloat(num);
+                          if (!Number.isFinite(orig) || orig >= safePartTarget) return full;
+                          return "PART-HOLD-BACK=" + safePartTarget.toFixed(6);
+                        });
+                        out = out.replace(/(^|,)HOLD-BACK=([0-9.]+)/g, function(full, prefix, num) {
+                          const orig = parseFloat(num);
+                          if (!Number.isFinite(orig) || orig >= safeHoldTarget) return full;
+                          return prefix + "HOLD-BACK=" + safeHoldTarget.toFixed(6);
+                        });
+                        return out;
+                      }
+
+                      // Hook ultraligero en XHR solo para URLs .m3u8 (los fragmentos .m4s binarios ni se tocan)
+                      const m3u8Xhrs = new WeakSet();
+                      const m3u8Cache = new WeakMap();
+                      const origXhrOpen = XMLHttpRequest.prototype.open;
+                      XMLHttpRequest.prototype.open = function(method, url) {
+                        try {
+                          if (typeof url === "string" && url.indexOf(".m3u8") !== -1) {
+                            m3u8Xhrs.add(this);
+                            m3u8Cache.delete(this);
+                          }
+                        } catch (_) {}
+                        return origXhrOpen.apply(this, arguments);
+                      };
+
+                      const respTextDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, "responseText");
+                      if (respTextDesc && respTextDesc.get) {
+                        Object.defineProperty(XMLHttpRequest.prototype, "responseText", {
+                          get: function() {
+                            const raw = respTextDesc.get.call(this);
+                            if (this.readyState === 4 && m3u8Xhrs.has(this) && typeof raw === "string") {
+                              if (m3u8Cache.has(this)) return m3u8Cache.get(this);
+                              const tuned = widenLiveHoldBackSafely(raw);
+                              m3u8Cache.set(this, tuned);
+                              return tuned;
+                            }
+                            return raw;
+                          },
+                          configurable: true
+                        });
+                      }
+
+                      const respDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, "response");
+                      if (respDesc && respDesc.get) {
+                        Object.defineProperty(XMLHttpRequest.prototype, "response", {
+                          get: function() {
+                            const raw = respDesc.get.call(this);
+                            if (this.readyState === 4 && m3u8Xhrs.has(this) && typeof raw === "string") {
+                              if (m3u8Cache.has(this)) return m3u8Cache.get(this);
+                              const tuned = widenLiveHoldBackSafely(raw);
+                              m3u8Cache.set(this, tuned);
+                              return tuned;
+                            }
+                            return raw;
+                          },
+                          configurable: true
+                        });
+                      }
+
+                      // Hook paralelo en Response.prototype.text solo para URLs .m3u8
+                      if (window.Response && Response.prototype && typeof Response.prototype.text === "function") {
+                        const origRespText = Response.prototype.text;
+                        Response.prototype.text = function() {
+                          const rUrl = (this && this.url) ? String(this.url) : "";
+                          if (rUrl.indexOf(".m3u8") === -1) {
+                            return origRespText.apply(this, arguments);
+                          }
+                          return origRespText.apply(this, arguments).then(function(txt) {
+                            try { return widenLiveHoldBackSafely(txt); } catch (_) { return txt; }
+                          });
+                        };
+                      }
+
+                      // Ajustes seguros de RAM/Worker para 1080p en Hls.DefaultConfig y videojs(el, opts)
+                      const SAFE_1080P_HLS_OPTS = {
+                        enableWorker: true,
+                        backBufferLength: 6,
+                        maxBufferLength: 16,
+                        maxMaxBufferLength: 24,
+                        maxBufferSize: 30000000,
+                        maxBufferHole: 0.6,
+                        nudgeOffset: 0.15,
+                        nudgeMaxRetry: 10,
+                        maxLiveSyncPlaybackRate: 1.03,
+                        startFragPrefetch: true,
+                        fragLoadingMaxRetry: 8,
+                        fragLoadingTimeOut: 20000
+                      };
+
+                      function patchHlsDefaultsInPlace(HlsCtor) {
+                        try {
+                          if (HlsCtor && HlsCtor.DefaultConfig && typeof HlsCtor.DefaultConfig === "object") {
+                            Object.assign(HlsCtor.DefaultConfig, SAFE_1080P_HLS_OPTS);
+                          }
+                        } catch (_) {}
+                      }
+
+                      let _HlsRef = window.Hls;
+                      if (_HlsRef) patchHlsDefaultsInPlace(_HlsRef);
+                      try {
+                        Object.defineProperty(window, "Hls", {
+                          get: function() { return _HlsRef; },
+                          set: function(val) {
+                            _HlsRef = val;
+                            patchHlsDefaultsInPlace(val);
+                          },
+                          configurable: true
+                        });
+                      } catch (_) {}
+
+                      function wrapVideoJs(vjsFn) {
+                        if (typeof vjsFn !== "function" || vjsFn.__battvTuned) return vjsFn;
+                        const wrapped = function(id, options, ready) {
+                          try {
+                            if (options && typeof options === "object") {
+                              options.html5 = options.html5 || {};
+                              options.html5.hlsjsConfig = Object.assign({}, options.html5.hlsjsConfig || {}, SAFE_1080P_HLS_OPTS);
+                            }
+                          } catch (_) {}
+                          return vjsFn.apply(this, arguments);
+                        };
+                        try {
+                          Object.assign(wrapped, vjsFn);
+                          wrapped.prototype = vjsFn.prototype;
+                          wrapped.__battvTuned = true;
+                        } catch (_) {}
+                        return wrapped;
+                      }
+
+                      let _vjsRef = window.videojs ? wrapVideoJs(window.videojs) : undefined;
+                      try {
+                        Object.defineProperty(window, "videojs", {
+                          get: function() { return _vjsRef; },
+                          set: function(val) { _vjsRef = wrapVideoJs(val); },
+                          configurable: true
+                        });
+                      } catch (_) {}
                     } catch(_) {}
                   })();`;
                 } else if (isOtherProtectedSite) {
@@ -1583,16 +1761,11 @@ jobs:
               } catch (_) {}
             }
 
+            // En Chaturbate: pausa vistas previas secundarias y marca imagenes/GIFs de la bio como lazy/async
+            // SIN borrar nodos DOM de React del chat (el recorte se hace por CSS puro sin sobrecargar CPU).
             function keepChaturbateLightweight() {
               if (!isChaturbate || !document.body) return;
               try {
-                const lists = document.querySelectorAll("[data-testid='chat-message-list'], .msg-list-wrapper, .chat-list");
-                for (let i = 0; i < lists.length; i++) {
-                  const list = lists[i];
-                  while (list.children.length > 15) {
-                    list.removeChild(list.firstElementChild);
-                  }
-                }
                 const mainVid = findChaturbateVideoAnyState();
                 const allVids = document.getElementsByTagName("video");
                 if (mainVid && allVids.length > 1) {
@@ -1603,11 +1776,17 @@ jobs:
                     }
                   }
                 }
+                const bioImgs = document.querySelectorAll(".bio-container img, #tabs_content_container img, .room-list img");
+                for (let m = 0; m < bioImgs.length; m++) {
+                  const im = bioImgs[m];
+                  if (im.decoding !== "async") im.decoding = "async";
+                  if (im.loading !== "lazy") im.loading = "lazy";
+                }
               } catch (_) {}
             }
 
             if (isChaturbate) {
-              setInterval(keepChaturbateLightweight, 3000);
+              setInterval(keepChaturbateLightweight, 4000);
             }
 
             const SCAM_TEXT_PATTERNS = [
@@ -1675,7 +1854,6 @@ jobs:
               return false;
             }
 
-            // Protege botones de Play (incluido .vjs-big-play-button y #os_player de DOOD) y contenedores de reproductor
             function isProtectedAppOrPlayerElement(el) {
               if (!el || !el.tagName) return true;
               const tag = el.tagName.toUpperCase();
@@ -2167,7 +2345,45 @@ jobs:
               } catch (_) {}
 
               if (isChaturbate) {
+                let holeTimer = null;
+                const cancelHoleTimer = function () {
+                  if (holeTimer) {
+                    clearTimeout(holeTimer);
+                    holeTimer = null;
+                  }
+                };
+
+                // Si un micro-hueco CMAF de 1080p detiene el video teniendo ya datos listos delante,
+                // avanza solo por encima de ese hueco (sin saltar al borde en vivo ni vaciar el bufer).
+                const scheduleHoleStep = function () {
+                  if (holeTimer || Date.now() < userPausedManuallyUntil || v.ended) return;
+                  holeTimer = setTimeout(function () {
+                    holeTimer = null;
+                    if (!v.isConnected || v.paused || v.ended || Date.now() < userPausedManuallyUntil) return;
+                    if (v.readyState >= 3) return;
+                    try {
+                      const ct = v.currentTime;
+                      const buf = v.buffered;
+                      if (buf && buf.length > 0) {
+                        for (let b = 0; b < buf.length; b++) {
+                          const start = buf.start(b);
+                          if (start > ct + 0.02 && (start - ct) <= 1.8) {
+                            v.currentTime = start + 0.05;
+                            break;
+                          }
+                        }
+                      }
+                    } catch (_) {}
+                  }, 650);
+                };
+
+                v.addEventListener("waiting", scheduleHoleStep);
+                v.addEventListener("stalled", scheduleHoleStep);
+                v.addEventListener("playing", cancelHoleTimer);
+                v.addEventListener("timeupdate", cancelHoleTimer);
+
                 v.addEventListener("pause", function () {
+                  cancelHoleTimer();
                   if (Date.now() >= userPausedManuallyUntil && !v.ended) {
                     setTimeout(function () {
                       if (v.paused && Date.now() >= userPausedManuallyUntil && !v.ended) {
@@ -2179,7 +2395,6 @@ jobs:
               }
             }
 
-            // Deteccion por eventos nativos (CERO sondeo/reflow mientras navegas o ves video fuera de fullscreen)
             document.addEventListener("playing", function (e) {
               const v = e && e.target;
               if (!v || v.tagName !== "VIDEO") return;
@@ -2600,9 +2815,6 @@ jobs:
               } catch (_) {}
             }
 
-            // En sitios aislados (JKAnime/LiveCamRips/OnlyJerk) conserva su limpiador periodico;
-            // en Doramasflix/DramaChino y reproductores SOLO sincroniza tiempo cuando estas en pantalla completa
-            // (elimina 100% de los reflows y mensajes IPC cada segundo al desplazarte o ver video fuera de fullscreen).
             if (isOtherProtectedSite) {
               setInterval(function () {
                 try {
@@ -2648,7 +2860,9 @@ jobs:
                 extractMediaMetadata();
                 enableIframeFullscreenAndEagerLoad();
                 optimizeImagesAsyncDecoding();
-                if (isOtherProtectedSite) {
+                if (isChaturbate) {
+                  keepChaturbateLightweight();
+                } else if (isOtherProtectedSite) {
                   nukeIsolatedSitesAdsOnce();
                 } else if (!isCleanLiveStreamSite) {
                   sweepDirectBodyAdsOnce();
@@ -2763,7 +2977,9 @@ jobs:
                 injectTvStyles();
                 enableIframeFullscreenAndEagerLoad();
                 optimizeImagesAsyncDecoding();
-                if (isOtherProtectedSite) {
+                if (isChaturbate) {
+                  keepChaturbateLightweight();
+                } else if (isOtherProtectedSite) {
                   nukeIsolatedSitesAdsOnce();
                 } else if (!isCleanLiveStreamSite) {
                   sweepDirectBodyAdsOnce();
@@ -2774,7 +2990,9 @@ jobs:
               injectTvStyles();
               enableIframeFullscreenAndEagerLoad();
               optimizeImagesAsyncDecoding();
-              if (isOtherProtectedSite) {
+              if (isChaturbate) {
+                keepChaturbateLightweight();
+              } else if (isOtherProtectedSite) {
                 nukeIsolatedSitesAdsOnce();
               } else if (!isCleanLiveStreamSite) {
                 sweepDirectBodyAdsOnce();
