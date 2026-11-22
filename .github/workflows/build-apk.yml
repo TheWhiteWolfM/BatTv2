@@ -48,14 +48,14 @@ jobs:
           -keep class com.battv.browser.** { *; }
           EOF_PROGUARD
 
-      - name: Actualizar a versionCode 33 (v5.8), optimizar memoria Google TV, aviso FS exacto y cierre total
+      - name: Actualizar a versionCode 35 (v6.0), VSync/MediaCodec nivel Mozilla, UA nativo y cierre total
         run: |
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
-          sed -i 's/versionCode [0-9]\+/versionCode 33/g' android-geckoview/app/build.gradle
-          sed -i 's/versionName "[^"]*"/versionName "5.8"/g' android-geckoview/app/build.gradle
-          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v33@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
-          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v33/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/versionCode [0-9]\+/versionCode 35/g' android-geckoview/app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "6.0"/g' android-geckoview/app/build.gradle
+          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v35@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v35/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
           import re
@@ -84,7 +84,7 @@ jobs:
           with open(gradle_path, "w", encoding="utf-8") as f:
               f.write(g)
 
-          # 2. Parchar MainActivity.kt (aviso FS por playerKey sin fantasmas, limpieza SPA en onLocationChange, cursor 4.5s y cierre total)
+          # 2. Parchar MainActivity.kt (aviso FS exacto por playerKey, scroll tactil sin invalidaciones extra y cierre total)
           main_path = "android-geckoview/app/src/main/java/com/battv/browser/MainActivity.kt"
           with open(main_path, "r", encoding="utf-8") as f:
               code = f.read()
@@ -99,6 +99,25 @@ jobs:
               "private const val CURSOR_AUTO_HIDE_MS = 2500L",
               "private const val CURSOR_AUTO_HIDE_MS = 4500L"
           )
+
+          # Evitar llamadas repetidas a visibility = GONE en cada ACTION_MOVE al hacer scroll vertical
+          old_hide_cursor = (
+              "    fun hideCursorUntilMoved() {\n"
+              "      cursorVisible = false\n"
+              "      pulseRadius = 0f\n"
+              "      visibility = GONE\n"
+              "    }"
+          )
+          new_hide_cursor = (
+              "    fun hideCursorUntilMoved() {\n"
+              "      if (!cursorVisible && visibility == GONE) return\n"
+              "      cursorVisible = false\n"
+              "      pulseRadius = 0f\n"
+              "      visibility = GONE\n"
+              "    }"
+          )
+          if old_hide_cursor in code:
+              code = code.replace(old_hide_cursor, new_hide_cursor, 1)
 
           if "private var isExitingCompletely" not in code:
               code = code.replace(
@@ -316,6 +335,11 @@ jobs:
                   1
               )
 
+          code = code.replace(
+              "if (::geckoManager.isInitialized) {\n      geckoManager.pruneDisposableStorageNow()\n    }",
+              ""
+          )
+
           if "override fun onStop()" not in code:
               on_stop_suffix = (
                   "\n\n"
@@ -370,22 +394,65 @@ jobs:
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
 
-          # 3. Parchar BatTvGeckoViewManager.kt (perfil ligero anti-lag para Google TV de poca RAM + purga de caches)
+          # 3. Parchar BatTvGeckoViewManager.kt (VSync nativo -1, MediaCodec sin recycle, UA nativo Firefox en modo movil, caches GPU/JS)
           mgr_path = "android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
           with open(mgr_path, "r", encoding="utf-8") as f:
               mgr = f.read()
 
+          # Usar User-Agent nativo de Firefox Android en modo movil (cuadra con Mozilla Firefox en Doramasflix)
+          mgr = mgr.replace(
+              ".userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else TV_MODE_USER_AGENT)",
+              ".userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else null)"
+          )
+          mgr = mgr.replace(
+              "session.settings.userAgentOverride = if (isDesktopMode) {\n            PC_MODE_USER_AGENT\n        } else {\n            TV_MODE_USER_AGENT\n        }",
+              "session.settings.userAgentOverride = if (isDesktopMode) {\n            PC_MODE_USER_AGENT\n        } else {\n            null\n        }"
+          )
+
+          new_disposable_dirs = (
+              "private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(\n"
+              "            \"OfflineCache\",\n"
+              "            \"thumbnails\",\n"
+              "            \"safebrowsing\",\n"
+              "            \"crashes\",\n"
+              "            \"minidumps\",\n"
+              "            \"saved-telemetry-pings\",\n"
+              "            \"datareporting\"\n"
+              "        )"
+          )
+          mgr = re.sub(
+              r"private val GECKO_DISPOSABLE_CACHE_DIRS = setOf\([\s\S]*?\)",
+              lambda _: new_disposable_dirs,
+              mgr,
+              count=1
+          )
+
+          mgr = mgr.replace(
+              "deleteDirectoryContents(appContext.cacheDir)\n                    appContext.externalCacheDir?.let { deleteDirectoryContents(it) }",
+              "appContext.externalCacheDir?.let { deleteDirectoryContents(it) }"
+          )
+
+          # Alinear VSync, MediaCodec, APZ y red con Mozilla Firefox Android para eliminar tirones al abrir reproductores
           pref_replacements = [
-              ("browser.cache.memory.capacity: 20480", "browser.cache.memory.capacity: 16384"),
-              ("content.notify.interval: 16666", "content.notify.interval: 50000"),
-              ("media.cache_size: 49152", "media.cache_size: 24576"),
+              ("browser.cache.disk.enable: false", "browser.cache.disk.enable: true"),
+              ("browser.cache.disk.capacity: 0", "browser.cache.disk.capacity: 32768"),
+              ("browser.cache.memory.capacity: 20480", "browser.cache.memory.capacity: 24576"),
+              ("browser.sessionhistory.max_total_viewers: 0", "browser.sessionhistory.max_total_viewers: 2"),
+              ("layout.frame_rate: 60", "layout.frame_rate: -1"),
+              ("content.notify.interval: 16666", "content.notify.interval: 120000"),
+              ("apz.fling_min_velocity_threshold: \"0.4\"", "apz.allow_zooming: false"),
+              ("media.cache_size: 49152", "media.cache_size: 32768"),
               ("media.memory_cache_max_size: 24576", "media.memory_cache_max_size: 16384"),
-              ("media.memory_caches_combined_limit_kb: 49152", "media.memory_caches_combined_limit_kb: 24576"),
-              ("media.cache_readahead_limit: 50", "media.cache_readahead_limit: 20"),
-              ("media.cache_resume_threshold: 6", "media.cache_resume_threshold: 8"),
+              ("media.memory_caches_combined_limit_kb: 49152", "media.memory_caches_combined_limit_kb: 32768"),
+              ("media.cache_readahead_limit: 50", "media.cache_readahead_limit: 25"),
+              ("media.cache_resume_threshold: 6", "media.cache_resume_threshold: 10"),
+              ("media.hardware-video-decoding.force-enabled: true", "media.hardware-video-decoding.force-enabled: false"),
+              ("media.decoder.recycle.enabled: true", "media.decoder.recycle.enabled: false"),
               ("media.decoder.skip-to-next-key-frame.enabled: false", "media.decoder.skip-to-next-key-frame.enabled: true"),
-              ("network.http.max-connections: 36", "network.http.max-connections: 24"),
-              ("network.http.max-persistent-connections-per-server: 8", "network.http.max-persistent-connections-per-server: 6")
+              ("network.http.http3.enable: false", "network.http.http3.enable: true"),
+              ("network.http.max-connections: 36", "network.http.max-connections: 48"),
+              ("network.http.max-persistent-connections-per-server: 8", "network.http.max-persistent-connections-per-server: 6"),
+              ("network.http.pacing.requests.enabled: false", "network.http.pacing.requests.enabled: true")
           ]
           for old_p, new_p in pref_replacements:
               mgr = mgr.replace(old_p, new_p)
@@ -397,8 +464,7 @@ jobs:
                   "                  image.decode-immediately.enabled: false\n"
                   "                  image.mem.surfacecache.max_size_kb: 32768\n"
                   "                  dom.image-lazy-loading.enabled: true\n"
-                  "                  gfx.webrender.picture-caching: true\n"
-                  "                  apz.allow_zooming: false",
+                  "                  gfx.webrender.picture-caching: true",
                   1
               )
 
@@ -419,14 +485,6 @@ jobs:
               '                        bytes += getFolderSize(tempDir)\n'
               '                        tempDir.deleteRecursively()\n'
               '                    }\n'
-              '                    val defaultDir = File(child, "default")\n'
-              '                    defaultDir.listFiles()?.forEach { siteDir ->\n'
-              '                        val siteCache = File(siteDir, "cache")\n'
-              '                        if (siteCache.exists()) {\n'
-              '                            bytes += getFolderSize(siteCache)\n'
-              '                            siteCache.deleteRecursively()\n'
-              '                        }\n'
-              '                    }\n'
               '                } else if (child.name != "extensions") {'
           )
           if old_storage_branch in mgr:
@@ -435,11 +493,6 @@ jobs:
           new_close_fn = (
               "fun closeSessionCleanly() {\n"
               "        try {\n"
-              "            if (::runtime.isInitialized) {\n"
-              "                runtime.storageController.clearData(StorageController.ClearFlags.ALL_CACHES)\n"
-              "            }\n"
-              "        } catch (_: Exception) {}\n"
-              "        try {\n"
               "            if (::session.isInitialized) {\n"
               "                session.stop()\n"
               "                session.setActive(false)\n"
@@ -447,8 +500,6 @@ jobs:
               "            }\n"
               "        } catch (_: Exception) {}\n"
               "        try {\n"
-              "            deleteDirectoryContents(context.cacheDir)\n"
-              "            context.externalCacheDir?.let { deleteDirectoryContents(it) }\n"
               "            val mozillaDir = File(context.filesDir, \"mozilla\")\n"
               "            if (mozillaDir.exists()) {\n"
               "                cleanDisposableGeckoDirs(mozillaDir)\n"
@@ -471,14 +522,14 @@ jobs:
           with open(mgr_path, "w", encoding="utf-8") as f:
               f.write(mgr)
 
-          print("Parches v5.8 aplicados correctamente.")
+          print("Parches v6.0 aplicados correctamente.")
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v33.0 (Adblock Generico + Cero Lag Doramasflix/BYSE + Aviso FS Exacto)
+      - name: Generar Motor Nativo Ultraligero v35.0 (DOOD Play OK + Cero Lag al Abrir Reproductores + Resto Aislado)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v33"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v35"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
 
@@ -500,11 +551,11 @@ jobs:
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "33.0.0",
-            "description": "Bloqueador generico sin lag para Doramasflix, DramaChino y BYSE/Filemoon + Aviso FS exacto por servidor + Sitios aislados intactos.",
+            "version": "35.0.0",
+            "description": "Boton Play restaurado en DOOD, cero lag al abrir reproductores y video fuera de fullscreen en Doramasflix/DramaChino.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v33@battv.browser",
+                "id": "shield_v35@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -552,7 +603,7 @@ jobs:
               ? browser.runtime.getURL("vast.xml")
               : "";
 
-            const BLOCKED_AD_DOMAINS = [
+            const BLOCKED_AD_DOMAINS = new Set([
               "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
               "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
               "googleadservices.com", "google-analytics.com", "googletagmanager.com",
@@ -585,16 +636,16 @@ jobs:
               "spotscenered.info", "traforama.com", "mondiad.com",
               "t6r-rotator-marketingg.com", "rotator-marketingg.com",
               "358g46.fun", "dfuybl-bclxb.love", "fbpbpmjjg-f.club"
-            ];
+            ]);
 
-            const PROTECTED_ROOT_SITES = [
+            const PROTECTED_ROOT_SITES = new Set([
               "jkanime.net", "jkanime.bz", "jkdesu.com", "jkdesa.com",
               "livecamrips.to", "livecamrips.com", "livecamrips.net", "livecamrip.tl",
               "doramasflix.io", "doramasflix.co", "dramachino.com", "tudorama.com",
               "asialiveaction.com", "kisskh.do", "kisskh.co"
-            ];
+            ]);
 
-            const STRICT_PLAYER_AD_HOSTS = [
+            const STRICT_PLAYER_AD_HOSTS = new Set([
               "primeload.co", "primeload.io", "primeload.net",
               "dood.watch", "dood.to", "dood.la", "dood.so", "dood.pm", "dood.sh", "dood.wf",
               "dood.yt", "dood.li", "dood.cx", "dood.re", "dood.ws", "d000d.com", "d0000d.com",
@@ -604,43 +655,57 @@ jobs:
               "streamtape.com", "streamtape.to", "streamtape.net", "streamtape.xyz",
               "streamtape.cc", "strtape.tech", "strcloud.in", "strtpe.link",
               "tapeblocker.com", "shavetape.cash", "adblocktape.wiki", "streamadblockplus.com"
-            ];
+            ]);
 
-            const ALLOWED_TECH_CDNS = [
+            // Incluye todos los CDNs de activos y controles de DOOD (video.js / boton Play)
+            const ALLOWED_TECH_CDNS = new Set([
               "jkanime.net", "jkanime.bz", "jkdesa.com", "jkdesu.com",
               "doramasflix.io", "doramasflix.co", "dramachino.com", "tudorama.com",
               "asialiveaction.com", "kisskh.do", "kisskh.co", "embedshortener.co",
               "livecamrips.to", "livecamrips.com", "livecamrips.net",
               "onlyjerk.net", "onlyjerk.com", "fluidplayer.com", "tailwindcss.com",
               "disqus.com", "disquscdn.com", "cloudflare.com", "cdnjs.cloudflare.com",
-              "cloudflareinsights.com", "jsdelivr.net", "unpkg.com", "gstatic.com",
-              "googleapis.com", "google.com", "recaptcha.net", "hcaptcha.com",
+              "challenges.cloudflare.com", "cloudflareinsights.com",
+              "jsdelivr.net", "unpkg.com", "gstatic.com", "googleapis.com", "google.com",
+              "recaptcha.net", "hcaptcha.com", "arkoselabs.com", "funcaptcha.com",
+              "friendlycaptcha.com", "geetest.com", "altcha.org",
               "jquery.com", "bootstrapcdn.com", "fontawesome.com", "jwpsrv.com",
               "jwpcdn.com", "jwplayer.com", "vimeocdn.com", "plyr.io", "vjs.zencdn.net",
-              "zencdn.net", "videojs.com", "vidstack.io", "hls.js.org", "shaka-player-demo.appspot.com",
+              "zencdn.net", "videojs.com", "vidstack.io", "hls.js.org",
               "tmdb.org", "themoviedb.org", "imgur.com", "wp.com", "gitlab.io",
               "github.io", "ok.ru", "mycdn.me", "mp4upload.com",
               "akamaihd.net", "akamaized.net", "cloudfront.net", "fastly.net",
-              "doodcdn.com", "doodcdn.co", "cloudatacdn.com", "myvidplay.com",
-              "dsvplay.com", "doply.net", "vide0.net",
+              "doodcdn.com", "doodcdn.co", "doodcdn.io", "doodcdn.net", "cloudatacdn.com",
+              "myvidplay.com", "dsvplay.com", "doply.net", "vide0.net", "ds2play.com",
+              "ds2video.com", "d000d.com", "d0000d.com", "do7go.com", "d-s.io",
               "tapecontent.net", "stape.fun", "streamadblockplus.com", "strcloud.in"
-            ];
+            ]);
+
+            const VERIFICATION_DOMAINS = new Set([
+              "challenges.cloudflare.com", "hcaptcha.com", "recaptcha.net",
+              "arkoselabs.com", "funcaptcha.com", "friendlycaptcha.com", "geetest.com"
+            ]);
 
             const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/fingerprint-sw\.js|\/aclib\.js|\/tag\.min\.js|\/ntfc\.php|\/pfe\/current\/|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/push-sdk|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|rotator-marketing|marketingg\.com|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
             const ANTI_DEVTOOL_REGEX = /(disable-devtool|devtools-detector|devtools-detect|fuckadblock|blockadblock)/i;
             const VAST_PREROLL_REGEX = /([?&/](vast|preroll|midroll|postroll|ad_tag|adtag|vmap)([=&/.?_]|$)|syndication\.|splash\.php)/i;
-            const LEGIT_PLAYER_SCRIPT_PATH_REGEX = /(hls(\.min)?\.js|jwplayer|video(\.min)?\.js|plyr|vidstack|fluidplayer|artplayer|dplayer|clappr|shaka|dash\.all|jquery|bootstrap|react|vue|\/assets\/(index|app|main|vendor|player|chunk)[^/]*\.js|\/dist\/player|\/embed\/[^/]*\.js)/i;
+
+            // Permite scripts de controles/reproductor en DOOD, Primeload y Streamtape (ej. video.js, player.js, jquery, hls)
+            const LEGIT_PLAYER_SCRIPT_PATH_REGEX = /(video(\.min)?\.js|videojs|vjs|hls(\.min)?\.js|jwplayer|plyr|vidstack|fluidplayer|artplayer|dplayer|clappr|shaka|dash\.all|jquery|bootstrap|dood|player|\/assets\/|\/static\/|\/dist\/|\/lib\/|\/js\/(video|player|main|app|embed|jquery))/i;
 
             function getBaseBrand(hostname) {
-              const clean = (hostname || "").toLowerCase().replace(/^www\./, "");
-              const parts = clean.split(".");
-              return parts.length >= 2 ? parts[parts.length - 2] : clean;
+              const parts = hostname.split(".");
+              return parts.length >= 2 ? parts[parts.length - 2] : hostname;
             }
 
-            function isHostInList(host, list) {
-              for (let i = 0; i < list.length; i++) {
-                const item = list[i];
-                if (host === item || host.endsWith("." + item)) return true;
+            function isHostInSet(host, domainSet) {
+              if (!host) return false;
+              if (domainSet.has(host)) return true;
+              let idx = host.indexOf(".");
+              while (idx !== -1) {
+                const sub = host.slice(idx + 1);
+                if (domainSet.has(sub)) return true;
+                idx = host.indexOf(".", idx + 1);
               }
               return false;
             }
@@ -650,14 +715,14 @@ jobs:
                 function (details) {
                   try {
                     const rawUrl = details.url || "";
-                    if (!rawUrl.startsWith("http")) return {};
+                    if (rawUrl.charCodeAt(0) !== 104) return {};
 
                     const parsed = new URL(rawUrl);
                     const reqHost = parsed.hostname.toLowerCase().replace(/^www\./, "");
-                    const docUrl = details.originUrl || details.documentUrl || "";
-                    const docHost = docUrl.startsWith("http")
-                      ? new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "")
-                      : "";
+
+                    if (isHostInSet(reqHost, VERIFICATION_DOMAINS)) {
+                      return {};
+                    }
 
                     if (/\/adblock\.html(\?|$)/i.test(parsed.pathname)) {
                       return { cancel: true };
@@ -671,6 +736,11 @@ jobs:
                       return VAST_XML_URL ? { redirectUrl: VAST_XML_URL } : { cancel: true };
                     }
 
+                    const docUrl = details.originUrl || details.documentUrl || "";
+                    const docHost = docUrl.startsWith("http")
+                      ? new URL(docUrl).hostname.toLowerCase().replace(/^www\./, "")
+                      : "";
+
                     const isIsolatedSite = docHost.includes("chaturbate.com") ||
                                            docHost.includes("jkanime.") ||
                                            docHost.includes("jkdesu.") ||
@@ -678,7 +748,7 @@ jobs:
                                            docHost.includes("livecamrip") ||
                                            docHost.includes("onlyjerk.");
 
-                    if (isHostInList(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl) || VAST_PREROLL_REGEX.test(rawUrl)) {
+                    if (isHostInSet(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl) || VAST_PREROLL_REGEX.test(rawUrl)) {
                       if (details.frameId > 0 && !isIsolatedSite) {
                         if (details.type === "script" && NOOP_JS_URL) {
                           return { redirectUrl: NOOP_JS_URL };
@@ -691,7 +761,7 @@ jobs:
                     }
 
                     if (docHost) {
-                      if (docHost.includes("chaturbate.com") || docHost.includes("onlyjerk.")) {
+                      if (docHost.includes("chaturbate.com") || docHost.includes("onlyjerk.") || isHostInSet(docHost, VERIFICATION_DOMAINS)) {
                         return {};
                       }
 
@@ -705,7 +775,7 @@ jobs:
                           return { cancel: true };
                         }
 
-                        const isStrictAdPlayer = isHostInList(docHost, STRICT_PLAYER_AD_HOSTS) ||
+                        const isStrictAdPlayer = isHostInSet(docHost, STRICT_PLAYER_AD_HOSTS) ||
                                                  docHost.includes("primeload") ||
                                                  docHost.includes("dood") ||
                                                  docHost.includes("d000d") ||
@@ -718,19 +788,19 @@ jobs:
                                                  docHost.includes("strtape");
 
                         if (details.type === "script") {
-                          const onProtectedRoot = (details.frameId === 0 && isHostInList(docHost, PROTECTED_ROOT_SITES)) ||
+                          const onProtectedRoot = (details.frameId === 0 && isHostInSet(docHost, PROTECTED_ROOT_SITES)) ||
                                                   docHost.includes("jkdesu.") ||
-                                                  docHost.includes("jkdesa.");
-                          const onVideoEmbed = (details.frameId > 0 && !isIsolatedSite && !docHost.includes("google.") && !docHost.includes("recaptcha"));
-
-                          if ((onProtectedRoot || onVideoEmbed || isStrictAdPlayer) &&
-                              !isHostInList(reqHost, ALLOWED_TECH_CDNS) &&
-                              !isHostInList(reqHost, PROTECTED_ROOT_SITES) &&
-                              !isHostInList(reqHost, STRICT_PLAYER_AD_HOSTS)) {
-                            if (onVideoEmbed && LEGIT_PLAYER_SCRIPT_PATH_REGEX.test(parsed.pathname)) {
+                                                  docHost.includes("jkdesa.") ||
+                                                  isStrictAdPlayer;
+                          if (onProtectedRoot &&
+                              !isHostInSet(reqHost, ALLOWED_TECH_CDNS) &&
+                              !isHostInSet(reqHost, PROTECTED_ROOT_SITES) &&
+                              !isHostInSet(reqHost, STRICT_PLAYER_AD_HOSTS)) {
+                            // No bloquear librerias legitimas de reproductor/controles (soluciona boton Play en DOOD)
+                            if (isStrictAdPlayer && LEGIT_PLAYER_SCRIPT_PATH_REGEX.test(parsed.pathname)) {
                               return {};
                             }
-                            if ((onVideoEmbed || isStrictAdPlayer) && NOOP_JS_URL) {
+                            if (isStrictAdPlayer && NOOP_JS_URL) {
                               return { redirectUrl: NOOP_JS_URL };
                             }
                             return { cancel: true };
@@ -738,7 +808,7 @@ jobs:
                         }
 
                         if (details.type === "sub_frame" && isStrictAdPlayer) {
-                          if (!isHostInList(reqHost, STRICT_PLAYER_AD_HOSTS) && !isHostInList(reqHost, ALLOWED_TECH_CDNS)) {
+                          if (!isHostInSet(reqHost, STRICT_PLAYER_AD_HOSTS) && !isHostInSet(reqHost, ALLOWED_TECH_CDNS)) {
                             return { cancel: true };
                           }
                         }
@@ -747,7 +817,10 @@ jobs:
                   } catch (_) {}
                   return {};
                 },
-                { urls: ["<all_urls>"] },
+                {
+                  urls: ["<all_urls>"],
+                  types: ["script", "sub_frame", "xmlhttprequest", "beacon", "ping"]
+                },
                 ["blocking"]
               );
             }
@@ -770,6 +843,19 @@ jobs:
 
             const isTopFrame = (window === window.top);
             const currentHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
+
+            // Salir inmediatamente en iframes de verificacion automatica / captchas reales
+            if (currentHost.includes("challenges.cloudflare.com") ||
+                currentHost.includes("recaptcha") ||
+                currentHost.includes("hcaptcha.com") ||
+                currentHost.includes("arkoselabs.com") ||
+                currentHost.includes("funcaptcha.com") ||
+                currentHost.includes("friendlycaptcha.com") ||
+                currentHost.includes("geetest.com") ||
+                (!isTopFrame && currentHost === "google.com" && (window.location.pathname || "").includes("recaptcha"))) {
+              return;
+            }
+
             const isChaturbate = currentHost === "chaturbate.com" || currentHost.endsWith(".chaturbate.com");
             const isJkAnimeOrPlayer = currentHost.includes("jkanime.") || currentHost.includes("jkdesu.") || currentHost.includes("jkdesa.");
             const isLiveCamRips = currentHost.includes("livecamrip");
@@ -857,21 +943,25 @@ jobs:
                   }
                 ` : "";
 
+                // Aislamiento de capa GPU exclusivo para Doramasflix y DramaChino:
+                // - Promueve el iframe del reproductor a su propia capa para que el scroll vertical no repinte
+                //   toda la pagina cuando el video esta abierto o reproduciendose fuera de pantalla completa.
+                // - Quita desenfoques y sombras pesadas SIN romper animaciones ni spinners de carga.
                 const doramaTvPerfCss = isDoramaTopSite ? `
-                  *, *::before, *::after {
-                    animation-duration: 0.001ms !important;
-                    transition-duration: 0.001ms !important;
-                    box-shadow: none !important;
-                    text-shadow: none !important;
+                  .Backdrop, .backdrop, .bg-blur, [class*="backdrop" i], [class*="blur" i], header, nav {
+                    filter: none !important;
                     backdrop-filter: none !important;
                     -webkit-backdrop-filter: none !important;
+                    box-shadow: none !important;
                   }
-                  section, article, footer, .items, .content, .episodes, .grid {
+                  iframe:not(.__battv_iframe_fullscreen) {
+                    will-change: transform;
+                    transform: translateZ(0);
+                    isolation: isolate;
+                  }
+                  footer, #comments, .comments, .related, .srelated {
                     content-visibility: auto;
-                    contain-intrinsic-size: auto 340px;
-                  }
-                  img {
-                    image-rendering: auto;
+                    contain-intrinsic-size: auto 320px;
                   }
                 ` : "";
 
@@ -943,12 +1033,6 @@ jobs:
                     pointer-events: none !important;
                     width: 0 !important;
                     height: 0 !important;
-                  }
-                  .Backdrop, .backdrop, .bg-blur, [class*="backdrop" i], [class*="blur" i],
-                  body::before, body::after {
-                    filter: none !important;
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
                   }
                 `);
 
@@ -1146,17 +1230,6 @@ jobs:
                         return fn;
                       };
 
-                      try {
-                        Object.defineProperty(window, "outerWidth", {
-                          get: function() { return window.innerWidth; },
-                          configurable: true
-                        });
-                        Object.defineProperty(window, "outerHeight", {
-                          get: function() { return window.innerHeight; },
-                          configurable: true
-                        });
-                      } catch (_) {}
-
                       const noopDevtool = function() { return { isRunning: false, isSuspend: true }; };
                       noopDevtool.isRunning = false;
                       noopDevtool.isSuspend = true;
@@ -1167,17 +1240,6 @@ jobs:
                           configurable: true
                         });
                       } catch (_) {}
-
-                      if (window.Notification) {
-                        try {
-                          Notification.requestPermission = spoofNative(function() { return Promise.resolve("denied"); }, "requestPermission");
-                        } catch (_) {}
-                      }
-                      if (navigator.serviceWorker && navigator.serviceWorker.register) {
-                        try {
-                          navigator.serviceWorker.register = spoofNative(function() { return Promise.reject(new Error("blocked")); }, "register");
-                        } catch (_) {}
-                      }
 
                       const BOOL_DISABLE_KEYS = new Set([
                         "adblock_detection",
@@ -1320,11 +1382,6 @@ jobs:
                       if (window.Notification) {
                         try {
                           Notification.requestPermission = function() { return Promise.resolve("denied"); };
-                        } catch (_) {}
-                      }
-                      if (navigator.serviceWorker && navigator.serviceWorker.register) {
-                        try {
-                          navigator.serviceWorker.register = function() { return Promise.reject(new Error("blocked")); };
                         } catch (_) {}
                       }
 
@@ -1618,32 +1675,38 @@ jobs:
               return false;
             }
 
+            // Protege botones de Play (incluido .vjs-big-play-button y #os_player de DOOD) y contenedores de reproductor
             function isProtectedAppOrPlayerElement(el) {
               if (!el || !el.tagName) return true;
               const tag = el.tagName.toUpperCase();
-              if (tag === "VIDEO" || tag === "IFRAME" || tag === "BODY" || tag === "HTML" || tag === "MAIN" || tag === "HEADER" || tag === "NAV" || tag === "SCRIPT" || tag === "STYLE") {
+              if (tag === "VIDEO" || tag === "IFRAME" || tag === "BUTTON" || tag === "BODY" || tag === "HTML" || tag === "MAIN" || tag === "HEADER" || tag === "NAV" || tag === "SCRIPT" || tag === "STYLE") {
                 return true;
               }
               if (tag.includes("PLAYER") || tag.includes("MEDIA") || tag.includes("VIDEO")) {
                 return true;
               }
+              const role = (el.getAttribute && el.getAttribute("role") || "").toLowerCase();
+              if (role === "button") return true;
+
               const id = (el.id || "").toLowerCase();
               if (id === "__next" || id === "app" || id === "root" || id === "page" ||
                   id === "contenedor" || id === "dt_contenedor" || id === "video_box" ||
                   id === "pframe" || id === "player" || id === "vplayer" || id === "vstr" ||
-                  id === "kt_player" || id === "episodes-content" || id.includes("player")) {
+                  id === "os_player" || id === "video_player" || id === "kt_player" ||
+                  id === "episodes-content" || id.includes("player") || id.includes("play")) {
                 return true;
               }
               const cls = (typeof el.className === "string") ? el.className.toLowerCase() : "";
-              if (cls.includes("jwplayer") || cls.includes("video-js") || cls.includes("plyr") ||
-                  cls.includes("art-video-player") || cls.includes("fluid_video_wrapper") ||
-                  cls.includes("player_conte") || cls.includes("servers") || cls.includes("play-overlay")) {
+              if (cls.includes("jwplayer") || cls.includes("video-js") || cls.includes("vjs-") ||
+                  cls.includes("plyr") || cls.includes("art-video-player") || cls.includes("fluid_video_wrapper") ||
+                  cls.includes("player_conte") || cls.includes("servers") || cls.includes("play-overlay") ||
+                  cls.includes("play-btn") || cls.includes("play_btn") || cls.includes("big-play")) {
                 return true;
               }
               if (el.querySelector && el.querySelector(
-                  "video, iframe, #__next, #root, #app, #vplayer, #player, #vstr, #video_box, #pframe, #kt_player, " +
-                  ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, " +
-                  ".player_conte, .servers, .bg-servers, .anime__item, header, nav"
+                  "video, iframe, #__next, #root, #app, #vplayer, #player, #vstr, #os_player, #video_player, #video_box, #pframe, #kt_player, " +
+                  ".jwplayer, .video-js, .vjs-big-play-button, .vjs-control-bar, .plyr, .plyr__control--overlaid, " +
+                  ".art-video-player, .fluid_video_wrapper, .player_conte, .servers, .bg-servers, .anime__item, header, nav"
               )) {
                 return true;
               }
@@ -1683,6 +1746,8 @@ jobs:
                 }
 
                 const txt = (el.textContent || "").trim();
+                if (txt.toLowerCase().includes("verificaci\u00f3n de seguridad")) return;
+
                 if (txt.length >= 5 && txt.length <= 500 && containsScamText(txt)) {
                   el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
                   el.remove();
@@ -1694,7 +1759,8 @@ jobs:
                   const pos = cs.position;
                   const zIdx = parseInt(cs.zIndex, 10) || 0;
                   if (pos === "fixed" || (pos === "absolute" && zIdx >= 999)) {
-                    const hasPlayerControls = !!el.querySelector(".jw-controlbar, .plyr__controls, .vjs-control-bar, .vjs-big-play-button");
+                    const isPlayerControlSelf = el.matches && el.matches(".jw-controlbar, .plyr__controls, .vjs-control-bar, .vjs-big-play-button, button, [role='button']");
+                    const hasPlayerControls = isPlayerControlSelf || !!el.querySelector(".jw-controlbar, .plyr__controls, .vjs-control-bar, .vjs-big-play-button, .plyr__control--overlaid");
                     if (!hasPlayerControls && hasCloseButtonOrExternalAdLink(el)) {
                       el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
                       el.remove();
@@ -1894,7 +1960,6 @@ jobs:
             let watchedVideosSet = new WeakSet();
             let lastFullscreenPromptMs = 0;
             let userPausedManuallyUntil = 0;
-            let lastChaturbatePlayingSent = null;
 
             function ensureBridgeConnected() {
               if (port) return port;
@@ -2050,6 +2115,22 @@ jobs:
               return (window.location.href || "") + "|" + src.slice(0, 120);
             }
 
+            function sendVideoStateOnce(v) {
+              if (!v || !v.isConnected) return;
+              const isPlaying = !v.paused && !v.ended && v.readyState >= 2;
+              const rawDur = v.duration;
+              const isLive = isChaturbate || !Number.isFinite(rawDur) || rawDur <= 0 || rawDur > 36000;
+              const dur = isLive ? 0 : rawDur;
+              postToNative({
+                type: "VIDEO_STATE",
+                hasVod: !isLive && dur >= 20,
+                isLive: isLive,
+                playing: isPlaying,
+                currentTime: isLive ? 0 : (v.currentTime || 0),
+                duration: dur
+              });
+            }
+
             function triggerFullscreenPromptForVideo(v, dur, isLive) {
               if (!v || !v.isConnected || document.visibilityState === "hidden") return;
               if (v.paused || v.ended || v.readyState < 2) return;
@@ -2082,21 +2163,8 @@ jobs:
               ensureBridgeConnected();
 
               try {
-                v.preload = "auto";
                 v.playsInline = true;
               } catch (_) {}
-
-              v.addEventListener("playing", function () {
-                setTimeout(function () {
-                  if (!v.isConnected || v.paused || v.ended || v.readyState < 2) return;
-                  const rawDur = v.duration;
-                  const isLive = isChaturbate || !Number.isFinite(rawDur) || rawDur <= 0 || rawDur > 36000;
-                  const dur = isLive ? 0 : rawDur;
-                  if (isLive || dur >= 20) {
-                    triggerFullscreenPromptForVideo(v, dur, isLive);
-                  }
-                }, 550);
-              });
 
               if (isChaturbate) {
                 v.addEventListener("pause", function () {
@@ -2110,6 +2178,35 @@ jobs:
                 });
               }
             }
+
+            // Deteccion por eventos nativos (CERO sondeo/reflow mientras navegas o ves video fuera de fullscreen)
+            document.addEventListener("playing", function (e) {
+              const v = e && e.target;
+              if (!v || v.tagName !== "VIDEO") return;
+              attachStreamStabilizer(v);
+              sendVideoStateOnce(v);
+              setTimeout(function () {
+                if (!v.isConnected || v.paused || v.ended || v.readyState < 2) return;
+                const rawDur = v.duration;
+                const isLive = isChaturbate || !Number.isFinite(rawDur) || rawDur <= 0 || rawDur > 36000;
+                const dur = isLive ? 0 : rawDur;
+                if (isLive || dur >= 20) {
+                  triggerFullscreenPromptForVideo(v, dur, isLive);
+                }
+              }, 500);
+            }, true);
+
+            document.addEventListener("pause", function (e) {
+              const v = e && e.target;
+              if (!v || v.tagName !== "VIDEO") return;
+              sendVideoStateOnce(v);
+            }, true);
+
+            document.addEventListener("ended", function (e) {
+              const v = e && e.target;
+              if (!v || v.tagName !== "VIDEO") return;
+              sendVideoStateOnce(v);
+            }, true);
 
             function findActiveVideo() {
               const all = document.getElementsByTagName("video");
@@ -2161,8 +2258,8 @@ jobs:
                 return getChaturbatePlayerRoot(v);
               }
               const selectors = isTopFrame
-                ? ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, .fp-player, .dplayer, .clappr-player, #vplayer, #kt_player, #video_box, #player, .player, .video-player"
-                : ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, .fp-player, .dplayer, .clappr-player, #vplayer, #kt_player, #video_box, #player, .player, .video-player, #root";
+                ? ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, .fp-player, .dplayer, .clappr-player, #vplayer, #os_player, #video_player, #kt_player, #video_box, #player, .player, .video-player"
+                : ".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper, .fp-player, .dplayer, .clappr-player, #vplayer, #os_player, #video_player, #kt_player, #video_box, #player, .player, .video-player, #root";
               return v.closest(selectors) || v.parentElement || v;
             }
 
@@ -2503,41 +2600,31 @@ jobs:
               } catch (_) {}
             }
 
-            setInterval(function () {
-              try {
-                if (isOtherProtectedSite) {
+            // En sitios aislados (JKAnime/LiveCamRips/OnlyJerk) conserva su limpiador periodico;
+            // en Doramasflix/DramaChino y reproductores SOLO sincroniza tiempo cuando estas en pantalla completa
+            // (elimina 100% de los reflows y mensajes IPC cada segundo al desplazarte o ver video fuera de fullscreen).
+            if (isOtherProtectedSite) {
+              setInterval(function () {
+                try {
                   nukeIsolatedSitesAdsOnce();
                   if (isOnlyJerk) enableIframeFullscreenAndEagerLoad();
-                }
-
-                const videos = document.getElementsByTagName("video");
-                if (videos.length === 0) return;
-
-                const v = findActiveVideo();
-                if (!v) return;
-
-                const isPlaying = !v.paused && !v.ended && v.readyState >= 2;
-                const rawDur = v.duration;
-                const isLive = isChaturbate || !Number.isFinite(rawDur) || rawDur <= 0 || rawDur > 36000;
-                const dur = isLive ? 0 : rawDur;
-
-                if (!isChaturbate || lastChaturbatePlayingSent !== isPlaying) {
-                  lastChaturbatePlayingSent = isPlaying;
-                  postToNative({
-                    type: "VIDEO_STATE",
-                    hasVod: !isLive && dur >= 20,
-                    isLive: isLive,
-                    playing: isPlaying,
-                    currentTime: isLive ? 0 : (v.currentTime || 0),
-                    duration: dur
-                  });
-                }
-
-                if (isPlaying && v.currentTime >= 0.4 && (isLive || dur >= 20)) {
-                  triggerFullscreenPromptForVideo(v, dur, isLive);
-                }
-              } catch (_) {}
-            }, isChaturbate ? 1800 : 1000);
+                  if (isInAnyFullscreen()) {
+                    const v = findActiveVideo();
+                    if (v) sendVideoStateOnce(v);
+                  }
+                } catch (_) {}
+              }, 1000);
+            } else if (!isChaturbate) {
+              setInterval(function () {
+                try {
+                  if (!isInAnyFullscreen()) return;
+                  const videos = document.getElementsByTagName("video");
+                  if (videos.length === 0) return;
+                  const v = findActiveVideo();
+                  if (v) sendVideoStateOnce(v);
+                } catch (_) {}
+              }, 1200);
+            }
 
             if (isTopFrame) {
               function extractMediaMetadata() {
