@@ -393,14 +393,18 @@ jobs:
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
 
-          # 3. Parchar BatTvGeckoViewManager.kt (base exacta v6.0 sin tocar preferencias globales)
+          # 3. Parchar BatTvGeckoViewManager.kt (correccion non-null en Builder.userAgentOverride)
           mgr_path = "android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
           with open(mgr_path, "r", encoding="utf-8") as f:
               mgr = f.read()
 
           mgr = mgr.replace(
               ".userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else TV_MODE_USER_AGENT)",
-              ".userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else null)"
+              ".apply { if (isDesktopMode) userAgentOverride(PC_MODE_USER_AGENT) }"
+          )
+          mgr = mgr.replace(
+              ".userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else null)",
+              ".apply { if (isDesktopMode) userAgentOverride(PC_MODE_USER_AGENT) }"
           )
           mgr = mgr.replace(
               "session.settings.userAgentOverride = if (isDesktopMode) {\n            PC_MODE_USER_AGENT\n        } else {\n            TV_MODE_USER_AGENT\n        }",
@@ -965,8 +969,6 @@ jobs:
                   }
                 ` : "";
 
-                // En Chaturbate: recorte de chat antiguo por CSS puro (sin romper React con removeChild)
-                // y apagado total de chat/bio/miniaturas al ver el directo en pantalla completa.
                 const adHideCss = isByseStealthEmbed ? "" : (isCleanLiveStreamSite ? `
                   .chat-holder, .chat-box, #chat, .msg-list-wrapper, .room-list, .endless_page_template {
                     contain: layout style paint !important;
@@ -1103,14 +1105,6 @@ jobs:
               try {
                 const s = document.createElement("script");
                 if (isChaturbate) {
-                  // Motor exclusivo para estabilidad 1080p en Chaturbate sobre Chromecast HD (1.5 GB RAM):
-                  // 1. Fuerza MSE/hls.js conservando el selector de calidad completo.
-                  // 2. Amplia dinamicamente PART-HOLD-BACK (hasta 3.6s, tope 42% de la ventana real del directo)
-                  //    y HOLD-BACK (hasta 5.2s, tope 55%) en listas .m3u8 para que 1080p tenga 3x mas colchon
-                  //    contra micro-cortes sin congelarse ni romper LL-HLS.
-                  // 3. Aplica ajustes seguros de RAM/Worker a Hls.DefaultConfig y videojs(el, opts)
-                  //    (enableWorker:true, backBufferLength:6, maxBufferHole:0.6, maxLiveSyncPlaybackRate:1.03)
-                  //    SIN desactivar lowLatencyMode ni bloquear playbackRate.
                   s.textContent = `(function(){
                     try {
                       const origCanPlay = HTMLMediaElement.prototype.canPlayType;
@@ -1119,7 +1113,6 @@ jobs:
                         return origCanPlay.apply(this, arguments);
                       };
 
-                      // Ajuste dinamico de colchon LL-HLS en playlists .m3u8 de Chaturbate
                       function widenLiveHoldBackSafely(playlistText) {
                         if (typeof playlistText !== "string" ||
                             playlistText.indexOf("#EXTM3U") !== 0 ||
@@ -1134,7 +1127,6 @@ jobs:
                           const d = parseFloat(m[1]);
                           if (Number.isFinite(d) && d > 0) totalDur += d;
                         }
-                        // Solo ampliar el colchon si el servidor entrega al menos 6s de ventana activa
                         if (totalDur < 6.0) return playlistText;
 
                         const safePartTarget = Math.min(3.6, Number((totalDur * 0.42).toFixed(3)));
@@ -1153,7 +1145,6 @@ jobs:
                         return out;
                       }
 
-                      // Hook ultraligero en XHR solo para URLs .m3u8 (los fragmentos .m4s binarios ni se tocan)
                       const m3u8Xhrs = new WeakSet();
                       const m3u8Cache = new WeakMap();
                       const origXhrOpen = XMLHttpRequest.prototype.open;
@@ -1201,7 +1192,6 @@ jobs:
                         });
                       }
 
-                      // Hook paralelo en Response.prototype.text solo para URLs .m3u8
                       if (window.Response && Response.prototype && typeof Response.prototype.text === "function") {
                         const origRespText = Response.prototype.text;
                         Response.prototype.text = function() {
@@ -1215,7 +1205,6 @@ jobs:
                         };
                       }
 
-                      // Ajustes seguros de RAM/Worker para 1080p en Hls.DefaultConfig y videojs(el, opts)
                       const SAFE_1080P_HLS_OPTS = {
                         enableWorker: true,
                         backBufferLength: 6,
@@ -1761,8 +1750,6 @@ jobs:
               } catch (_) {}
             }
 
-            // En Chaturbate: pausa vistas previas secundarias y marca imagenes/GIFs de la bio como lazy/async
-            // SIN borrar nodos DOM de React del chat (el recorte se hace por CSS puro sin sobrecargar CPU).
             function keepChaturbateLightweight() {
               if (!isChaturbate || !document.body) return;
               try {
@@ -2353,8 +2340,6 @@ jobs:
                   }
                 };
 
-                // Si un micro-hueco CMAF de 1080p detiene el video teniendo ya datos listos delante,
-                // avanza solo por encima de ese hueco (sin saltar al borde en vivo ni vaciar el bufer).
                 const scheduleHoleStep = function () {
                   if (holeTimer || Date.now() < userPausedManuallyUntil || v.ended) return;
                   holeTimer = setTimeout(function () {
