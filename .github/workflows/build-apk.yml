@@ -35,6 +35,11 @@ jobs:
         with:
           packages: 'platform-tools'
 
+      - name: Verificar aceleracion de hardware en AndroidManifest.xml
+        run: |
+          grep -q 'android:hardwareAccelerated="true"' android-geckoview/app/src/main/AndroidManifest.xml
+          echo "android:hardwareAccelerated=true confirmado en AndroidManifest.xml"
+
       - name: Generar reglas ProGuard/R8 para reducir peso del APK
         run: |
           cat << 'EOF_PROGUARD' > android-geckoview/app/proguard-rules.pro
@@ -48,14 +53,14 @@ jobs:
           -keep class com.battv.browser.** { *; }
           EOF_PROGUARD
 
-      - name: Actualizar a versionCode 39 (v6.4), perfil limpio nivel Mozilla Firefox y corte total de audio al navegar
+      - name: Actualizar a versionCode 40 (v6.5), barra flotante sin relayout, ACTION_SCROLL y perfil GPU/RAM
         run: |
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
-          sed -i 's/versionCode [0-9]\+/versionCode 39/g' android-geckoview/app/build.gradle
-          sed -i 's/versionName "[^"]*"/versionName "6.4"/g' android-geckoview/app/build.gradle
-          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v39@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
-          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v39/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/versionCode [0-9]\+/versionCode 40/g' android-geckoview/app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "6.5"/g' android-geckoview/app/build.gradle
+          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v40@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v40/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
           import re
@@ -84,7 +89,12 @@ jobs:
           with open(gradle_path, "w", encoding="utf-8") as f:
               f.write(g)
 
-          # 2. Parchar MainActivity.kt (STOP_ALL_MEDIA al retroceder/cambiar pagina/ir a Inicio + base estable)
+          # 2. Parchar MainActivity.kt:
+          #    - Barra superior flotante en FrameLayout (translationY/alpha, cero relayout de GeckoView)
+          #    - setDynamicToolbarMaxHeight(0)
+          #    - Scroll nativo constante via PanZoomController.onMotionEvent(ACTION_SCROLL)
+          #    - Sin redibujo de CursorOverlayView cuando las coordenadas no cambian
+          #    - setActive(false) en sesion inactiva (Inicio/pausa) y STOP_ALL_MEDIA al navegar
           main_path = "android-geckoview/app/src/main/java/com/battv/browser/MainActivity.kt"
           with open(main_path, "r", encoding="utf-8") as f:
               code = f.read()
@@ -99,6 +109,385 @@ jobs:
               "private const val CURSOR_AUTO_HIDE_MS = 2500L",
               "private const val CURSOR_AUTO_HIDE_MS = 4500L"
           )
+
+          # Cambiar rootLayout a FrameLayout y declarar topBarContainer flotante + objetos reutilizables de ACTION_SCROLL
+          code = code.replace(
+              "private lateinit var rootLayout: LinearLayout\n  private lateinit var topBarLayout: LinearLayout",
+              "private lateinit var rootLayout: FrameLayout\n"
+              "  private lateinit var topBarContainer: LinearLayout\n"
+              "  private lateinit var topBarLayout: LinearLayout\n"
+              "  private var isTopBarOverlayVisible: Boolean = true\n"
+              "  private var topBarHeightPx: Float = 0f\n"
+              "  private val scrollPointerProps = arrayOf(\n"
+              "    MotionEvent.PointerProperties().apply {\n"
+              "      id = 0\n"
+              "      toolType = MotionEvent.TOOL_TYPE_MOUSE\n"
+              "    }\n"
+              "  )\n"
+              "  private val scrollPointerCoords = arrayOf(MotionEvent.PointerCoords())",
+              1
+          )
+
+          if "private var isExitingCompletely" not in code:
+              code = code.replace(
+                  "private var isFullScreenVideo: Boolean = false",
+                  "private var isFullScreenVideo: Boolean = false\n  private var isExitingCompletely: Boolean = false",
+                  1
+              )
+
+          if "private var lastDismissedPlayerKey" not in code:
+              code = code.replace(
+                  "private var lastFullscreenExitUptimeMs: Long = 0L",
+                  "private var lastFullscreenExitUptimeMs: Long = 0L\n  private var lastDismissedPlayerKey: String = \"\"\n  private var lastPromptedPlayerKey: String = \"\"\n  private var lastTopNavChangeUptimeMs: Long = 0L",
+                  1
+              )
+
+          # Auto-ocultado suave (translationY/alpha) de la barra flotante al navegar en modo cursor
+          if "private val autoHideTopBarRunnable" not in code:
+              code = code.replace(
+                  "private val hideCursorRunnable = Runnable {",
+                  "private val autoHideTopBarRunnable = Runnable {\n"
+                  "    if (isCursorModeActive && !isHomeScreenVisible && !isEditingUrlText && !isEditingWebInput) {\n"
+                  "      setTopBarOverlayVisible(false, animate = true)\n"
+                  "    }\n"
+                  "  }\n\n"
+                  "  private val hideCursorRunnable = Runnable {",
+                  1
+              )
+
+          # Reemplazar aceleracion variable por scroll constante suave en smoothDpadFrameCallback
+          old_scroll_calc = (
+              "        if (!isFullScreenVideo) {\n"
+              "          val targetScrollSpeed = BASE_SCROLL_FRAME_SPEED_PX +\n"
+              "            (MAX_SCROLL_FRAME_SPEED_PX - BASE_SCROLL_FRAME_SPEED_PX) * (accelFactor * accelFactor).toDouble()\n"
+              "          currentScrollSpeedPx = currentScrollSpeedPx * 0.75 + targetScrollSpeed * 0.25\n\n"
+              "          if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {\n"
+              "            remainingShortTapScrollPx = 0.0\n"
+              "            scrollWebPageNative(-currentScrollSpeedPx * dtScale)\n"
+              "          } else if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_DOWN &&\n"
+              "            cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)\n"
+              "          ) {\n"
+              "            remainingShortTapScrollPx = 0.0\n"
+              "            scrollWebPageNative(currentScrollSpeedPx * dtScale)\n"
+              "          }\n"
+              "        }"
+          )
+          new_scroll_calc = (
+              "        if (!isFullScreenVideo) {\n"
+              "          val constantScrollStep = 17.0 * dtScale\n"
+              "          if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {\n"
+              "            remainingShortTapScrollPx = 0.0\n"
+              "            scrollWebPageNative(-constantScrollStep)\n"
+              "          } else if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_DOWN &&\n"
+              "            cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)\n"
+              "          ) {\n"
+              "            remainingShortTapScrollPx = 0.0\n"
+              "            scrollWebPageNative(constantScrollStep)\n"
+              "          }\n"
+              "        }"
+          )
+          if old_scroll_calc in code:
+              code = code.replace(old_scroll_calc, new_scroll_calc, 1)
+
+          # Reemplazar rootLayout LinearLayout por FrameLayout
+          old_root_init = (
+              "    rootLayout = LinearLayout(this).apply {\n"
+              "      orientation = LinearLayout.VERTICAL\n"
+              "      layoutParams = ViewGroup.LayoutParams(\n"
+              "        ViewGroup.LayoutParams.MATCH_PARENT,\n"
+              "        ViewGroup.LayoutParams.MATCH_PARENT\n"
+              "      )\n"
+              "      setBackgroundColor(Color.parseColor(\"#080B18\"))\n"
+              "    }"
+          )
+          new_root_init = (
+              "    rootLayout = FrameLayout(this).apply {\n"
+              "      layoutParams = ViewGroup.LayoutParams(\n"
+              "        ViewGroup.LayoutParams.MATCH_PARENT,\n"
+              "        ViewGroup.LayoutParams.MATCH_PARENT\n"
+              "      )\n"
+              "      setBackgroundColor(Color.parseColor(\"#080B18\"))\n"
+              "    }"
+          )
+          if old_root_init in code:
+              code = code.replace(old_root_init, new_root_init, 1)
+
+          # webContainer siempre MATCH_PARENT x MATCH_PARENT para que GeckoView nunca haga relayout
+          old_web_container = (
+              "    webContainer = FrameLayout(this).apply {\n"
+              "      clipChildren = false\n"
+              "      layoutParams = LinearLayout.LayoutParams(\n"
+              "        ViewGroup.LayoutParams.MATCH_PARENT,\n"
+              "        0,\n"
+              "        1f\n"
+              "      )\n"
+              "    }"
+          )
+          new_web_container = (
+              "    webContainer = FrameLayout(this).apply {\n"
+              "      clipChildren = false\n"
+              "      layoutParams = FrameLayout.LayoutParams(\n"
+              "        ViewGroup.LayoutParams.MATCH_PARENT,\n"
+              "        ViewGroup.LayoutParams.MATCH_PARENT\n"
+              "      )\n"
+              "    }"
+          )
+          if old_web_container in code:
+              code = code.replace(old_web_container, new_web_container, 1)
+
+          # Configurar setDynamicToolbarMaxHeight(0) y revelacion tactil de barra flotante en geckoView
+          old_gecko_touch = (
+              "      setOnTouchListener { _, event ->\n"
+              "        if (event.actionMasked == MotionEvent.ACTION_DOWN) {\n"
+              "          lastUserWebClickTime = SystemClock.uptimeMillis()\n"
+              "        }\n"
+              "        if (!isSyntheticDpadTap) {\n"
+              "          cursorOverlay.hideCursorUntilMoved()\n"
+              "        }\n"
+              "        false\n"
+              "      }"
+          )
+          new_gecko_touch = (
+              "      setDynamicToolbarMaxHeight(0)\n"
+              "      setOnTouchListener { _, event ->\n"
+              "        if (event.actionMasked == MotionEvent.ACTION_DOWN) {\n"
+              "          lastUserWebClickTime = SystemClock.uptimeMillis()\n"
+              "          if (!isSyntheticDpadTap && !isFullScreenVideo && !isHomeScreenVisible) {\n"
+              "            if (!isTopBarOverlayVisible && event.y <= (38f * density)) {\n"
+              "              setTopBarOverlayVisible(true, animate = true)\n"
+              "              scheduleAutoHideTopBar(4200L)\n"
+              "            } else if (isTopBarOverlayVisible && event.y > topBarHeightPx) {\n"
+              "              setTopBarOverlayVisible(false, animate = true)\n"
+              "            }\n"
+              "          }\n"
+              "        }\n"
+              "        if (!isSyntheticDpadTap) {\n"
+              "          cursorOverlay.hideCursorUntilMoved()\n"
+              "        }\n"
+              "        false\n"
+              "      }"
+          )
+          if old_gecko_touch in code:
+              code = code.replace(old_gecko_touch, new_gecko_touch, 1)
+
+          # Dar padding superior a homeContentContainer para que la barra flotante no tape el titulo en Favoritos
+          code = code.replace(
+              "setPadding(dp(36), dp(24), dp(36), dp(28))",
+              "setPadding(dp(36), dp(72), dp(36), dp(28))",
+              1
+          )
+
+          # Montar webContainer debajo y topBarContainer flotando encima (con capa GPU y translationY/alpha)
+          old_root_adds = (
+              "    rootLayout.addView(topBarLayout)\n"
+              "    rootLayout.addView(loadingProgressBar)\n"
+              "    rootLayout.addView(webContainer)"
+          )
+          new_root_adds = (
+              "    topBarHeightPx = dp(58).toFloat()\n"
+              "    topBarContainer = LinearLayout(this).apply {\n"
+              "      orientation = LinearLayout.VERTICAL\n"
+              "      elevation = 110f\n"
+              "      setLayerType(View.LAYER_TYPE_HARDWARE, null)\n"
+              "      layoutParams = FrameLayout.LayoutParams(\n"
+              "        ViewGroup.LayoutParams.MATCH_PARENT,\n"
+              "        ViewGroup.LayoutParams.WRAP_CONTENT,\n"
+              "        Gravity.TOP\n"
+              "      )\n"
+              "      addView(topBarLayout)\n"
+              "      addView(loadingProgressBar)\n"
+              "    }\n"
+              "    rootLayout.addView(webContainer)\n"
+              "    rootLayout.addView(topBarContainer)"
+          )
+          if old_root_adds in code:
+              code = code.replace(old_root_adds, new_root_adds, 1)
+
+          # Agregar helpers setTopBarOverlayVisible y scheduleAutoHideTopBar (cero relayout de GeckoView)
+          topbar_helpers = (
+              "  private fun setTopBarOverlayVisible(visible: Boolean, animate: Boolean = true) {\n"
+              "    if (!::topBarContainer.isInitialized) return\n"
+              "    if (isTopBarOverlayVisible == visible && animate) return\n"
+              "    isTopBarOverlayVisible = visible\n"
+              "    val targetY = if (visible) 0f else -topBarHeightPx\n"
+              "    val targetAlpha = if (visible) 1f else 0f\n"
+              "    topBarContainer.animate().cancel()\n"
+              "    if (animate) {\n"
+              "      topBarContainer.animate()\n"
+              "        .translationY(targetY)\n"
+              "        .alpha(targetAlpha)\n"
+              "        .setDuration(140L)\n"
+              "        .start()\n"
+              "    } else {\n"
+              "      topBarContainer.translationY = targetY\n"
+              "      topBarContainer.alpha = targetAlpha\n"
+              "    }\n"
+              "  }\n\n"
+              "  private fun scheduleAutoHideTopBar(delayMs: Long = 2200L) {\n"
+              "    mainHandler.removeCallbacks(autoHideTopBarRunnable)\n"
+              "    if (!isHomeScreenVisible && isCursorModeActive && !isEditingUrlText && !isEditingWebInput) {\n"
+              "      mainHandler.postDelayed(autoHideTopBarRunnable, delayMs)\n"
+              "    }\n"
+              "  }\n\n"
+          )
+          code = code.replace(
+              "  private fun promptAutoFullscreenIfEligible()",
+              topbar_helpers + "  private fun promptAutoFullscreenIfEligible()",
+              1
+          )
+
+          # Reemplazar applyFullScreenState para usar solo translationY/alpha sin tocar layout/tamaño de GeckoView
+          new_apply_fs = (
+              "private fun applyFullScreenState(fullScreen: Boolean) {\n"
+              "    isFullScreenVideo = fullScreen\n"
+              "    stopSmoothDpadMovement(immediate = true)\n"
+              "    mainHandler.removeCallbacks(autoHideTopBarRunnable)\n\n"
+              "    if (fullScreen) {\n"
+              "      dismissFullscreenPromptDialog()\n"
+              "      if (isEditingWebInput || isEditingUrlText) {\n"
+              "        closeNativeWebInputBridge(submit = false)\n"
+              "      }\n"
+              "      homeOverlayLayout.visibility = View.GONE\n"
+              "      loadingProgressBar.visibility = View.GONE\n"
+              "      setTopBarOverlayVisible(false, animate = false)\n"
+              "      applyImmersiveSystemUi(true)\n\n"
+              "      isCursorModeActive = true\n"
+              "      cursorOverlay.hideCursorUntilMoved()\n"
+              "      geckoView.requestFocus()\n"
+              "    } else {\n"
+              "      lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()\n"
+              "      mainHandler.removeCallbacks(hideVideoSeekRunnable)\n"
+              "      isUserSeekingVod = false\n"
+              "      consecutiveSeekPresses = 0\n"
+              "      cumulativeSeekDeltaSec = 0.0\n"
+              "      videoSeekOverlay.hideOverlayImmediate()\n\n"
+              "      applyImmersiveSystemUi(false)\n"
+              "      if (isHomeScreenVisible) {\n"
+              "        homeOverlayLayout.visibility = View.VISIBLE\n"
+              "        setTopBarOverlayVisible(true, animate = false)\n"
+              "      } else {\n"
+              "        setTopBarOverlayVisible(false, animate = false)\n"
+              "        activateCursorMode(showPointerNow = true)\n"
+              "      }\n"
+              "    }\n"
+              "  }"
+          )
+          code = re.sub(
+              r"private fun applyFullScreenState\(fullScreen: Boolean\)\s*\{[\s\S]*?\n  \}",
+              lambda _: new_apply_fs,
+              code,
+              count=1
+          )
+
+          # En startEditingUrlText, activateToolbarMode y activateCursorMode usar barra flotante
+          code = code.replace(
+              "topBarLayout.visibility = View.VISIBLE",
+              "mainHandler.removeCallbacks(autoHideTopBarRunnable)\n    setTopBarOverlayVisible(true, animate = true)"
+          )
+          code = code.replace(
+              "    toolbarIndex = URL_BAR_INDEX\n    homeOverlayLayout.clearFocus()",
+              "    toolbarIndex = URL_BAR_INDEX\n    mainHandler.removeCallbacks(autoHideTopBarRunnable)\n    setTopBarOverlayVisible(true, animate = true)\n    homeOverlayLayout.clearFocus()",
+              1
+          )
+          code = code.replace(
+              "    geckoSession?.setActive(true)\n    geckoSession?.setFocused(true)\n  }",
+              "    geckoSession?.setActive(true)\n    geckoSession?.setFocused(true)\n    if (vodIsPlaying || isFullScreenVideo) {\n      setTopBarOverlayVisible(false, animate = true)\n    } else {\n      scheduleAutoHideTopBar(2400L)\n    }\n  }",
+              1
+          )
+
+          # Permitir abrir barra flotante con boton MENU del control remoto
+          code = code.replace(
+              "    if (keyCode == KeyEvent.KEYCODE_BACK) {",
+              "    if (keyCode == KeyEvent.KEYCODE_MENU) {\n"
+              "      if (action == KeyEvent.ACTION_UP && !isHomeScreenVisible && !isFullScreenVideo) {\n"
+              "        activateToolbarMode()\n"
+              "      }\n"
+              "      return true\n"
+              "    }\n\n"
+              "    if (keyCode == KeyEvent.KEYCODE_BACK) {",
+              1
+          )
+
+          # Reemplazar scrollWebPageNative por scroll nativo con PanZoomController (ACTION_SCROLL) sin GC por frame
+          new_scroll_fn = (
+              "private fun scrollWebPageNative(deltaYPixels: Double) {\n"
+              "    if (abs(deltaYPixels) < 0.1) return\n"
+              "    try {\n"
+              "      val now = SystemClock.uptimeMillis()\n"
+              "      val vScroll = (-deltaYPixels / 42.0).toFloat().coerceIn(-1.5f, 1.5f)\n"
+              "      scrollPointerCoords[0].apply {\n"
+              "        clear()\n"
+              "        x = cursorOverlay.cursorX.coerceIn(12f, max(12f, webContainer.width - 12f))\n"
+              "        y = cursorOverlay.cursorY.coerceIn(12f, max(12f, webContainer.height - 12f))\n"
+              "        setAxisValue(MotionEvent.AXIS_VSCROLL, vScroll)\n"
+              "      }\n"
+              "      val scrollEvent = MotionEvent.obtain(\n"
+              "        now, now, MotionEvent.ACTION_SCROLL,\n"
+              "        1, scrollPointerProps, scrollPointerCoords,\n"
+              "        0, 0, 1f, 1f, 0, 0,\n"
+              "        InputDevice.SOURCE_MOUSE, 0\n"
+              "      )\n"
+              "      geckoSession?.panZoomController?.onMotionEvent(scrollEvent)\n"
+              "      scrollEvent.recycle()\n"
+              "    } catch (_: Exception) {\n"
+              "      try {\n"
+              "        geckoSession?.panZoomController?.scrollBy(\n"
+              "          ScreenLength.zero(),\n"
+              "          ScreenLength.fromPixels(deltaYPixels),\n"
+              "          PanZoomController.SCROLL_BEHAVIOR_AUTO\n"
+              "        )\n"
+              "      } catch (_: Exception) {}\n"
+              "    }\n"
+              "  }"
+          )
+          code = re.sub(
+              r"private fun scrollWebPageNative\(deltaYPixels: Double\)\s*\{[\s\S]*?\n  \}",
+              lambda _: new_scroll_fn,
+              code,
+              count=1
+          )
+
+          # Evitar redibujar/invalidar CursorOverlayView cuando las coordenadas no cambian
+          old_move_cursor = (
+              "    fun moveCursorBy(dx: Float, dy: Float): Boolean {\n"
+              "      val maxW = max(1f, webContainer.width.toFloat())\n"
+              "      val maxH = max(1f, webContainer.height.toFloat())\n"
+              "      val nextY = cursorY + dy\n"
+              "      val hitTop = nextY <= 2f\n"
+              "      cursorX = (cursorX + dx).coerceIn(4f, maxW - 4f)\n"
+              "      cursorY = nextY.coerceIn(2f, maxH - 4f)\n\n"
+              "      translationX = cursorX - hotspotOffsetPx\n"
+              "      translationY = cursorY - hotspotOffsetPx\n\n"
+              "      if (!cursorVisible || visibility != VISIBLE) {\n"
+              "        cursorVisible = true\n"
+              "        visibility = VISIBLE\n"
+              "      }\n"
+              "      return hitTop\n"
+              "    }"
+          )
+          new_move_cursor = (
+              "    fun moveCursorBy(dx: Float, dy: Float): Boolean {\n"
+              "      val maxW = max(1f, webContainer.width.toFloat())\n"
+              "      val maxH = max(1f, webContainer.height.toFloat())\n"
+              "      val nextY = cursorY + dy\n"
+              "      val hitTop = nextY <= 2f\n"
+              "      val clampedX = (cursorX + dx).coerceIn(4f, maxW - 4f)\n"
+              "      val clampedY = nextY.coerceIn(2f, maxH - 4f)\n"
+              "      if (abs(clampedX - cursorX) >= 0.05f || abs(clampedY - cursorY) >= 0.05f) {\n"
+              "        cursorX = clampedX\n"
+              "        cursorY = clampedY\n"
+              "        translationX = cursorX - hotspotOffsetPx\n"
+              "        translationY = cursorY - hotspotOffsetPx\n"
+              "      }\n"
+              "      if (!cursorVisible || visibility != VISIBLE) {\n"
+              "        cursorVisible = true\n"
+              "        visibility = VISIBLE\n"
+              "      }\n"
+              "      return hitTop\n"
+              "    }"
+          )
+          if old_move_cursor in code:
+              code = code.replace(old_move_cursor, new_move_cursor, 1)
 
           old_hide_cursor = (
               "    fun hideCursorUntilMoved() {\n"
@@ -118,19 +507,37 @@ jobs:
           if old_hide_cursor in code:
               code = code.replace(old_hide_cursor, new_hide_cursor, 1)
 
-          if "private var isExitingCompletely" not in code:
-              code = code.replace(
-                  "private var isFullScreenVideo: Boolean = false",
-                  "private var isFullScreenVideo: Boolean = false\n  private var isExitingCompletely: Boolean = false",
-                  1
-              )
+          # Al volver a Inicio: mostrar barra flotante, detener audio/video y poner sesion inactiva setActive(false)
+          code = code.replace(
+              "    geckoSession?.stop()\n    isHomeScreenVisible = true",
+              "    isHomeScreenVisible = true\n"
+              "    mainHandler.removeCallbacks(autoHideTopBarRunnable)\n"
+              "    setTopBarOverlayVisible(true, animate = false)\n"
+              "    sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n"
+              "    geckoSession?.stop()\n"
+              "    try { geckoSession?.loadUri(\"about:blank\") } catch (_: Exception) {}\n"
+              "    geckoSession?.setActive(false)",
+              1
+          )
 
-          if "private var lastDismissedPlayerKey" not in code:
-              code = code.replace(
-                  "private var lastFullscreenExitUptimeMs: Long = 0L",
-                  "private var lastFullscreenExitUptimeMs: Long = 0L\n  private var lastDismissedPlayerKey: String = \"\"\n  private var lastPromptedPlayerKey: String = \"\"\n  private var lastTopNavChangeUptimeMs: Long = 0L",
-                  1
-              )
+          # Al navegar atras, adelante o abrir nueva URL: cortar audio/video y reactivar sesion
+          code = code.replace(
+              "geckoSession?.goBack()",
+              "sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n            geckoSession?.goBack()"
+          )
+          code = code.replace(
+              "geckoSession?.goForward()",
+              "sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n        geckoSession?.goForward()"
+          )
+          code = code.replace(
+              "    geckoSession?.stop()\n    geckoSession?.loadUri(finalUri)",
+              "    geckoSession?.setActive(true)\n"
+              "    setTopBarOverlayVisible(true, animate = false)\n"
+              "    sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n"
+              "    geckoSession?.stop()\n"
+              "    geckoSession?.loadUri(finalUri)",
+              1
+          )
 
           new_prompt_fn = (
               "private fun promptAutoFullscreenIfEligible(playerKey: String = \"\") {\n"
@@ -200,28 +607,6 @@ jobs:
               1
           )
 
-          # Al volver a Inicio: detener audio/video y descargar pagina anterior con about:blank
-          code = code.replace(
-              "    geckoSession?.stop()\n    isHomeScreenVisible = true",
-              "    isHomeScreenVisible = true\n    sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n    geckoSession?.stop()\n    try { geckoSession?.loadUri(\"about:blank\") } catch (_: Exception) {}",
-              1
-          )
-
-          # Al navegar atras, adelante o abrir nueva URL: cortar audio/video de inmediato
-          code = code.replace(
-              "geckoSession?.goBack()",
-              "sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n            geckoSession?.goBack()"
-          )
-          code = code.replace(
-              "geckoSession?.goForward()",
-              "sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n        geckoSession?.goForward()"
-          )
-          code = code.replace(
-              "    geckoSession?.stop()\n    geckoSession?.loadUri(finalUri)",
-              "    sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n    geckoSession?.stop()\n    geckoSession?.loadUri(finalUri)",
-              1
-          )
-
           old_loc_assign = (
               "          currentUrl = url\n"
               "          if (url.startsWith(\"http\", ignoreCase = true)) {\n"
@@ -276,6 +661,9 @@ jobs:
           new_started_playing = (
               "if (startedPlayingNow && (hasActiveVodVideo || isLiveStreamVideo)) {\n"
               "                    loadingProgressBar.visibility = View.GONE\n"
+              "                    if (isCursorModeActive && !isHomeScreenVisible && !isEditingUrlText && !isEditingWebInput) {\n"
+              "                      setTopBarOverlayVisible(false, animate = true)\n"
+              "                    }\n"
               "                    if (!isSmoothDpadLoopRunning) {\n"
               "                      mainHandler.removeCallbacks(hideCursorRunnable)\n"
               "                      mainHandler.postDelayed(hideCursorRunnable, 900L)\n"
@@ -313,6 +701,9 @@ jobs:
               '                  hasActiveVodVideo = !isLive && dur >= 20.0\n'
               '                  if (dur > 0.0) vodDurationSec = dur\n'
               '                  loadingProgressBar.visibility = View.GONE\n'
+              '                  if (isCursorModeActive && !isHomeScreenVisible) {\n'
+              '                    setTopBarOverlayVisible(false, animate = true)\n'
+              '                  }\n'
               '                  if (isLive || dur >= 20.0) {\n'
               '                    promptAutoFullscreenIfEligible(pKey)\n'
               '                  }\n'
@@ -417,13 +808,18 @@ jobs:
               f.write(code)
 
           # 3. Parchar BatTvGeckoViewManager.kt:
-          #    Reemplaza el bloque battv_gecko_config.yaml por un perfil limpio nivel Mozilla Firefox Android
-          #    (sin forzar WebRender, canvas acelerado, MediaCodec force-enabled ni recortes de decodificacion de imagenes)
-          #    y activa suspendMediaWhenInactive(true) para cortar audio/video en segundo plano.
+          #    - GeckoView.setDynamicToolbarMaxHeight(0) (SurfaceView ya es el backend nativo por defecto en GeckoView 130)
+          #    - GeckoRuntimeSettings: useMaxScreenDepth(false), consoleOutput(false), remoteDebuggingEnabled(false)
+          #    - GeckoSessionSettings: useTrackingProtection(true), suspendMediaWhenInactive(true)
+          #    - battv_gecko_config.yaml exacto con HW decode, WebRender GPU, sin efectos costosos y RAM acotada
           mgr_path = "android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
           with open(mgr_path, "r", encoding="utf-8") as f:
               mgr = f.read()
 
+          mgr = mgr.replace(
+              ".useTrackingProtection(false)",
+              ".useTrackingProtection(true)"
+          )
           mgr = mgr.replace(
               ".suspendMediaWhenInactive(false)",
               ".suspendMediaWhenInactive(true)"
@@ -440,6 +836,37 @@ jobs:
               "session.settings.userAgentOverride = if (isDesktopMode) {\n            PC_MODE_USER_AGENT\n        } else {\n            TV_MODE_USER_AGENT\n        }",
               "session.settings.userAgentOverride = if (isDesktopMode) {\n            PC_MODE_USER_AGENT\n        } else {\n            null\n        }"
           )
+
+          mgr = mgr.replace(
+              "geckoView.setSession(session)",
+              "geckoView.setDynamicToolbarMaxHeight(0)\n        geckoView.setSession(session)",
+              1
+          )
+
+          old_runtime_builder = (
+              "                val builder = GeckoRuntimeSettings.Builder()\n"
+              "                    .javaScriptEnabled(true)\n"
+              "                    .consoleOutput(false)\n"
+              "                    .aboutConfigEnabled(false)\n"
+              "                    .doubleTapZoomingEnabled(false)\n"
+              "                    .automaticFontSizeAdjustment(false)"
+          )
+          new_runtime_builder = (
+              "                val builder = GeckoRuntimeSettings.Builder()\n"
+              "                    .javaScriptEnabled(true)\n"
+              "                    .consoleOutput(false)\n"
+              "                    .remoteDebuggingEnabled(false)\n"
+              "                    .aboutConfigEnabled(false)\n"
+              "                    .doubleTapZoomingEnabled(false)\n"
+              "                    .automaticFontSizeAdjustment(false)\n"
+              "                runCatching {\n"
+              "                    builder.javaClass\n"
+              "                        .getMethod(\"useMaxScreenDepth\", Boolean::class.javaPrimitiveType)\n"
+              "                        .invoke(builder, false)\n"
+              "                }"
+          )
+          if old_runtime_builder in mgr:
+              mgr = mgr.replace(old_runtime_builder, new_runtime_builder, 1)
 
           new_disposable_dirs = (
               "private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(\n"
@@ -464,21 +891,32 @@ jobs:
               "appContext.externalCacheDir?.let { deleteDirectoryContents(it) }"
           )
 
-          clean_gecko_yaml = (
+          tuned_gecko_yaml = (
               'val yamlContent = """\n'
               '                prefs:\n'
+              '                  media.hardware-video-decoding.enabled: true\n'
+              '                  media.av1.enabled: false\n'
+              '                  gfx.webrender.all: true\n'
+              '                  gfx.webrender.software: false\n'
+              '                  layout.css.backdrop-filter.enabled: false\n'
+              '                  layout.css.scroll-driven-animations.enabled: false\n'
+              '                  general.smoothScroll.msdPhysics.enabled: false\n'
+              '                  browser.sessionhistory.max_total_viewers: 0\n'
+              '                  browser.cache.memory.enable: true\n'
+              '                  browser.cache.memory.capacity: 32768\n'
               '                  browser.cache.disk.enable: true\n'
               '                  browser.cache.disk.capacity: 32768\n'
               '                  browser.cache.disk.smart_size.enabled: false\n'
               '                  browser.cache.offline.enable: false\n'
-              '                  browser.sessionhistory.max_total_viewers: 0\n'
+              '                  media.cache_readahead_limit: 30\n'
+              '                  media.cache_resume_threshold: 15\n'
+              '                  dom.min_background_timeout_value: 1000\n'
               '                  browser.safebrowsing.malware.enabled: false\n'
               '                  browser.safebrowsing.phishing.enabled: false\n'
               '                  browser.safebrowsing.downloads.enabled: false\n'
               '                  datareporting.policy.dataSubmissionEnabled: false\n'
               '                  datareporting.healthreport.uploadEnabled: false\n'
               '                  toolkit.telemetry.enabled: false\n'
-              '                  layout.css.backdrop-filter.enabled: false\n'
               '                  apz.overscroll.enabled: false\n'
               '                  apz.allow_zooming: false\n'
               '                  media.suspend-bkgnd-video.enabled: true\n'
@@ -510,7 +948,7 @@ jobs:
           )
           mgr = re.sub(
               r'val yamlContent = """[\s\S]*?"""\.trimIndent\(\)',
-              lambda _: clean_gecko_yaml,
+              lambda _: tuned_gecko_yaml,
               mgr,
               count=1
           )
@@ -569,14 +1007,14 @@ jobs:
           with open(mgr_path, "w", encoding="utf-8") as f:
               f.write(mgr)
 
-          print("Parches v6.4 aplicados correctamente.")
+          print("Parches v6.5 aplicados correctamente.")
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v39.0 (Chaturbate Limpio Sin Audio Fantasma Ni Cortes + Fluidez General)
+      - name: Generar Motor Nativo Ultraligero v40.0 (Anti In-Page Push z-index>99999 + Bloqueo SW/Push + Reproductores Intactos)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v39"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v40"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
 
@@ -598,11 +1036,11 @@ jobs:
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "39.0.0",
-            "description": "Motor limpio nivel Mozilla Firefox, cero audio fantasma al salir en Chaturbate, directos sin cortes y resto de paginas intactas.",
+            "version": "40.0.0",
+            "description": "Bloqueo In-Page Push dentro de iframes (scripts push/inpage/sw.js + filtro z-index>99999 con throttle) sin afectar reproductores.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v39@battv.browser",
+                "id": "shield_v40@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -731,6 +1169,8 @@ jobs:
               "arkoselabs.com", "funcaptcha.com", "friendlycaptcha.com", "geetest.com"
             ]);
 
+            // Patrones tipicos de In-Page Push, Popunder y Service Workers publicitarios de terceros
+            const THIRD_PARTY_PUSH_REGEX = /(inpage|in-page|inpagepush|\/push[-_./]|push[-_.]?sdk|webpush|\/popunder|\/tabunder|\/clickunder|\/tag\.min\.js|\/sw\.js(\?|$)|\/service-?worker\.js(\?|$)|\/ntfc\.php|\/pfe\/current\/|\/invoke\.js)/i;
             const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/fingerprint-sw\.js|\/aclib\.js|\/tag\.min\.js|\/ntfc\.php|\/pfe\/current\/|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/push-sdk|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|rotator-marketing|marketingg\.com|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
             const ANTI_DEVTOOL_REGEX = /(disable-devtool|devtools-detector|devtools-detect|fuckadblock|blockadblock)/i;
             const VAST_PREROLL_REGEX = /([?&/](vast|preroll|midroll|postroll|ad_tag|adtag|vmap)([=&/.?_]|$)|syndication\.|splash\.php)/i;
@@ -766,7 +1206,9 @@ jobs:
                 "*://*/*adtag*",
                 "*://*/*ad_tag*",
                 "*://*/*splash.php*",
-                "*://*/*adblock.html*"
+                "*://*/*adblock.html*",
+                "*://*/*inpage*",
+                "*://*/*popunder*"
               ]);
 
               try {
@@ -792,7 +1234,7 @@ jobs:
                         return { cancel: true };
                       }
 
-                      if (isHostInSet(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl)) {
+                      if (isHostInSet(reqHost, BLOCKED_AD_DOMAINS) || AD_SCRIPT_REGEX.test(rawUrl) || THIRD_PARTY_PUSH_REGEX.test(rawUrl)) {
                         const docUrl = details.originUrl || details.documentUrl || "";
                         const isIsolated = docUrl.indexOf("chaturbate.com") !== -1 ||
                                            docUrl.indexOf("jkanime.") !== -1 ||
@@ -867,6 +1309,14 @@ jobs:
                                          (getBaseBrand(reqHost) === getBaseBrand(docHost));
 
                       if (!isSameSite) {
+                        // Bloquear scripts y sub-iframes de terceros con patrones In-Page Push / Popunder / sw.js
+                        if (!isHostInSet(reqHost, ALLOWED_TECH_CDNS) && THIRD_PARTY_PUSH_REGEX.test(rawUrl)) {
+                          if (details.frameId > 0 && !isIsolatedSite && details.type === "script" && NOOP_JS_URL) {
+                            return { redirectUrl: NOOP_JS_URL };
+                          }
+                          return { cancel: true };
+                        }
+
                         const isStrictAdPlayer = isHostInSet(docHost, STRICT_PLAYER_AD_HOSTS) ||
                                                  docHost.includes("dood") ||
                                                  docHost.includes("d000d") ||
@@ -1032,7 +1482,6 @@ jobs:
                   }
                 ` : "";
 
-                // CSS ligero para Doramasflix/DramaChino SIN selector universal (*) que ralentiza el recalculo de estilos
                 const doramaTvPerfCss = isDoramaTopSite ? `
                   html, body {
                     scroll-behavior: auto !important;
@@ -1103,6 +1552,7 @@ jobs:
                   [id*="primis" i], [class*="primis" i],
                   [id*="adinplay" i], [class*="adinplay" i],
                   [id*="adsterra" i], [class*="adsterra" i],
+                  [id*="inpage" i], [class*="inpage" i],
                   iframe[src*="vidoomy" i], iframe[src*="viwom" i],
                   iframe[src*="exoclick" i], iframe[src*="exosrv" i],
                   iframe[src*="adsterra" i], iframe[src*="tsyndicate" i],
@@ -1182,9 +1632,6 @@ jobs:
               try {
                 const s = document.createElement("script");
                 if (isChaturbate) {
-                  // Rama limpia para Chaturbate:
-                  // 1. Mantiene MSE/hls.js (conserva selector completo de calidades y audio) SIN reescribir .m3u8 ni interferir en LL-HLS.
-                  // 2. Detecta cambios de sala SPA (cambio de location.pathname) para cortar al instante cualquier audio/video anterior.
                   s.textContent = `(function(){
                     try {
                       const origCanPlay = HTMLMediaElement.prototype.canPlayType;
@@ -1238,6 +1685,17 @@ jobs:
                         writable: false,
                         configurable: false
                       });
+
+                      if (window.Notification) {
+                        try {
+                          Notification.requestPermission = function() { return Promise.resolve("denied"); };
+                        } catch (_) {}
+                      }
+                      if (navigator.serviceWorker && navigator.serviceWorker.register) {
+                        try {
+                          navigator.serviceWorker.register = function() { return Promise.reject(new Error("blocked")); };
+                        } catch (_) {}
+                      }
 
                       const origAnchorClick = HTMLAnchorElement.prototype.click;
                       HTMLAnchorElement.prototype.click = function() {
@@ -1346,6 +1804,17 @@ jobs:
                         } catch (_) {}
                         return fn;
                       };
+
+                      if (window.Notification) {
+                        try {
+                          Notification.requestPermission = spoofNative(function() { return Promise.resolve("denied"); }, "requestPermission");
+                        } catch (_) {}
+                      }
+                      if (navigator.serviceWorker && navigator.serviceWorker.register) {
+                        try {
+                          navigator.serviceWorker.register = spoofNative(function() { return Promise.reject(new Error("blocked")); }, "register");
+                        } catch (_) {}
+                      }
 
                       const noopDevtool = function() { return { isRunning: false, isSuspend: true }; };
                       noopDevtool.isRunning = false;
@@ -1501,6 +1970,11 @@ jobs:
                           Notification.requestPermission = function() { return Promise.resolve("denied"); };
                         } catch (_) {}
                       }
+                      if (navigator.serviceWorker && navigator.serviceWorker.register) {
+                        try {
+                          navigator.serviceWorker.register = function() { return Promise.reject(new Error("blocked")); };
+                        } catch (_) {}
+                      }
 
                       const adGlobals = ["atOptions", "_pop", "popns", "exoOpts", "adsbyvidoomy", "pJSDom", "__Y", "adcashMacros"];
                       for (let i = 0; i < adGlobals.length; i++) {
@@ -1556,7 +2030,6 @@ jobs:
               document.addEventListener("DOMContentLoaded", injectMainWorldKiller, { once: true });
             }
 
-            // Detiene y libera todos los flujos multimedia del frame (elimina audio fantasma al retroceder o cambiar sala)
             function stopAllMediaInFrame(muteAndDetach) {
               try {
                 const mediaEls = document.querySelectorAll("video, audio");
@@ -1746,6 +2219,12 @@ jobs:
             }
 
             const SCAM_TEXT_PATTERNS = [
+              "is typing",
+              "alone today",
+              "est\u00e1 escribiendo",
+              "esta escribiendo",
+              "estoy sola",
+              "sola hoy",
               "limpia tu unknown",
               "limpia tu tel\u00e9fono",
               "limpia tu telefono",
@@ -1813,7 +2292,13 @@ jobs:
             function isProtectedAppOrPlayerElement(el) {
               if (!el || !el.tagName) return true;
               const tag = el.tagName.toUpperCase();
-              if (tag === "VIDEO" || tag === "IFRAME" || tag === "BUTTON" || tag === "BODY" || tag === "HTML" || tag === "MAIN" || tag === "HEADER" || tag === "NAV" || tag === "SCRIPT" || tag === "STYLE") {
+              if (tag === "VIDEO" || tag === "BUTTON" || tag === "BODY" || tag === "HTML" || tag === "MAIN" || tag === "HEADER" || tag === "NAV" || tag === "SCRIPT" || tag === "STYLE") {
+                return true;
+              }
+              if (el.classList && (
+                  el.classList.contains("__battv_iframe_fullscreen") ||
+                  el.classList.contains("__battv_player_fill_frame") ||
+                  el.classList.contains("__battv_fs_ancestor"))) {
                 return true;
               }
               if (tag.includes("PLAYER") || tag.includes("MEDIA") || tag.includes("VIDEO")) {
@@ -1837,8 +2322,11 @@ jobs:
                   cls.includes("play-btn") || cls.includes("play_btn") || cls.includes("big-play")) {
                 return true;
               }
+              if (el.closest && el.closest(".jwplayer, .video-js, .plyr, .art-video-player, .fluid_video_wrapper")) {
+                return true;
+              }
               if (el.querySelector && el.querySelector(
-                  "video, iframe, #__next, #root, #app, #vplayer, #player, #vstr, #os_player, #video_player, #video_box, #pframe, #kt_player, " +
+                  "video, #__next, #root, #app, #vplayer, #player, #vstr, #os_player, #video_player, #video_box, #pframe, #kt_player, " +
                   ".jwplayer, .video-js, .vjs-big-play-button, .vjs-control-bar, .plyr, .plyr__control--overlaid, " +
                   ".art-video-player, .fluid_video_wrapper, .player_conte, .servers, .bg-servers, .anime__item, header, nav"
               )) {
@@ -1862,20 +2350,54 @@ jobs:
               return false;
             }
 
-            function inspectSingleRootAdNode(el) {
+            // Regla cosmetica ligera anti In-Page Push (sin romper reproductores ni pantalla completa):
+            // Oculta div o iframe con position:fixed y z-index > 99999 que no contengan video ni controles reales.
+            function inspectCandidateAdOverlay(el) {
               if (!el || el.nodeType !== 1 || !el.isConnected) return;
+              const tag = el.tagName.toUpperCase();
+              if (tag !== "DIV" && tag !== "IFRAME" && !(el.hasAttribute && el.hasAttribute("data-battv-shadow"))) {
+                return;
+              }
               if (isProtectedAppOrPlayerElement(el)) return;
+
               try {
+                // 1. Shadow DOM publicitario (Adsterra Social Bar / In-Page Push)
                 if (el.hasAttribute && el.hasAttribute("data-battv-shadow")) {
                   const sr = el.shadowRoot;
                   if (sr && !sr.querySelector("video, iframe")) {
                     const dump = (sr.textContent || "") + " " + (sr.innerHTML || "");
                     if (containsScamText(dump) || dump.includes("border-radius: 50%") || dump.includes("border-radius:50%") ||
-                        dump.includes('target="_blank"') || dump.includes("target='_blank'")) {
+                        dump.includes("2147483647") || dump.includes('target="_blank"') || dump.includes("target='_blank'")) {
                       el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
                       el.remove();
                       return;
                     }
+                  }
+                }
+
+                // 2. Iframe flotante In-Page Push (position:fixed + z-index > 99999, nunca iframes principales de video)
+                if (tag === "IFRAME") {
+                  const csF = window.getComputedStyle(el);
+                  const zF = parseInt(csF.zIndex, 10) || 0;
+                  if (csF.position === "fixed" && zF > 99999) {
+                    const w = el.clientWidth || 0;
+                    const h = el.clientHeight || 0;
+                    const isFullPlayerIframe = (w >= window.innerWidth * 0.8 && h >= window.innerHeight * 0.8);
+                    if (!isFullPlayerIframe) {
+                      el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;width:0!important;height:0!important;";
+                      el.remove();
+                    }
+                  }
+                  return;
+                }
+
+                // 3. No tocar contenedores que envuelven un iframe de video principal
+                if (el.querySelector && el.querySelector("iframe")) {
+                  const innerFrames = el.getElementsByTagName("iframe");
+                  for (let f = 0; f < innerFrames.length; f++) {
+                    const fw = innerFrames[f].clientWidth || 0;
+                    const fh = innerFrames[f].clientHeight || 0;
+                    if (fw >= 280 && fh >= 160) return;
                   }
                 }
 
@@ -1888,23 +2410,23 @@ jobs:
                   return;
                 }
 
-                if (!isTopFrame) {
-                  if (!hasCloseButtonOrExternalAdLink(el)) return;
-                  const cs = window.getComputedStyle(el);
-                  const pos = cs.position;
-                  const zIdx = parseInt(cs.zIndex, 10) || 0;
-                  if (pos === "fixed" || (pos === "absolute" && zIdx >= 999)) {
-                    const isPlayerControlSelf = el.matches && el.matches(".jw-controlbar, .plyr__controls, .vjs-control-bar, .vjs-big-play-button, button, [role='button']");
-                    const hasPlayerControls = isPlayerControlSelf || !!el.querySelector(".jw-controlbar, .plyr__controls, .vjs-control-bar, .vjs-big-play-button, .plyr__control--overlaid");
-                    if (!hasPlayerControls) {
-                      el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
-                      el.remove();
-                    }
+                // 4. Regla generica In-Page Push: div con position:fixed y z-index > 99999 sin video ni controles
+                const cs = window.getComputedStyle(el);
+                const pos = cs.position;
+                const zIdx = parseInt(cs.zIndex, 10) || 0;
+                if (pos === "fixed" && zIdx > 99999) {
+                  el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                  el.remove();
+                  return;
+                }
+
+                if (!isTopFrame && (pos === "fixed" || (pos === "absolute" && zIdx >= 999))) {
+                  if (hasCloseButtonOrExternalAdLink(el)) {
+                    el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                    el.remove();
                   }
-                } else if (el.parentElement === document.body) {
-                  if (!el.querySelector || !el.querySelector("a[target='_blank']")) return;
-                  const cs = window.getComputedStyle(el);
-                  if (cs.position === "fixed" || cs.position === "sticky") {
+                } else if (isTopFrame && el.parentElement === document.body && (pos === "fixed" || pos === "sticky")) {
+                  if (el.querySelector && el.querySelector("a[target='_blank']")) {
                     el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
                     el.remove();
                   }
@@ -1922,10 +2444,10 @@ jobs:
                   if (!document.body) return;
                   const children = document.body.children;
                   for (let i = children.length - 1; i >= 0; i--) {
-                    inspectSingleRootAdNode(children[i]);
+                    inspectCandidateAdOverlay(children[i]);
                   }
                 } catch (_) {}
-              }, 160);
+              }, 200);
             }
 
             function pierceExternalAdOverlayAtPoint(clientX, clientY) {
@@ -2317,7 +2839,6 @@ jobs:
               }
             }
 
-            // SIN auto-play en evento pause (elimina por completo el audio fantasma en segundo plano en Chaturbate)
             function attachStreamStabilizer(v) {
               if (!v || watchedVideosSet.has(v)) return;
               watchedVideosSet.add(v);
@@ -2332,7 +2853,6 @@ jobs:
               if (!v || v.tagName !== "VIDEO") return;
               attachStreamStabilizer(v);
 
-              // En Chaturbate: pausar de inmediato cualquier video secundario (miniaturas) para dedicar el decodificador al directo principal
               if (isChaturbate) {
                 const allVids = document.getElementsByTagName("video");
                 if (allVids.length > 1) {
@@ -2876,41 +3396,61 @@ jobs:
               }
             }
 
+            // MutationObserver con throttle (220ms) para eliminar tarjetas In-Page Push sin consumir CPU
             function setupLightweightRootAdObserver() {
               if (isCleanLiveStreamSite) return;
               try {
+                const pendingNodes = new Set();
+                let flushTimer = null;
+
+                const flushPendingNodes = function () {
+                  flushTimer = null;
+                  pendingNodes.forEach(function (n) {
+                    if (!n || !n.isConnected) return;
+                    if (isOtherProtectedSite) {
+                      if (isOnlyJerk) cleanOnlyJerkCloseAdWidget();
+                      inspectNodeForScamIsolated(n);
+                    } else {
+                      inspectCandidateAdOverlay(n);
+                    }
+                  });
+                  pendingNodes.clear();
+                };
+
                 const obs = new MutationObserver(function (mutations) {
                   for (let i = 0; i < mutations.length; i++) {
                     const added = mutations[i].addedNodes;
                     for (let j = 0; j < added.length; j++) {
                       const n = added[j];
                       if (!n || n.nodeType !== 1) continue;
-                      if (isOtherProtectedSite) {
-                        if (isLiveCamRips && n.tagName === "SCRIPT" && !n.src) {
-                          const code = n.textContent || "";
-                          if (code.includes("window.open") || code.includes("yellowishgather") || code.includes("popunder")) {
-                            n.textContent = "";
-                            n.remove();
-                            continue;
-                          }
+                      if (isLiveCamRips && n.tagName === "SCRIPT" && !n.src) {
+                        const code = n.textContent || "";
+                        if (code.includes("window.open") || code.includes("yellowishgather") || code.includes("popunder")) {
+                          n.textContent = "";
+                          n.remove();
+                          continue;
                         }
-                        if (isOnlyJerk) cleanOnlyJerkCloseAdWidget();
-                        inspectNodeForScamIsolated(n);
-                      } else {
-                        inspectSingleRootAdNode(n);
+                      }
+                      const t = n.tagName;
+                      if (isOtherProtectedSite || t === "DIV" || t === "IFRAME" || (n.hasAttribute && n.hasAttribute("data-battv-shadow"))) {
+                        pendingNodes.add(n);
                       }
                     }
+                  }
+                  if (pendingNodes.size > 0 && !flushTimer) {
+                    flushTimer = setTimeout(flushPendingNodes, 220);
                   }
                 });
 
                 if (isOtherProtectedSite) {
                   obs.observe(document.documentElement || document, { childList: true, subtree: true });
                 } else if (document.body) {
-                  obs.observe(document.body, { childList: true, subtree: false });
+                  // Dentro de iframes de video observamos subtree:true (throttled) para atrapar tarjetas In-Page Push anidadas
+                  obs.observe(document.body, { childList: true, subtree: !isTopFrame });
                 } else {
                   document.addEventListener("DOMContentLoaded", function () {
                     if (document.body) {
-                      obs.observe(document.body, { childList: true, subtree: false });
+                      obs.observe(document.body, { childList: true, subtree: !isTopFrame });
                     }
                   }, { once: true });
                 }
