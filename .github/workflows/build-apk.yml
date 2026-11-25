@@ -48,14 +48,14 @@ jobs:
           -keep class com.battv.browser.** { *; }
           EOF_PROGUARD
 
-      - name: Actualizar a versionCode 37 (v6.2), ajustar red/cache de medios y parches Kotlin
+      - name: Actualizar a versionCode 39 (v6.4), perfil limpio nivel Mozilla Firefox y corte total de audio al navegar
         run: |
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
-          sed -i 's/versionCode [0-9]\+/versionCode 37/g' android-geckoview/app/build.gradle
-          sed -i 's/versionName "[^"]*"/versionName "6.2"/g' android-geckoview/app/build.gradle
-          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v37@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
-          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v37/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/versionCode [0-9]\+/versionCode 39/g' android-geckoview/app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "6.4"/g' android-geckoview/app/build.gradle
+          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v39@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v39/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
           import re
@@ -84,7 +84,7 @@ jobs:
           with open(gradle_path, "w", encoding="utf-8") as f:
               f.write(g)
 
-          # 2. Parchar MainActivity.kt (base estable v6.1)
+          # 2. Parchar MainActivity.kt (STOP_ALL_MEDIA al retroceder/cambiar pagina/ir a Inicio + base estable)
           main_path = "android-geckoview/app/src/main/java/com/battv/browser/MainActivity.kt"
           with open(main_path, "r", encoding="utf-8") as f:
               code = f.read()
@@ -197,6 +197,28 @@ jobs:
           code = code.replace(
               "fullscreenPromptDismissedForPage = true\n    lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()",
               "fullscreenPromptDismissedForPage = true\n    lastDismissedPlayerKey = lastPromptedPlayerKey\n    lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()",
+              1
+          )
+
+          # Al volver a Inicio: detener audio/video y descargar pagina anterior con about:blank
+          code = code.replace(
+              "    geckoSession?.stop()\n    isHomeScreenVisible = true",
+              "    isHomeScreenVisible = true\n    sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n    geckoSession?.stop()\n    try { geckoSession?.loadUri(\"about:blank\") } catch (_: Exception) {}",
+              1
+          )
+
+          # Al navegar atras, adelante o abrir nueva URL: cortar audio/video de inmediato
+          code = code.replace(
+              "geckoSession?.goBack()",
+              "sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n            geckoSession?.goBack()"
+          )
+          code = code.replace(
+              "geckoSession?.goForward()",
+              "sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n        geckoSession?.goForward()"
+          )
+          code = code.replace(
+              "    geckoSession?.stop()\n    geckoSession?.loadUri(finalUri)",
+              "    sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n    geckoSession?.stop()\n    geckoSession?.loadUri(finalUri)",
               1
           )
 
@@ -363,6 +385,7 @@ jobs:
               "    stopSmoothDpadMovement(immediate = true)\n"
               "    dismissFullscreenPromptDialog()\n"
               "    mainHandler.removeCallbacksAndMessages(null)\n"
+              "    sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n"
               "    try {\n"
               "      geckoSession?.stop()\n"
               "      geckoSession?.loadUri(\"about:blank\")\n"
@@ -393,11 +416,18 @@ jobs:
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
 
-          # 3. Parchar BatTvGeckoViewManager.kt (conexiones/readahead nivel Firefox + Builder non-null seguro)
+          # 3. Parchar BatTvGeckoViewManager.kt:
+          #    Reemplaza el bloque battv_gecko_config.yaml por un perfil limpio nivel Mozilla Firefox Android
+          #    (sin forzar WebRender, canvas acelerado, MediaCodec force-enabled ni recortes de decodificacion de imagenes)
+          #    y activa suspendMediaWhenInactive(true) para cortar audio/video en segundo plano.
           mgr_path = "android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
           with open(mgr_path, "r", encoding="utf-8") as f:
               mgr = f.read()
 
+          mgr = mgr.replace(
+              ".suspendMediaWhenInactive(false)",
+              ".suspendMediaWhenInactive(true)"
+          )
           mgr = mgr.replace(
               ".userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else TV_MODE_USER_AGENT)",
               ".apply { if (isDesktopMode) userAgentOverride(PC_MODE_USER_AGENT) }"
@@ -434,40 +464,56 @@ jobs:
               "appContext.externalCacheDir?.let { deleteDirectoryContents(it) }"
           )
 
-          pref_replacements = [
-              ("browser.cache.disk.enable: false", "browser.cache.disk.enable: true"),
-              ("browser.cache.disk.capacity: 0", "browser.cache.disk.capacity: 32768"),
-              ("browser.cache.memory.capacity: 20480", "browser.cache.memory.capacity: 24576"),
-              ("browser.sessionhistory.max_total_viewers: 0", "browser.sessionhistory.max_total_viewers: 2"),
-              ("layout.frame_rate: 60", "layout.frame_rate: -1"),
-              ("content.notify.interval: 16666", "content.notify.interval: 120000"),
-              ("apz.fling_min_velocity_threshold: \"0.4\"", "apz.allow_zooming: false"),
-              ("media.cache_size: 49152", "media.cache_size: 65536"),
-              ("media.memory_cache_max_size: 24576", "media.memory_cache_max_size: 16384"),
-              ("media.memory_caches_combined_limit_kb: 49152", "media.memory_caches_combined_limit_kb: 32768"),
-              ("media.cache_readahead_limit: 50", "media.cache_readahead_limit: 45"),
-              ("media.cache_resume_threshold: 6", "media.cache_resume_threshold: 20"),
-              ("media.hardware-video-decoding.force-enabled: true", "media.hardware-video-decoding.force-enabled: false"),
-              ("media.decoder.recycle.enabled: true", "media.decoder.recycle.enabled: false"),
-              ("media.decoder.skip-to-next-key-frame.enabled: false", "media.decoder.skip-to-next-key-frame.enabled: true"),
-              ("network.http.http3.enable: false", "network.http.http3.enable: true"),
-              ("network.http.max-connections: 36", "network.http.max-connections: 256"),
-              ("network.http.max-persistent-connections-per-server: 8", "network.http.max-persistent-connections-per-server: 6"),
-              ("network.http.pacing.requests.enabled: false", "network.http.pacing.requests.enabled: true")
-          ]
-          for old_p, new_p in pref_replacements:
-              mgr = mgr.replace(old_p, new_p)
-
-          if "image.decode-immediately.enabled" not in mgr:
-              mgr = mgr.replace(
-                  "image.mem.shared: true",
-                  "image.mem.shared: true\n"
-                  "                  image.decode-immediately.enabled: false\n"
-                  "                  image.mem.surfacecache.max_size_kb: 32768\n"
-                  "                  dom.image-lazy-loading.enabled: true\n"
-                  "                  gfx.webrender.picture-caching: true",
-                  1
-              )
+          clean_gecko_yaml = (
+              'val yamlContent = """\n'
+              '                prefs:\n'
+              '                  browser.cache.disk.enable: true\n'
+              '                  browser.cache.disk.capacity: 32768\n'
+              '                  browser.cache.disk.smart_size.enabled: false\n'
+              '                  browser.cache.offline.enable: false\n'
+              '                  browser.sessionhistory.max_total_viewers: 0\n'
+              '                  browser.safebrowsing.malware.enabled: false\n'
+              '                  browser.safebrowsing.phishing.enabled: false\n'
+              '                  browser.safebrowsing.downloads.enabled: false\n'
+              '                  datareporting.policy.dataSubmissionEnabled: false\n'
+              '                  datareporting.healthreport.uploadEnabled: false\n'
+              '                  toolkit.telemetry.enabled: false\n'
+              '                  layout.css.backdrop-filter.enabled: false\n'
+              '                  apz.overscroll.enabled: false\n'
+              '                  apz.allow_zooming: false\n'
+              '                  media.suspend-bkgnd-video.enabled: true\n'
+              '                  media.autoplay.default: 0\n'
+              '                  media.autoplay.blocking_policy: 0\n'
+              '                  media.hls.enabled: true\n'
+              '                  media.eme.enabled: true\n'
+              '                  media.mediasource.enabled: true\n'
+              '                  media.mediasource.mp4.enabled: true\n'
+              '                  media.mediasource.webm.enabled: true\n'
+              '                  dom.disable_open_during_load: true\n'
+              '                  dom.popup_maximum: 0\n'
+              '                  full-screen-api.enabled: true\n'
+              '                  full-screen-api.allow-trusted-requests-only: false\n'
+              '                  full-screen-api.warning.delay: -1\n'
+              '                  full-screen-api.warning.timeout: 0\n'
+              '                  network.http.http3.enable: true\n'
+              '                  network.http.sendRefererHeader: 2\n'
+              '                  network.cookie.cookieBehavior: 0\n'
+              '                  network.cookie.sameSite.laxByDefault: false\n'
+              '                  network.cookie.sameSite.noneRequiresSecure: false\n'
+              '                  security.mixed_content.block_active_content: false\n'
+              '                  security.mixed_content.block_display_content: false\n'
+              '                  dom.security.https_only_mode: false\n'
+              '                  dom.webdriver.enabled: false\n'
+              '                  xpinstall.signatures.required: false\n'
+              '                  extensions.langpacks.signatures.required: false\n'
+              '            """.trimIndent()'
+          )
+          mgr = re.sub(
+              r'val yamlContent = """[\s\S]*?"""\.trimIndent\(\)',
+              lambda _: clean_gecko_yaml,
+              mgr,
+              count=1
+          )
 
           extra_domains = '"chatmate.tv", "chatmate.com", "t6r-rotator-marketingg.com", "rotator-marketingg.com", "rotator-marketing"'
           if "t6r-rotator-marketingg.com" not in mgr:
@@ -523,14 +569,14 @@ jobs:
           with open(mgr_path, "w", encoding="utf-8") as f:
               f.write(mgr)
 
-          print("Parches v6.2 aplicados correctamente.")
+          print("Parches v6.4 aplicados correctamente.")
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v37.0 (Primeload OK + Cero IPC en XHR Video + Sin Lag en Scroll/Video)
+      - name: Generar Motor Nativo Ultraligero v39.0 (Chaturbate Limpio Sin Audio Fantasma Ni Cortes + Fluidez General)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v37"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v39"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
 
@@ -552,11 +598,11 @@ jobs:
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "37.0.0",
-            "description": "Primeload reparado, cero IPC en segmentos XHR de video, scroll y reproduccion fuera de pantalla completa sin lag.",
+            "version": "39.0.0",
+            "description": "Motor limpio nivel Mozilla Firefox, cero audio fantasma al salir en Chaturbate, directos sin cortes y resto de paginas intactas.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v37@battv.browser",
+                "id": "shield_v39@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -646,8 +692,6 @@ jobs:
               "asialiveaction.com", "kisskh.do", "kisskh.co"
             ]);
 
-            // Primeload REMOVIDO de STRICT_PLAYER_AD_HOSTS para que sus scripts de video y sub-iframes
-            // carguen al instante y nunca queden colgados sin reproducir.
             const STRICT_PLAYER_AD_HOSTS = new Set([
               "dood.watch", "dood.to", "dood.la", "dood.so", "dood.pm", "dood.sh", "dood.wf",
               "dood.yt", "dood.li", "dood.cx", "dood.re", "dood.ws", "d000d.com", "d0000d.com",
@@ -710,9 +754,7 @@ jobs:
             }
 
             if (typeof browser !== "undefined" && browser.webRequest && browser.webRequest.onBeforeRequest) {
-              // LISTENER 1 (CERO IPC en segmentos de video):
-              // Solo intercepta XHR/beacon/ping que coincidan en C++ con dominios de anuncios o VAST/preroll.
-              // Todos los fragmentos HLS (.m3u8, .ts, .m4s, .jpg/.html) y APIs legitimas pasan directo en C++ a velocidad Mozilla.
+              // CERO IPC en segmentos de video (.m4s, .ts, .m3u8) y APIs: solo patrones exactos de anuncios/VAST
               const XHR_AD_URL_PATTERNS = Array.from(BLOCKED_AD_DOMAINS).map(function (d) {
                 return "*://*." + d + "/*";
               }).concat([
@@ -774,7 +816,6 @@ jobs:
                 );
               } catch (_) {}
 
-              // LISTENER 2: Solo scripts y sub_frames (cero overhead durante reproduccion de video o scroll)
               browser.webRequest.onBeforeRequest.addListener(
                 function (details) {
                   try {
@@ -856,7 +897,6 @@ jobs:
                           }
                         }
 
-                        // En sub_frame: solo cancelar rotadores/anuncios confirmados para nunca matar sub-reproductores
                         if (details.type === "sub_frame" && isStrictAdPlayer) {
                           if (reqHost.includes("rotator") || reqHost.includes("marketingg") || reqHost.includes("adserver")) {
                             return { cancel: true };
@@ -992,19 +1032,22 @@ jobs:
                   }
                 ` : "";
 
-                // Optimizacion limpia para Doramasflix y DramaChino:
-                // - SIN transform/will-change en iframes (permite aceleracion nativa de video fuera de fullscreen).
-                // - SIN content-visibility:auto (elimina saltos de layout al scrollear).
-                // - scroll-behavior:auto evita el efecto elastico/lento al desplazarse.
+                // CSS ligero para Doramasflix/DramaChino SIN selector universal (*) que ralentiza el recalculo de estilos
                 const doramaTvPerfCss = isDoramaTopSite ? `
                   html, body {
                     scroll-behavior: auto !important;
                   }
                   .Backdrop, .backdrop, .bg-blur, [class*="backdrop" i], [class*="blur" i], header, nav {
                     filter: none !important;
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
                     box-shadow: none !important;
+                  }
+                  .__battv_flat_player_host {
+                    border-radius: 0 !important;
+                    box-shadow: none !important;
+                    filter: none !important;
+                    clip-path: none !important;
+                    mask: none !important;
+                    -webkit-mask: none !important;
                   }
                 ` : "";
 
@@ -1013,21 +1056,16 @@ jobs:
                     contain: layout style paint !important;
                   }
                   ${isChaturbate ? `
-                  .bio-container, #tabs_content_container, .more_rooms, .room-list, footer {
-                    content-visibility: auto !important;
-                    contain-intrinsic-size: 0 500px !important;
-                  }
                   [data-testid="chat-message-list"] > :nth-last-child(n+26),
                   .msg-list-wrapper > :nth-last-child(n+26),
                   .chat-list > :nth-last-child(n+26) {
                     display: none !important;
                   }
-                  .chat-holder *, .chat-box *, #chat *, .msg-list-wrapper *, #header *, .bio-container * {
+                  .chat-holder *, .chat-box *, #chat *, .msg-list-wrapper *, .bio-container * {
                     animation: none !important;
                     transition: none !important;
                     box-shadow: none !important;
                     text-shadow: none !important;
-                    backdrop-filter: none !important;
                   }
                   html.__battv_cb_perf_fs .chat-holder,
                   html.__battv_cb_perf_fs .chat-box,
@@ -1144,6 +1182,9 @@ jobs:
               try {
                 const s = document.createElement("script");
                 if (isChaturbate) {
+                  // Rama limpia para Chaturbate:
+                  // 1. Mantiene MSE/hls.js (conserva selector completo de calidades y audio) SIN reescribir .m3u8 ni interferir en LL-HLS.
+                  // 2. Detecta cambios de sala SPA (cambio de location.pathname) para cortar al instante cualquier audio/video anterior.
                   s.textContent = `(function(){
                     try {
                       const origCanPlay = HTMLMediaElement.prototype.canPlayType;
@@ -1152,161 +1193,31 @@ jobs:
                         return origCanPlay.apply(this, arguments);
                       };
 
-                      function widenLiveHoldBackSafely(playlistText) {
-                        if (typeof playlistText !== "string" ||
-                            playlistText.indexOf("#EXTM3U") !== 0 ||
-                            playlistText.indexOf("#EXT-X-SERVER-CONTROL:") === -1 ||
-                            playlistText.indexOf("#EXTINF:") === -1) {
-                          return playlistText;
+                      let lastPath = location.pathname;
+                      function notifyRouteChangeIfPathChanged() {
+                        if (location.pathname !== lastPath) {
+                          lastPath = location.pathname;
+                          window.dispatchEvent(new CustomEvent("__battv_cb_route_change"));
                         }
-                        let totalDur = 0;
-                        const extInfRe = /#EXTINF:([0-9.]+)/g;
-                        let m;
-                        while ((m = extInfRe.exec(playlistText)) !== null) {
-                          const d = parseFloat(m[1]);
-                          if (Number.isFinite(d) && d > 0) totalDur += d;
-                        }
-                        if (totalDur < 6.0) return playlistText;
-
-                        const safePartTarget = Math.min(3.6, Number((totalDur * 0.42).toFixed(3)));
-                        const safeHoldTarget = Math.min(5.2, Number((totalDur * 0.55).toFixed(3)));
-
-                        let out = playlistText.replace(/PART-HOLD-BACK=([0-9.]+)/g, function(full, num) {
-                          const orig = parseFloat(num);
-                          if (!Number.isFinite(orig) || orig >= safePartTarget) return full;
-                          return "PART-HOLD-BACK=" + safePartTarget.toFixed(6);
-                        });
-                        out = out.replace(/(^|,)HOLD-BACK=([0-9.]+)/g, function(full, prefix, num) {
-                          const orig = parseFloat(num);
-                          if (!Number.isFinite(orig) || orig >= safeHoldTarget) return full;
-                          return prefix + "HOLD-BACK=" + safeHoldTarget.toFixed(6);
-                        });
-                        return out;
                       }
 
-                      const m3u8Xhrs = new WeakSet();
-                      const m3u8Cache = new WeakMap();
-                      const origXhrOpen = XMLHttpRequest.prototype.open;
-                      XMLHttpRequest.prototype.open = function(method, url) {
-                        try {
-                          if (typeof url === "string" && url.indexOf(".m3u8") !== -1) {
-                            m3u8Xhrs.add(this);
-                            m3u8Cache.delete(this);
-                          }
-                        } catch (_) {}
-                        return origXhrOpen.apply(this, arguments);
-                      };
-
-                      const respTextDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, "responseText");
-                      if (respTextDesc && respTextDesc.get) {
-                        Object.defineProperty(XMLHttpRequest.prototype, "responseText", {
-                          get: function() {
-                            const raw = respTextDesc.get.call(this);
-                            if (this.readyState === 4 && m3u8Xhrs.has(this) && typeof raw === "string") {
-                              if (m3u8Cache.has(this)) return m3u8Cache.get(this);
-                              const tuned = widenLiveHoldBackSafely(raw);
-                              m3u8Cache.set(this, tuned);
-                              return tuned;
-                            }
-                            return raw;
-                          },
-                          configurable: true
-                        });
-                      }
-
-                      const respDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, "response");
-                      if (respDesc && respDesc.get) {
-                        Object.defineProperty(XMLHttpRequest.prototype, "response", {
-                          get: function() {
-                            const raw = respDesc.get.call(this);
-                            if (this.readyState === 4 && m3u8Xhrs.has(this) && typeof raw === "string") {
-                              if (m3u8Cache.has(this)) return m3u8Cache.get(this);
-                              const tuned = widenLiveHoldBackSafely(raw);
-                              m3u8Cache.set(this, tuned);
-                              return tuned;
-                            }
-                            return raw;
-                          },
-                          configurable: true
-                        });
-                      }
-
-                      if (window.Response && Response.prototype && typeof Response.prototype.text === "function") {
-                        const origRespText = Response.prototype.text;
-                        Response.prototype.text = function() {
-                          const rUrl = (this && this.url) ? String(this.url) : "";
-                          if (rUrl.indexOf(".m3u8") === -1) {
-                            return origRespText.apply(this, arguments);
-                          }
-                          return origRespText.apply(this, arguments).then(function(txt) {
-                            try { return widenLiveHoldBackSafely(txt); } catch (_) { return txt; }
-                          });
+                      const origPush = history.pushState;
+                      if (typeof origPush === "function") {
+                        history.pushState = function() {
+                          const r = origPush.apply(this, arguments);
+                          notifyRouteChangeIfPathChanged();
+                          return r;
                         };
                       }
-
-                      const SAFE_1080P_HLS_OPTS = {
-                        enableWorker: true,
-                        backBufferLength: 6,
-                        maxBufferLength: 16,
-                        maxMaxBufferLength: 24,
-                        maxBufferSize: 30000000,
-                        maxBufferHole: 0.6,
-                        nudgeOffset: 0.15,
-                        nudgeMaxRetry: 10,
-                        maxLiveSyncPlaybackRate: 1.03,
-                        startFragPrefetch: true,
-                        fragLoadingMaxRetry: 8,
-                        fragLoadingTimeOut: 20000
-                      };
-
-                      function patchHlsDefaultsInPlace(HlsCtor) {
-                        try {
-                          if (HlsCtor && HlsCtor.DefaultConfig && typeof HlsCtor.DefaultConfig === "object") {
-                            Object.assign(HlsCtor.DefaultConfig, SAFE_1080P_HLS_OPTS);
-                          }
-                        } catch (_) {}
-                      }
-
-                      let _HlsRef = window.Hls;
-                      if (_HlsRef) patchHlsDefaultsInPlace(_HlsRef);
-                      try {
-                        Object.defineProperty(window, "Hls", {
-                          get: function() { return _HlsRef; },
-                          set: function(val) {
-                            _HlsRef = val;
-                            patchHlsDefaultsInPlace(val);
-                          },
-                          configurable: true
-                        });
-                      } catch (_) {}
-
-                      function wrapVideoJs(vjsFn) {
-                        if (typeof vjsFn !== "function" || vjsFn.__battvTuned) return vjsFn;
-                        const wrapped = function(id, options, ready) {
-                          try {
-                            if (options && typeof options === "object") {
-                              options.html5 = options.html5 || {};
-                              options.html5.hlsjsConfig = Object.assign({}, options.html5.hlsjsConfig || {}, SAFE_1080P_HLS_OPTS);
-                            }
-                          } catch (_) {}
-                          return vjsFn.apply(this, arguments);
+                      const origReplace = history.replaceState;
+                      if (typeof origReplace === "function") {
+                        history.replaceState = function() {
+                          const r = origReplace.apply(this, arguments);
+                          notifyRouteChangeIfPathChanged();
+                          return r;
                         };
-                        try {
-                          Object.assign(wrapped, vjsFn);
-                          wrapped.prototype = vjsFn.prototype;
-                          wrapped.__battvTuned = true;
-                        } catch (_) {}
-                        return wrapped;
                       }
-
-                      let _vjsRef = window.videojs ? wrapVideoJs(window.videojs) : undefined;
-                      try {
-                        Object.defineProperty(window, "videojs", {
-                          get: function() { return _vjsRef; },
-                          set: function(val) { _vjsRef = wrapVideoJs(val); },
-                          configurable: true
-                        });
-                      } catch (_) {}
+                      window.addEventListener("popstate", notifyRouteChangeIfPathChanged);
                     } catch(_) {}
                   })();`;
                 } else if (isOtherProtectedSite) {
@@ -1645,6 +1556,39 @@ jobs:
               document.addEventListener("DOMContentLoaded", injectMainWorldKiller, { once: true });
             }
 
+            // Detiene y libera todos los flujos multimedia del frame (elimina audio fantasma al retroceder o cambiar sala)
+            function stopAllMediaInFrame(muteAndDetach) {
+              try {
+                const mediaEls = document.querySelectorAll("video, audio");
+                for (let i = 0; i < mediaEls.length; i++) {
+                  const m = mediaEls[i];
+                  try {
+                    m.pause();
+                    if (muteAndDetach) {
+                      m.muted = true;
+                    }
+                    m.removeAttribute("src");
+                    if ("srcObject" in m) m.srcObject = null;
+                    m.load();
+                  } catch (_) {}
+                }
+              } catch (_) {}
+            }
+
+            window.addEventListener("pagehide", function () {
+              stopAllMediaInFrame(true);
+            }, true);
+
+            window.addEventListener("beforeunload", function () {
+              stopAllMediaInFrame(true);
+            }, true);
+
+            if (isChaturbate) {
+              window.addEventListener("__battv_cb_route_change", function () {
+                stopAllMediaInFrame(false);
+              });
+            }
+
             if (isTopFrame && !isCleanLiveStreamSite) {
               const SHORTENER_HOSTS = [
                 "ouo.io", "ouo.press", "exe.io", "exey.io", "fc.lc", "fc-lc.com",
@@ -1789,19 +1733,9 @@ jobs:
               } catch (_) {}
             }
 
-            function keepChaturbateLightweight() {
+            function optimizeChaturbateBioImages() {
               if (!isChaturbate || !document.body) return;
               try {
-                const mainVid = findChaturbateVideoAnyState();
-                const allVids = document.getElementsByTagName("video");
-                if (mainVid && allVids.length > 1) {
-                  for (let k = 0; k < allVids.length; k++) {
-                    const other = allVids[k];
-                    if (other !== mainVid && !other.paused) {
-                      try { other.pause(); } catch (_) {}
-                    }
-                  }
-                }
                 const bioImgs = document.querySelectorAll(".bio-container img, #tabs_content_container img, .room-list img");
                 for (let m = 0; m < bioImgs.length; m++) {
                   const im = bioImgs[m];
@@ -1809,10 +1743,6 @@ jobs:
                   if (im.loading !== "lazy") im.loading = "lazy";
                 }
               } catch (_) {}
-            }
-
-            if (isChaturbate) {
-              setInterval(keepChaturbateLightweight, 4000);
             }
 
             const SCAM_TEXT_PATTERNS = [
@@ -1959,29 +1889,24 @@ jobs:
                 }
 
                 if (!isTopFrame) {
+                  if (!hasCloseButtonOrExternalAdLink(el)) return;
                   const cs = window.getComputedStyle(el);
                   const pos = cs.position;
                   const zIdx = parseInt(cs.zIndex, 10) || 0;
                   if (pos === "fixed" || (pos === "absolute" && zIdx >= 999)) {
                     const isPlayerControlSelf = el.matches && el.matches(".jw-controlbar, .plyr__controls, .vjs-control-bar, .vjs-big-play-button, button, [role='button']");
                     const hasPlayerControls = isPlayerControlSelf || !!el.querySelector(".jw-controlbar, .plyr__controls, .vjs-control-bar, .vjs-big-play-button, .plyr__control--overlaid");
-                    if (!hasPlayerControls && hasCloseButtonOrExternalAdLink(el)) {
+                    if (!hasPlayerControls) {
                       el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
                       el.remove();
-                      return;
                     }
                   }
                 } else if (el.parentElement === document.body) {
+                  if (!el.querySelector || !el.querySelector("a[target='_blank']")) return;
                   const cs = window.getComputedStyle(el);
                   if (cs.position === "fixed" || cs.position === "sticky") {
-                    const w = el.offsetWidth || 0;
-                    const h = el.offsetHeight || 0;
-                    if (w > 40 && w < 540 && h > 30 && h < 340) {
-                      if (containsScamText(txt) || el.querySelector("a[target='_blank']")) {
-                        el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
-                        el.remove();
-                      }
-                    }
+                    el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+                    el.remove();
                   }
                 }
               } catch (_) {}
@@ -2000,10 +1925,9 @@ jobs:
                     inspectSingleRootAdNode(children[i]);
                   }
                 } catch (_) {}
-              }, 140);
+              }, 160);
             }
 
-            // Solo desactiva trampas externas directas de <body> con z-index muy alto (sin tocar capas click-to-play del reproductor)
             function pierceExternalAdOverlayAtPoint(clientX, clientY) {
               if (!isKnownNonByseEmbed || isByseStealthEmbed || isChaturbate || isOtherProtectedSite) return;
               if (!clientX || !clientY || typeof document.elementsFromPoint !== "function") return;
@@ -2165,13 +2089,32 @@ jobs:
               } catch (_) {}
             }
 
+            function flattenPlayerWrapperForTv() {
+              if (!isDoramaTopSite || !document.body) return;
+              try {
+                const iframes = document.getElementsByTagName("iframe");
+                for (let i = 0; i < iframes.length; i++) {
+                  const f = iframes[i];
+                  const src = (f.getAttribute("src") || "").toLowerCase();
+                  if (src.includes("disqus") || src.includes("facebook") || src.includes("vidoomy")) continue;
+                  f.classList.add("__battv_flat_player_host");
+                  let p = f.parentElement;
+                  let depth = 0;
+                  while (p && p !== document.body && p !== document.documentElement && depth < 5) {
+                    p.classList.add("__battv_flat_player_host");
+                    p = p.parentElement;
+                    depth++;
+                  }
+                }
+              } catch (_) {}
+            }
+
             let port = null;
             let activeInputEl = null;
             let inputCounter = 1;
             let lastPromptedPlayerKey = "";
             let watchedVideosSet = new WeakSet();
             let lastFullscreenPromptMs = 0;
-            let userPausedManuallyUntil = 0;
             let customFsActive = false;
 
             function ensureBridgeConnected() {
@@ -2224,6 +2167,9 @@ jobs:
                     f.setAttribute("allow", (allow ? allow + "; " : "") + "fullscreen *; autoplay *; encrypted-media *");
                   }
                 }
+                if (isDoramaTopSite) {
+                  flattenPlayerWrapperForTv();
+                }
               } catch (_) {}
             }
 
@@ -2251,7 +2197,6 @@ jobs:
               } catch (_) {}
             }
 
-            // O(1) sin querySelector: cero escaneo del DOM cuando ves video fuera de pantalla completa
             function isInAnyFullscreen() {
               return !!(
                 customFsActive ||
@@ -2372,68 +2317,34 @@ jobs:
               }
             }
 
+            // SIN auto-play en evento pause (elimina por completo el audio fantasma en segundo plano en Chaturbate)
             function attachStreamStabilizer(v) {
               if (!v || watchedVideosSet.has(v)) return;
               watchedVideosSet.add(v);
               ensureBridgeConnected();
-
               try {
                 v.playsInline = true;
               } catch (_) {}
-
-              if (isChaturbate) {
-                let holeTimer = null;
-                const cancelHoleTimer = function () {
-                  if (holeTimer) {
-                    clearTimeout(holeTimer);
-                    holeTimer = null;
-                  }
-                };
-
-                const scheduleHoleStep = function () {
-                  if (holeTimer || Date.now() < userPausedManuallyUntil || v.ended) return;
-                  holeTimer = setTimeout(function () {
-                    holeTimer = null;
-                    if (!v.isConnected || v.paused || v.ended || Date.now() < userPausedManuallyUntil) return;
-                    if (v.readyState >= 3) return;
-                    try {
-                      const ct = v.currentTime;
-                      const buf = v.buffered;
-                      if (buf && buf.length > 0) {
-                        for (let b = 0; b < buf.length; b++) {
-                          const start = buf.start(b);
-                          if (start > ct + 0.02 && (start - ct) <= 1.8) {
-                            v.currentTime = start + 0.05;
-                            break;
-                          }
-                        }
-                      }
-                    } catch (_) {}
-                  }, 650);
-                };
-
-                v.addEventListener("waiting", scheduleHoleStep);
-                v.addEventListener("stalled", scheduleHoleStep);
-                v.addEventListener("playing", cancelHoleTimer);
-                v.addEventListener("timeupdate", cancelHoleTimer);
-
-                v.addEventListener("pause", function () {
-                  cancelHoleTimer();
-                  if (Date.now() >= userPausedManuallyUntil && !v.ended) {
-                    setTimeout(function () {
-                      if (v.paused && Date.now() >= userPausedManuallyUntil && !v.ended) {
-                        v.play().catch(function () {});
-                      }
-                    }, 350);
-                  }
-                });
-              }
             }
 
             document.addEventListener("playing", function (e) {
               const v = e && e.target;
               if (!v || v.tagName !== "VIDEO") return;
               attachStreamStabilizer(v);
+
+              // En Chaturbate: pausar de inmediato cualquier video secundario (miniaturas) para dedicar el decodificador al directo principal
+              if (isChaturbate) {
+                const allVids = document.getElementsByTagName("video");
+                if (allVids.length > 1) {
+                  for (let k = 0; k < allVids.length; k++) {
+                    if (allVids[k] !== v && !allVids[k].paused) {
+                      try { allVids[k].pause(); } catch (_) {}
+                    }
+                  }
+                }
+                optimizeChaturbateBioImages();
+              }
+
               sendVideoStateOnce(v);
               setTimeout(function () {
                 if (!v.isConnected || v.paused || v.ended || v.readyState < 2) return;
@@ -2765,7 +2676,7 @@ jobs:
                 nukeIsolatedSitesAdsOnce();
               } else if (!isCleanLiveStreamSite) {
                 scheduleSweepDirectBodyAds();
-                setTimeout(enableIframeFullscreenAndEagerLoad, 180);
+                setTimeout(enableIframeFullscreenAndEagerLoad, 220);
               }
 
               if (isLiveCamRips && isTopFrame) {
@@ -2896,7 +2807,7 @@ jobs:
                 enableIframeFullscreenAndEagerLoad();
                 optimizeImagesAsyncDecoding();
                 if (isChaturbate) {
-                  keepChaturbateLightweight();
+                  optimizeChaturbateBioImages();
                 } else if (isOtherProtectedSite) {
                   nukeIsolatedSitesAdsOnce();
                 } else if (!isCleanLiveStreamSite) {
@@ -2934,6 +2845,10 @@ jobs:
                   notifyInputFocus(nextEl);
                 }
               } else if (msg.type === "VIDEO_COMMAND") {
+                if (msg.action === "STOP_ALL_MEDIA") {
+                  stopAllMediaInFrame(true);
+                  return;
+                }
                 if (msg.action === "ENTER_FULLSCREEN") {
                   enterFullscreenInCurrentFrame();
                   return;
@@ -2953,10 +2868,8 @@ jobs:
                   v.currentTime = targetSec;
                 } else if (msg.action === "TOGGLE_PLAY") {
                   if (v.paused) {
-                    userPausedManuallyUntil = 0;
                     v.play().catch(function () {});
                   } else {
-                    userPausedManuallyUntil = Date.now() + 60000;
                     v.pause();
                   }
                 }
@@ -3013,7 +2926,7 @@ jobs:
                 enableIframeFullscreenAndEagerLoad();
                 optimizeImagesAsyncDecoding();
                 if (isChaturbate) {
-                  keepChaturbateLightweight();
+                  optimizeChaturbateBioImages();
                 } else if (isOtherProtectedSite) {
                   nukeIsolatedSitesAdsOnce();
                 } else if (!isCleanLiveStreamSite) {
@@ -3026,7 +2939,7 @@ jobs:
               enableIframeFullscreenAndEagerLoad();
               optimizeImagesAsyncDecoding();
               if (isChaturbate) {
-                keepChaturbateLightweight();
+                optimizeChaturbateBioImages();
               } else if (isOtherProtectedSite) {
                 nukeIsolatedSitesAdsOnce();
               } else if (!isCleanLiveStreamSite) {
