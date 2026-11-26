@@ -53,17 +53,21 @@ jobs:
           -keep class com.battv.browser.** { *; }
           EOF_PROGUARD
 
-      - name: Actualizar a versionCode 40 (v6.5), barra flotante sin relayout, ACTION_SCROLL y perfil GPU/RAM
+      - name: Actualizar a versionCode 42 (v6.7), barra flotante sin relayout, ACTION_SCROLL y perfil 1080p/RAM
         run: |
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
-          sed -i 's/versionCode [0-9]\+/versionCode 40/g' android-geckoview/app/build.gradle
-          sed -i 's/versionName "[^"]*"/versionName "6.5"/g' android-geckoview/app/build.gradle
-          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v40@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
-          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v40/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/versionCode [0-9]\+/versionCode 42/g' android-geckoview/app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "6.7"/g' android-geckoview/app/build.gradle
+          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v42@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v42/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
           import re
+
+          def replace_once(src, old, new, label):
+              assert old in src, f"No se encontro el bloque esperado para: {label}"
+              return src.replace(old, new, 1)
 
           # 1. Activar R8 (minifyEnabled + shrinkResources) en app/build.gradle
           gradle_path = "android-geckoview/app/build.gradle"
@@ -80,21 +84,17 @@ jobs:
               "        }\n"
               "    }"
           )
-          g = re.sub(
+          g, n_gradle = re.subn(
               r"buildTypes\s*\{\s*release\s*\{[\s\S]*?\}\s*\}",
               lambda _: new_build_types,
               g,
               count=1
           )
+          assert n_gradle == 1, "No se pudo actualizar buildTypes en app/build.gradle"
           with open(gradle_path, "w", encoding="utf-8") as f:
               f.write(g)
 
-          # 2. Parchar MainActivity.kt:
-          #    - Barra superior flotante en FrameLayout (translationY/alpha, cero relayout de GeckoView)
-          #    - setDynamicToolbarMaxHeight(0)
-          #    - Scroll nativo constante via PanZoomController.onMotionEvent(ACTION_SCROLL)
-          #    - Sin redibujo de CursorOverlayView cuando las coordenadas no cambian
-          #    - setActive(false) en sesion inactiva (Inicio/pausa) y STOP_ALL_MEDIA al navegar
+          # 2. Parchar MainActivity.kt (barra flotante en FrameLayout sin relayout, ACTION_SCROLL, cursor sin redibujo y cierre total)
           main_path = "android-geckoview/app/src/main/java/com/battv/browser/MainActivity.kt"
           with open(main_path, "r", encoding="utf-8") as f:
               code = f.read()
@@ -105,13 +105,15 @@ jobs:
               code
           )
 
-          code = code.replace(
+          code = replace_once(
+              code,
               "private const val CURSOR_AUTO_HIDE_MS = 2500L",
-              "private const val CURSOR_AUTO_HIDE_MS = 4500L"
+              "private const val CURSOR_AUTO_HIDE_MS = 4500L",
+              "CURSOR_AUTO_HIDE_MS"
           )
 
-          # Cambiar rootLayout a FrameLayout y declarar topBarContainer flotante + objetos reutilizables de ACTION_SCROLL
-          code = code.replace(
+          code = replace_once(
+              code,
               "private lateinit var rootLayout: LinearLayout\n  private lateinit var topBarLayout: LinearLayout",
               "private lateinit var rootLayout: FrameLayout\n"
               "  private lateinit var topBarContainer: LinearLayout\n"
@@ -125,37 +127,38 @@ jobs:
               "    }\n"
               "  )\n"
               "  private val scrollPointerCoords = arrayOf(MotionEvent.PointerCoords())",
-              1
+              "rootLayout FrameLayout + topBarContainer + ACTION_SCROLL"
           )
 
-          if "private var isExitingCompletely" not in code:
-              code = code.replace(
-                  "private var isFullScreenVideo: Boolean = false",
-                  "private var isFullScreenVideo: Boolean = false\n  private var isExitingCompletely: Boolean = false",
-                  1
-              )
+          code = replace_once(
+              code,
+              "private var isFullScreenVideo: Boolean = false",
+              "private var isFullScreenVideo: Boolean = false\n  private var isExitingCompletely: Boolean = false",
+              "isExitingCompletely"
+          )
 
-          if "private var lastDismissedPlayerKey" not in code:
-              code = code.replace(
-                  "private var lastFullscreenExitUptimeMs: Long = 0L",
-                  "private var lastFullscreenExitUptimeMs: Long = 0L\n  private var lastDismissedPlayerKey: String = \"\"\n  private var lastPromptedPlayerKey: String = \"\"\n  private var lastTopNavChangeUptimeMs: Long = 0L",
-                  1
-              )
+          code = replace_once(
+              code,
+              "private var lastFullscreenExitUptimeMs: Long = 0L",
+              "private var lastFullscreenExitUptimeMs: Long = 0L\n"
+              "  private var lastDismissedPlayerKey: String = \"\"\n"
+              "  private var lastPromptedPlayerKey: String = \"\"\n"
+              "  private var lastTopNavChangeUptimeMs: Long = 0L",
+              "playerKey state"
+          )
 
-          # Auto-ocultado suave (translationY/alpha) de la barra flotante al navegar en modo cursor
-          if "private val autoHideTopBarRunnable" not in code:
-              code = code.replace(
-                  "private val hideCursorRunnable = Runnable {",
-                  "private val autoHideTopBarRunnable = Runnable {\n"
-                  "    if (isCursorModeActive && !isHomeScreenVisible && !isEditingUrlText && !isEditingWebInput) {\n"
-                  "      setTopBarOverlayVisible(false, animate = true)\n"
-                  "    }\n"
-                  "  }\n\n"
-                  "  private val hideCursorRunnable = Runnable {",
-                  1
-              )
+          code = replace_once(
+              code,
+              "private val hideCursorRunnable = Runnable {",
+              "private val autoHideTopBarRunnable = Runnable {\n"
+              "    if (isCursorModeActive && !isHomeScreenVisible && !isEditingUrlText && !isEditingWebInput) {\n"
+              "      setTopBarOverlayVisible(false, animate = true)\n"
+              "    }\n"
+              "  }\n\n"
+              "  private val hideCursorRunnable = Runnable {",
+              "autoHideTopBarRunnable"
+          )
 
-          # Reemplazar aceleracion variable por scroll constante suave en smoothDpadFrameCallback
           old_scroll_calc = (
               "        if (!isFullScreenVideo) {\n"
               "          val targetScrollSpeed = BASE_SCROLL_FRAME_SPEED_PX +\n"
@@ -186,10 +189,32 @@ jobs:
               "          }\n"
               "        }"
           )
-          if old_scroll_calc in code:
-              code = code.replace(old_scroll_calc, new_scroll_calc, 1)
+          code = replace_once(code, old_scroll_calc, new_scroll_calc, "constantScrollStep")
 
-          # Reemplazar rootLayout LinearLayout por FrameLayout
+          old_on_resume = (
+              "  override fun onResume() {\n"
+              "    super.onResume()\n"
+              "    geckoSession?.setActive(true)\n"
+              "    geckoSession?.setFocused(true)\n"
+              "    if (isFullScreenVideo) {\n"
+              "      applyImmersiveSystemUi(true)\n"
+              "    }\n"
+              "  }"
+          )
+          new_on_resume = (
+              "  override fun onResume() {\n"
+              "    super.onResume()\n"
+              "    if (!isHomeScreenVisible) {\n"
+              "      geckoSession?.setActive(true)\n"
+              "      geckoSession?.setFocused(true)\n"
+              "    }\n"
+              "    if (isFullScreenVideo) {\n"
+              "      applyImmersiveSystemUi(true)\n"
+              "    }\n"
+              "  }"
+          )
+          code = replace_once(code, old_on_resume, new_on_resume, "onResume setActive guard")
+
           old_root_init = (
               "    rootLayout = LinearLayout(this).apply {\n"
               "      orientation = LinearLayout.VERTICAL\n"
@@ -209,10 +234,34 @@ jobs:
               "      setBackgroundColor(Color.parseColor(\"#080B18\"))\n"
               "    }"
           )
-          if old_root_init in code:
-              code = code.replace(old_root_init, new_root_init, 1)
+          code = replace_once(code, old_root_init, new_root_init, "rootLayout FrameLayout init")
 
-          # webContainer siempre MATCH_PARENT x MATCH_PARENT para que GeckoView nunca haga relayout
+          old_progress_bar = (
+              "    loadingProgressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {\n"
+              "      max = 100\n"
+              "      progress = 0\n"
+              "      visibility = View.GONE\n"
+              "      layoutParams = LinearLayout.LayoutParams(\n"
+              "        ViewGroup.LayoutParams.MATCH_PARENT,\n"
+              "        dp(3)\n"
+              "      )\n"
+              "    }"
+          )
+          new_progress_bar = (
+              "    loadingProgressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {\n"
+              "      max = 100\n"
+              "      progress = 0\n"
+              "      visibility = View.GONE\n"
+              "      elevation = 120f\n"
+              "      layoutParams = FrameLayout.LayoutParams(\n"
+              "        ViewGroup.LayoutParams.MATCH_PARENT,\n"
+              "        dp(3),\n"
+              "        Gravity.TOP\n"
+              "      )\n"
+              "    }"
+          )
+          code = replace_once(code, old_progress_bar, new_progress_bar, "loadingProgressBar overlay")
+
           old_web_container = (
               "    webContainer = FrameLayout(this).apply {\n"
               "      clipChildren = false\n"
@@ -232,10 +281,8 @@ jobs:
               "      )\n"
               "    }"
           )
-          if old_web_container in code:
-              code = code.replace(old_web_container, new_web_container, 1)
+          code = replace_once(code, old_web_container, new_web_container, "webContainer MATCH_PARENT")
 
-          # Configurar setDynamicToolbarMaxHeight(0) y revelacion tactil de barra flotante en geckoView
           old_gecko_touch = (
               "      setOnTouchListener { _, event ->\n"
               "        if (event.actionMasked == MotionEvent.ACTION_DOWN) {\n"
@@ -267,24 +314,22 @@ jobs:
               "        false\n"
               "      }"
           )
-          if old_gecko_touch in code:
-              code = code.replace(old_gecko_touch, new_gecko_touch, 1)
+          code = replace_once(code, old_gecko_touch, new_gecko_touch, "geckoView setDynamicToolbarMaxHeight")
 
-          # Dar padding superior a homeContentContainer para que la barra flotante no tape el titulo en Favoritos
-          code = code.replace(
+          code = replace_once(
+              code,
               "setPadding(dp(36), dp(24), dp(36), dp(28))",
               "setPadding(dp(36), dp(72), dp(36), dp(28))",
-              1
+              "homeContentContainer top padding"
           )
 
-          # Montar webContainer debajo y topBarContainer flotando encima (con capa GPU y translationY/alpha)
           old_root_adds = (
               "    rootLayout.addView(topBarLayout)\n"
               "    rootLayout.addView(loadingProgressBar)\n"
               "    rootLayout.addView(webContainer)"
           )
           new_root_adds = (
-              "    topBarHeightPx = dp(58).toFloat()\n"
+              "    topBarHeightPx = dp(56).toFloat()\n"
               "    topBarContainer = LinearLayout(this).apply {\n"
               "      orientation = LinearLayout.VERTICAL\n"
               "      elevation = 110f\n"
@@ -295,20 +340,23 @@ jobs:
               "        Gravity.TOP\n"
               "      )\n"
               "      addView(topBarLayout)\n"
-              "      addView(loadingProgressBar)\n"
               "    }\n"
               "    rootLayout.addView(webContainer)\n"
-              "    rootLayout.addView(topBarContainer)"
+              "    rootLayout.addView(topBarContainer)\n"
+              "    rootLayout.addView(loadingProgressBar)"
           )
-          if old_root_adds in code:
-              code = code.replace(old_root_adds, new_root_adds, 1)
+          code = replace_once(code, old_root_adds, new_root_adds, "rootLayout overlay stacking")
 
-          # Agregar helpers setTopBarOverlayVisible y scheduleAutoHideTopBar (cero relayout de GeckoView)
           topbar_helpers = (
               "  private fun setTopBarOverlayVisible(visible: Boolean, animate: Boolean = true) {\n"
               "    if (!::topBarContainer.isInitialized) return\n"
               "    if (isTopBarOverlayVisible == visible && animate) return\n"
               "    isTopBarOverlayVisible = visible\n"
+              "    topBarContainer.descendantFocusability = if (visible) {\n"
+              "      ViewGroup.FOCUS_AFTER_DESCENDANTS\n"
+              "    } else {\n"
+              "      ViewGroup.FOCUS_BLOCK_DESCENDANTS\n"
+              "    }\n"
               "    val targetY = if (visible) 0f else -topBarHeightPx\n"
               "    val targetAlpha = if (visible) 1f else 0f\n"
               "    topBarContainer.animate().cancel()\n"
@@ -330,13 +378,13 @@ jobs:
               "    }\n"
               "  }\n\n"
           )
-          code = code.replace(
+          code = replace_once(
+              code,
               "  private fun promptAutoFullscreenIfEligible()",
               topbar_helpers + "  private fun promptAutoFullscreenIfEligible()",
-              1
+              "topbar helpers"
           )
 
-          # Reemplazar applyFullScreenState para usar solo translationY/alpha sin tocar layout/tamaño de GeckoView
           new_apply_fs = (
               "private fun applyFullScreenState(fullScreen: Boolean) {\n"
               "    isFullScreenVideo = fullScreen\n"
@@ -372,31 +420,42 @@ jobs:
               "    }\n"
               "  }"
           )
-          code = re.sub(
+          code, n_fs = re.subn(
               r"private fun applyFullScreenState\(fullScreen: Boolean\)\s*\{[\s\S]*?\n  \}",
               lambda _: new_apply_fs,
               code,
               count=1
           )
+          assert n_fs == 1, "No se pudo actualizar applyFullScreenState"
 
-          # En startEditingUrlText, activateToolbarMode y activateCursorMode usar barra flotante
-          code = code.replace(
+          code = replace_once(
+              code,
               "topBarLayout.visibility = View.VISIBLE",
-              "mainHandler.removeCallbacks(autoHideTopBarRunnable)\n    setTopBarOverlayVisible(true, animate = true)"
+              "mainHandler.removeCallbacks(autoHideTopBarRunnable)\n    setTopBarOverlayVisible(true, animate = true)",
+              "startEditingUrlText show topBar"
           )
-          code = code.replace(
+
+          code = replace_once(
+              code,
               "    toolbarIndex = URL_BAR_INDEX\n    homeOverlayLayout.clearFocus()",
               "    toolbarIndex = URL_BAR_INDEX\n    mainHandler.removeCallbacks(autoHideTopBarRunnable)\n    setTopBarOverlayVisible(true, animate = true)\n    homeOverlayLayout.clearFocus()",
-              1
-          )
-          code = code.replace(
-              "    geckoSession?.setActive(true)\n    geckoSession?.setFocused(true)\n  }",
-              "    geckoSession?.setActive(true)\n    geckoSession?.setFocused(true)\n    if (vodIsPlaying || isFullScreenVideo) {\n      setTopBarOverlayVisible(false, animate = true)\n    } else {\n      scheduleAutoHideTopBar(2400L)\n    }\n  }",
-              1
+              "activateToolbarMode show topBar"
           )
 
-          # Permitir abrir barra flotante con boton MENU del control remoto
-          code = code.replace(
+          code = replace_once(
+              code,
+              "    geckoSession?.setActive(true)\n    geckoSession?.setFocused(true)\n  }",
+              "    geckoSession?.setActive(true)\n    geckoSession?.setFocused(true)\n"
+              "    if (vodIsPlaying || isFullScreenVideo) {\n"
+              "      setTopBarOverlayVisible(false, animate = true)\n"
+              "    } else {\n"
+              "      scheduleAutoHideTopBar(2400L)\n"
+              "    }\n  }",
+              "activateCursorMode autoHideTopBar"
+          )
+
+          code = replace_once(
+              code,
               "    if (keyCode == KeyEvent.KEYCODE_BACK) {",
               "    if (keyCode == KeyEvent.KEYCODE_MENU) {\n"
               "      if (action == KeyEvent.ACTION_UP && !isHomeScreenVisible && !isFullScreenVideo) {\n"
@@ -405,10 +464,9 @@ jobs:
               "      return true\n"
               "    }\n\n"
               "    if (keyCode == KeyEvent.KEYCODE_BACK) {",
-              1
+              "KEYCODE_MENU"
           )
 
-          # Reemplazar scrollWebPageNative por scroll nativo con PanZoomController (ACTION_SCROLL) sin GC por frame
           new_scroll_fn = (
               "private fun scrollWebPageNative(deltaYPixels: Double) {\n"
               "    if (abs(deltaYPixels) < 0.1) return\n"
@@ -440,14 +498,14 @@ jobs:
               "    }\n"
               "  }"
           )
-          code = re.sub(
+          code, n_scroll = re.subn(
               r"private fun scrollWebPageNative\(deltaYPixels: Double\)\s*\{[\s\S]*?\n  \}",
               lambda _: new_scroll_fn,
               code,
               count=1
           )
+          assert n_scroll == 1, "No se pudo actualizar scrollWebPageNative"
 
-          # Evitar redibujar/invalidar CursorOverlayView cuando las coordenadas no cambian
           old_move_cursor = (
               "    fun moveCursorBy(dx: Float, dy: Float): Boolean {\n"
               "      val maxW = max(1f, webContainer.width.toFloat())\n"
@@ -463,6 +521,19 @@ jobs:
               "        visibility = VISIBLE\n"
               "      }\n"
               "      return hitTop\n"
+              "    }\n\n"
+              "    fun showCursorAndScheduleFade() {\n"
+              "      translationX = cursorX - hotspotOffsetPx\n"
+              "      translationY = cursorY - hotspotOffsetPx\n"
+              "      if (!cursorVisible || visibility != VISIBLE) {\n"
+              "        cursorVisible = true\n"
+              "        visibility = VISIBLE\n"
+              "      }\n"
+              "    }\n\n"
+              "    fun hideCursorUntilMoved() {\n"
+              "      cursorVisible = false\n"
+              "      pulseRadius = 0f\n"
+              "      visibility = GONE\n"
               "    }"
           )
           new_move_cursor = (
@@ -484,19 +555,17 @@ jobs:
               "        visibility = VISIBLE\n"
               "      }\n"
               "      return hitTop\n"
-              "    }"
-          )
-          if old_move_cursor in code:
-              code = code.replace(old_move_cursor, new_move_cursor, 1)
-
-          old_hide_cursor = (
-              "    fun hideCursorUntilMoved() {\n"
-              "      cursorVisible = false\n"
-              "      pulseRadius = 0f\n"
-              "      visibility = GONE\n"
-              "    }"
-          )
-          new_hide_cursor = (
+              "    }\n\n"
+              "    fun showCursorAndScheduleFade() {\n"
+              "      val targetX = cursorX - hotspotOffsetPx\n"
+              "      val targetY = cursorY - hotspotOffsetPx\n"
+              "      if (abs(translationX - targetX) >= 0.05f) translationX = targetX\n"
+              "      if (abs(translationY - targetY) >= 0.05f) translationY = targetY\n"
+              "      if (!cursorVisible || visibility != VISIBLE) {\n"
+              "        cursorVisible = true\n"
+              "        visibility = VISIBLE\n"
+              "      }\n"
+              "    }\n\n"
               "    fun hideCursorUntilMoved() {\n"
               "      if (!cursorVisible && visibility == GONE) return\n"
               "      cursorVisible = false\n"
@@ -504,11 +573,10 @@ jobs:
               "      visibility = GONE\n"
               "    }"
           )
-          if old_hide_cursor in code:
-              code = code.replace(old_hide_cursor, new_hide_cursor, 1)
+          code = replace_once(code, old_move_cursor, new_move_cursor, "CursorOverlayView no-op guards")
 
-          # Al volver a Inicio: mostrar barra flotante, detener audio/video y poner sesion inactiva setActive(false)
-          code = code.replace(
+          code = replace_once(
+              code,
               "    geckoSession?.stop()\n    isHomeScreenVisible = true",
               "    isHomeScreenVisible = true\n"
               "    mainHandler.removeCallbacks(autoHideTopBarRunnable)\n"
@@ -517,10 +585,9 @@ jobs:
               "    geckoSession?.stop()\n"
               "    try { geckoSession?.loadUri(\"about:blank\") } catch (_: Exception) {}\n"
               "    geckoSession?.setActive(false)",
-              1
+              "showHomeScreen suspend session"
           )
 
-          # Al navegar atras, adelante o abrir nueva URL: cortar audio/video y reactivar sesion
           code = code.replace(
               "geckoSession?.goBack()",
               "sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n            geckoSession?.goBack()"
@@ -529,14 +596,15 @@ jobs:
               "geckoSession?.goForward()",
               "sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n        geckoSession?.goForward()"
           )
-          code = code.replace(
+          code = replace_once(
+              code,
               "    geckoSession?.stop()\n    geckoSession?.loadUri(finalUri)",
               "    geckoSession?.setActive(true)\n"
               "    setTopBarOverlayVisible(true, animate = false)\n"
               "    sendVideoCommandToWeb(\"STOP_ALL_MEDIA\", 0.0)\n"
               "    geckoSession?.stop()\n"
               "    geckoSession?.loadUri(finalUri)",
-              1
+              "loadUrlOrSearch activate session"
           )
 
           new_prompt_fn = (
@@ -581,12 +649,13 @@ jobs:
               "    dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.requestFocus()\n"
               "  }"
           )
-          code = re.sub(
+          code, n_prompt = re.subn(
               r"private fun promptAutoFullscreenIfEligible\(\)\s*\{[\s\S]*?\n  \}",
               lambda _: new_prompt_fn,
               code,
               count=1
           )
+          assert n_prompt == 1, "No se pudo actualizar promptAutoFullscreenIfEligible"
 
           new_enter_fs = (
               "private fun enterVideoFullscreenAutomatically() {\n"
@@ -594,17 +663,19 @@ jobs:
               "    sendVideoCommandToWeb(\"ENTER_FULLSCREEN\", 0.0)\n"
               "  }"
           )
-          code = re.sub(
+          code, n_enter = re.subn(
               r"private fun enterVideoFullscreenAutomatically\(\)\s*\{[\s\S]*?\n  \}",
               lambda _: new_enter_fs,
               code,
               count=1
           )
+          assert n_enter == 1, "No se pudo actualizar enterVideoFullscreenAutomatically"
 
-          code = code.replace(
+          code = replace_once(
+              code,
               "fullscreenPromptDismissedForPage = true\n    lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()",
               "fullscreenPromptDismissedForPage = true\n    lastDismissedPlayerKey = lastPromptedPlayerKey\n    lastFullscreenExitUptimeMs = SystemClock.uptimeMillis()",
-              1
+              "exitFullScreenSafely lastDismissedPlayerKey"
           )
 
           old_loc_assign = (
@@ -633,18 +704,19 @@ jobs:
               "            isInitialNavigationInProgress = false\n"
               "          }"
           )
-          if old_loc_assign in code:
-              code = code.replace(old_loc_assign, new_loc_assign, 1)
+          code = replace_once(code, old_loc_assign, new_loc_assign, "onLocationChange SPA reset")
 
-          code = code.replace(
+          code = replace_once(
+              code,
               "fullscreenPromptDismissedForPage = false\n          latestExtractedHeading = \"\"",
               "fullscreenPromptDismissedForPage = false\n          lastDismissedPlayerKey = \"\"\n          lastPromptedPlayerKey = \"\"\n          lastTopNavChangeUptimeMs = SystemClock.uptimeMillis()\n          latestExtractedHeading = \"\"",
-              1
+              "onPageStart reset"
           )
-          code = code.replace(
+          code = replace_once(
+              code,
               "fullscreenPromptDismissedForPage = false\n    isInitialNavigationInProgress = true",
               "fullscreenPromptDismissedForPage = false\n    lastDismissedPlayerKey = \"\"\n    lastPromptedPlayerKey = \"\"\n    lastTopNavChangeUptimeMs = SystemClock.uptimeMillis()\n    hasActiveVodVideo = false\n    isLiveStreamVideo = false\n    vodIsPlaying = false\n    vodDurationSec = 0.0\n    isInitialNavigationInProgress = true",
-              1
+              "loadUrlOrSearch reset"
           )
 
           code = re.sub(
@@ -710,8 +782,7 @@ jobs:
               '                }\n'
               '              }'
           )
-          if old_prompt_msg in code:
-              code = code.replace(old_prompt_msg, new_prompt_msg, 1)
+          code = replace_once(code, old_prompt_msg, new_prompt_msg, "VIDEO_PLAY_STARTED_PROMPT_FS")
 
           new_fs_exit_only = (
               "if (!fullScreen) {\n"
@@ -734,40 +805,50 @@ jobs:
               code
           )
 
-          if "EXPAND_PLAYER_IFRAME_FALLBACK" not in code:
-              code = code.replace(
-                  '"WEB_FULLSCREEN_STATE" -> {',
-                  '"EXPAND_PLAYER_IFRAME_FALLBACK" -> {\n'
-                  '                runOnUiThread {\n'
-                  '                  applyFullScreenState(true)\n'
-                  '                  sendVideoCommandToWeb("EXPAND_PLAYER_IFRAME_FALLBACK", 0.0)\n'
-                  '                }\n'
-                  '              }\n'
-                  '              "WEB_FULLSCREEN_STATE" -> {',
-                  1
-              )
-
-          code = code.replace(
-              "if (::geckoManager.isInitialized) {\n      geckoManager.pruneDisposableStorageNow()\n    }",
-              ""
+          code = replace_once(
+              code,
+              '"WEB_FULLSCREEN_STATE" -> {',
+              '"EXPAND_PLAYER_IFRAME_FALLBACK" -> {\n'
+              '                runOnUiThread {\n'
+              '                  applyFullScreenState(true)\n'
+              '                  sendVideoCommandToWeb("EXPAND_PLAYER_IFRAME_FALLBACK", 0.0)\n'
+              '                }\n'
+              '              }\n'
+              '              "WEB_FULLSCREEN_STATE" -> {',
+              "EXPAND_PLAYER_IFRAME_FALLBACK"
           )
 
-          if "override fun onStop()" not in code:
-              on_stop_suffix = (
-                  "\n\n"
-                  "  override fun onStop() {\n"
-                  "    super.onStop()\n"
-                  "    if (!isChangingConfigurations && !isExitingCompletely) {\n"
-                  "      exitBrowserCleanly()\n"
-                  "    }\n"
-                  "  }"
-              )
-              code = re.sub(
-                  r"(override fun onPause\(\)\s*\{[\s\S]*?\n  \})",
-                  lambda m: m.group(1) + on_stop_suffix,
-                  code,
-                  count=1
-              )
+          code = replace_once(
+              code,
+              "    mainHandler.removeCallbacks(hideCursorRunnable)\n"
+              "    mainHandler.removeCallbacks(hideVideoSeekRunnable)\n"
+              "    geckoSession?.setActive(false)\n"
+              "    if (::geckoManager.isInitialized) {\n"
+              "      geckoManager.pruneDisposableStorageNow()\n"
+              "    }",
+              "    mainHandler.removeCallbacks(autoHideTopBarRunnable)\n"
+              "    mainHandler.removeCallbacks(hideCursorRunnable)\n"
+              "    mainHandler.removeCallbacks(hideVideoSeekRunnable)\n"
+              "    geckoSession?.setActive(false)",
+              "onPause cleanup"
+          )
+
+          on_stop_suffix = (
+              "\n\n"
+              "  override fun onStop() {\n"
+              "    super.onStop()\n"
+              "    if (!isChangingConfigurations && !isExitingCompletely) {\n"
+              "      exitBrowserCleanly()\n"
+              "    }\n"
+              "  }"
+          )
+          code, n_stop = re.subn(
+              r"(override fun onPause\(\)\s*\{[\s\S]*?\n  \})",
+              lambda m: m.group(1) + on_stop_suffix,
+              code,
+              count=1
+          )
+          assert n_stop == 1, "No se pudo insertar onStop()"
 
           new_exit_fn = (
               "private fun exitBrowserCleanly() {\n"
@@ -797,50 +878,41 @@ jobs:
               "    }, 180L)\n"
               "  }"
           )
-          code = re.sub(
+          code, n_exit = re.subn(
               r"private fun exitBrowserCleanly\(\)\s*\{[\s\S]*?\n  \}",
               lambda _: new_exit_fn,
               code,
               count=1
           )
+          assert n_exit == 1, "No se pudo actualizar exitBrowserCleanly"
 
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
 
-          # 3. Parchar BatTvGeckoViewManager.kt:
-          #    - GeckoView.setDynamicToolbarMaxHeight(0) (SurfaceView ya es el backend nativo por defecto en GeckoView 130)
-          #    - GeckoRuntimeSettings: useMaxScreenDepth(false), consoleOutput(false), remoteDebuggingEnabled(false)
-          #    - GeckoSessionSettings: useTrackingProtection(true), suspendMediaWhenInactive(true)
-          #    - battv_gecko_config.yaml exacto con HW decode, WebRender GPU, sin efectos costosos y RAM acotada
+          # 3. Parchar BatTvGeckoViewManager.kt (perfil optimizado para 1080p en 1.5GB RAM + MediaCodec HW + WebRender GPU)
           mgr_path = "android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
           with open(mgr_path, "r", encoding="utf-8") as f:
               mgr = f.read()
 
-          mgr = mgr.replace(
-              ".useTrackingProtection(false)",
-              ".useTrackingProtection(true)"
-          )
-          mgr = mgr.replace(
-              ".suspendMediaWhenInactive(false)",
-              ".suspendMediaWhenInactive(true)"
-          )
-          mgr = mgr.replace(
+          mgr = replace_once(mgr, ".useTrackingProtection(false)", ".useTrackingProtection(true)", "useTrackingProtection")
+          mgr = replace_once(mgr, ".suspendMediaWhenInactive(false)", ".suspendMediaWhenInactive(true)", "suspendMediaWhenInactive")
+          mgr = replace_once(
+              mgr,
               ".userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else TV_MODE_USER_AGENT)",
-              ".apply { if (isDesktopMode) userAgentOverride(PC_MODE_USER_AGENT) }"
+              ".apply { if (isDesktopMode) userAgentOverride(PC_MODE_USER_AGENT) }",
+              "Builder.userAgentOverride"
           )
-          mgr = mgr.replace(
-              ".userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else null)",
-              ".apply { if (isDesktopMode) userAgentOverride(PC_MODE_USER_AGENT) }"
-          )
-          mgr = mgr.replace(
+          mgr = replace_once(
+              mgr,
               "session.settings.userAgentOverride = if (isDesktopMode) {\n            PC_MODE_USER_AGENT\n        } else {\n            TV_MODE_USER_AGENT\n        }",
-              "session.settings.userAgentOverride = if (isDesktopMode) {\n            PC_MODE_USER_AGENT\n        } else {\n            null\n        }"
+              "session.settings.userAgentOverride = if (isDesktopMode) {\n            PC_MODE_USER_AGENT\n        } else {\n            null\n        }",
+              "applyDisplayMode.userAgentOverride"
           )
-
-          mgr = mgr.replace(
+          mgr = replace_once(
+              mgr,
               "geckoView.setSession(session)",
               "geckoView.setDynamicToolbarMaxHeight(0)\n        geckoView.setSession(session)",
-              1
+              "setDynamicToolbarMaxHeight(0)"
           )
 
           old_runtime_builder = (
@@ -865,8 +937,7 @@ jobs:
               "                        .invoke(builder, false)\n"
               "                }"
           )
-          if old_runtime_builder in mgr:
-              mgr = mgr.replace(old_runtime_builder, new_runtime_builder, 1)
+          mgr = replace_once(mgr, old_runtime_builder, new_runtime_builder, "GeckoRuntimeSettings")
 
           new_disposable_dirs = (
               "private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(\n"
@@ -879,22 +950,29 @@ jobs:
               "            \"datareporting\"\n"
               "        )"
           )
-          mgr = re.sub(
+          mgr, n_dirs = re.subn(
               r"private val GECKO_DISPOSABLE_CACHE_DIRS = setOf\([\s\S]*?\)",
               lambda _: new_disposable_dirs,
               mgr,
               count=1
           )
+          assert n_dirs == 1, "No se pudo actualizar GECKO_DISPOSABLE_CACHE_DIRS"
 
-          mgr = mgr.replace(
+          mgr = replace_once(
+              mgr,
               "deleteDirectoryContents(appContext.cacheDir)\n                    appContext.externalCacheDir?.let { deleteDirectoryContents(it) }",
-              "appContext.externalCacheDir?.let { deleteDirectoryContents(it) }"
+              "appContext.externalCacheDir?.let { deleteDirectoryContents(it) }",
+              "keep appContext.cacheDir"
           )
 
           tuned_gecko_yaml = (
               'val yamlContent = """\n'
               '                prefs:\n'
               '                  media.hardware-video-decoding.enabled: true\n'
+              '                  media.android-media-codec.enabled: true\n'
+              '                  media.android-media-codec.preferred: true\n'
+              '                  media.decoder.recycle.enabled: false\n'
+              '                  media.decoder.skip-to-next-key-frame.enabled: false\n'
               '                  media.av1.enabled: false\n'
               '                  gfx.webrender.all: true\n'
               '                  gfx.webrender.software: false\n'
@@ -908,6 +986,8 @@ jobs:
               '                  browser.cache.disk.capacity: 32768\n'
               '                  browser.cache.disk.smart_size.enabled: false\n'
               '                  browser.cache.offline.enable: false\n'
+              '                  image.decode-immediately.enabled: false\n'
+              '                  image.mem.surfacecache.max_size_kb: 20480\n'
               '                  media.cache_readahead_limit: 30\n'
               '                  media.cache_resume_threshold: 15\n'
               '                  dom.min_background_timeout_value: 1000\n'
@@ -934,6 +1014,7 @@ jobs:
               '                  full-screen-api.warning.delay: -1\n'
               '                  full-screen-api.warning.timeout: 0\n'
               '                  network.http.http3.enable: true\n'
+              '                  network.http.max-connections: 256\n'
               '                  network.http.sendRefererHeader: 2\n'
               '                  network.cookie.cookieBehavior: 0\n'
               '                  network.cookie.sameSite.laxByDefault: false\n'
@@ -946,34 +1027,30 @@ jobs:
               '                  extensions.langpacks.signatures.required: false\n'
               '            """.trimIndent()'
           )
-          mgr = re.sub(
+          mgr, n_yaml = re.subn(
               r'val yamlContent = """[\s\S]*?"""\.trimIndent\(\)',
               lambda _: tuned_gecko_yaml,
               mgr,
               count=1
           )
+          assert n_yaml == 1, "No se pudo actualizar battv_gecko_config.yaml"
 
           extra_domains = '"chatmate.tv", "chatmate.com", "t6r-rotator-marketingg.com", "rotator-marketingg.com", "rotator-marketing"'
-          if "t6r-rotator-marketingg.com" not in mgr:
-              if '"mondiad.com"' in mgr:
-                  mgr = mgr.replace('"mondiad.com"', '"mondiad.com", ' + extra_domains, 1)
-              elif '"yellowishgather.com"' in mgr:
-                  mgr = mgr.replace('"yellowishgather.com"', '"yellowishgather.com", ' + extra_domains, 1)
-
+          mgr = replace_once(mgr, '"mondiad.com"', '"mondiad.com", ' + extra_domains, "extra ad domains")
           mgr = mgr.replace('path.startsWith("/b/")', 'path.contains("/0/P.")')
 
-          old_storage_branch = 'else if (child.name != "storage" && child.name != "extensions") {'
-          new_storage_branch = (
+          mgr = replace_once(
+              mgr,
+              'else if (child.name != "storage" && child.name != "extensions") {',
               'else if (child.name == "storage") {\n'
               '                    val tempDir = File(child, "temporary")\n'
               '                    if (tempDir.exists()) {\n'
               '                        bytes += getFolderSize(tempDir)\n'
               '                        tempDir.deleteRecursively()\n'
               '                    }\n'
-              '                } else if (child.name != "extensions") {'
+              '                } else if (child.name != "extensions") {',
+              "storage temporary cleanup"
           )
-          if old_storage_branch in mgr:
-              mgr = mgr.replace(old_storage_branch, new_storage_branch, 1)
 
           new_close_fn = (
               "fun closeSessionCleanly() {\n"
@@ -997,24 +1074,25 @@ jobs:
               "        } catch (_: Exception) {}\n"
               "    }"
           )
-          mgr = re.sub(
+          mgr, n_close = re.subn(
               r"fun closeSessionCleanly\(\)\s*\{[\s\S]*?\n    \}",
               lambda _: new_close_fn,
               mgr,
               count=1
           )
+          assert n_close == 1, "No se pudo actualizar closeSessionCleanly"
 
           with open(mgr_path, "w", encoding="utf-8") as f:
               f.write(mgr)
 
-          print("Parches v6.5 aplicados correctamente.")
+          print("Parches v6.7 aplicados y verificados correctamente.")
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v40.0 (Anti In-Page Push z-index>99999 + Bloqueo SW/Push + Reproductores Intactos)
+      - name: Generar Motor Nativo Ultraligero v42.0 (Chaturbate Theater Mode Fullscreen + 1080p Sin Cortes + Anti In-Page Push)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v40"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v42"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
 
@@ -1036,11 +1114,11 @@ jobs:
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "40.0.0",
-            "description": "Bloqueo In-Page Push dentro de iframes (scripts push/inpage/sw.js + filtro z-index>99999 con throttle) sin afectar reproductores.",
+            "version": "42.0.0",
+            "description": "Theater Mode en pantalla completa para Chaturbate con 1080p estable en 1.5GB RAM y bloqueo In-Page Push en todos los iframes.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v40@battv.browser",
+                "id": "shield_v42@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -1169,8 +1247,7 @@ jobs:
               "arkoselabs.com", "funcaptcha.com", "friendlycaptcha.com", "geetest.com"
             ]);
 
-            // Patrones tipicos de In-Page Push, Popunder y Service Workers publicitarios de terceros
-            const THIRD_PARTY_PUSH_REGEX = /(inpage|in-page|inpagepush|\/push[-_./]|push[-_.]?sdk|webpush|\/popunder|\/tabunder|\/clickunder|\/tag\.min\.js|\/sw\.js(\?|$)|\/service-?worker\.js(\?|$)|\/ntfc\.php|\/pfe\/current\/|\/invoke\.js)/i;
+            const THIRD_PARTY_PUSH_REGEX = /(inpage|in-page|push|popunder|tabunder|clickunder|tag\.min\.js|\/sw\.js(\?|$)|service-?worker\.js(\?|$)|\/ntfc\.php|\/pfe\/current\/|\/invoke\.js)/i;
             const AD_SCRIPT_REGEX = /(\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{32}\.js|\/[0-9a-f]{32}\/invoke\.js|\/invoke\.js|\/fingerprint-sw\.js|\/aclib\.js|\/tag\.min\.js|\/ntfc\.php|\/pfe\/current\/|\/popunder|\/tabunder|\/clickunder|\/inpagepush|\/socialbar|\/push-sdk|\/apu\.php|\/afu\.php|\/ciG\.[A-Za-z0-9_-]{8,}|\/b\/[A-Za-z0-9]{2,6}\/0\/P\.|\/splash\.php|rotator-marketing|marketingg\.com|utm_source=pop|ad_type=pop|zoneid=|directlink|reclama-tu|felicitaciones|ruleta|1xbet|mostbet|bet365|apuestasroyal)/i;
             const ANTI_DEVTOOL_REGEX = /(disable-devtool|devtools-detector|devtools-detect|fuckadblock|blockadblock)/i;
             const VAST_PREROLL_REGEX = /([?&/](vast|preroll|midroll|postroll|ad_tag|adtag|vmap)([=&/.?_]|$)|syndication\.|splash\.php)/i;
@@ -1194,7 +1271,7 @@ jobs:
             }
 
             if (typeof browser !== "undefined" && browser.webRequest && browser.webRequest.onBeforeRequest) {
-              // CERO IPC en segmentos de video (.m4s, .ts, .m3u8) y APIs: solo patrones exactos de anuncios/VAST
+              // CERO IPC en segmentos de video (.m4s, .ts, .m3u8) y APIs: solo patrones exactos de anuncios/VAST/In-Page Push
               const XHR_AD_URL_PATTERNS = Array.from(BLOCKED_AD_DOMAINS).map(function (d) {
                 return "*://*." + d + "/*";
               }).concat([
@@ -1309,7 +1386,6 @@ jobs:
                                          (getBaseBrand(reqHost) === getBaseBrand(docHost));
 
                       if (!isSameSite) {
-                        // Bloquear scripts y sub-iframes de terceros con patrones In-Page Push / Popunder / sw.js
                         if (!isHostInSet(reqHost, ALLOWED_TECH_CDNS) && THIRD_PARTY_PUSH_REGEX.test(rawUrl)) {
                           if (details.frameId > 0 && !isIsolatedSite && details.type === "script" && NOOP_JS_URL) {
                             return { redirectUrl: NOOP_JS_URL };
@@ -1500,14 +1576,19 @@ jobs:
                   }
                 ` : "";
 
+                // En Chaturbate:
+                // - Mantiene el boton de Theater Mode, calidad y volumen siempre clicables.
+                // - En Modo Teatro Pantalla Completa (.__battv_cb_theater_fs + .__battv_cb_theater_player),
+                //   apaga con display:none todo el resto de la pagina (chat, bio, GIFs, cabecera, salas)
+                //   dedicando el 100% de la GPU/CPU al directo 1080p y dejando visibles los menues de calidad y volumen.
                 const adHideCss = isByseStealthEmbed ? "" : (isCleanLiveStreamSite ? `
                   .chat-holder, .chat-box, #chat, .msg-list-wrapper, .room-list, .endless_page_template {
                     contain: layout style paint !important;
                   }
                   ${isChaturbate ? `
-                  [data-testid="chat-message-list"] > :nth-last-child(n+26),
-                  .msg-list-wrapper > :nth-last-child(n+26),
-                  .chat-list > :nth-last-child(n+26) {
+                  [data-testid="chat-message-list"] > :nth-last-child(n+21),
+                  .msg-list-wrapper > :nth-last-child(n+21),
+                  .chat-list > :nth-last-child(n+21) {
                     display: none !important;
                   }
                   .chat-holder *, .chat-box *, #chat *, .msg-list-wrapper *, .bio-container * {
@@ -1516,23 +1597,93 @@ jobs:
                     box-shadow: none !important;
                     text-shadow: none !important;
                   }
-                  html.__battv_cb_perf_fs .chat-holder,
-                  html.__battv_cb_perf_fs .chat-box,
-                  html.__battv_cb_perf_fs #chat,
-                  html.__battv_cb_perf_fs .msg-list-wrapper,
-                  html.__battv_cb_perf_fs [data-testid="chat-tab-content"],
-                  html.__battv_cb_perf_fs [data-testid="room-chat"],
-                  html.__battv_cb_perf_fs [data-testid="bio-tab-content"],
-                  html.__battv_cb_perf_fs .bio-container,
-                  html.__battv_cb_perf_fs #tabs_content_container,
-                  html.__battv_cb_perf_fs .room-list,
-                  html.__battv_cb_perf_fs .more_rooms,
-                  html.__battv_cb_perf_fs #header,
-                  html.__battv_cb_perf_fs .nav-bar,
-                  html.__battv_cb_perf_fs footer,
+                  [data-testid*="theater" i],
+                  button[aria-label*="theater" i],
+                  button[title*="theater" i],
+                  button[aria-label*="teatro" i],
+                  button[title*="teatro" i] {
+                    pointer-events: auto !important;
+                  }
+                  html.__battv_cb_theater_fs,
+                  html.__battv_cb_theater_fs body {
+                    overflow: hidden !important;
+                    background: #000 !important;
+                  }
+                  html.__battv_cb_theater_fs .chat-holder,
+                  html.__battv_cb_theater_fs .chat-box,
+                  html.__battv_cb_theater_fs #chat,
+                  html.__battv_cb_theater_fs .msg-list-wrapper,
+                  html.__battv_cb_theater_fs [data-testid="chat-tab-content"],
+                  html.__battv_cb_theater_fs [data-testid="room-chat"],
+                  html.__battv_cb_theater_fs [data-testid="bio-tab-content"],
+                  html.__battv_cb_theater_fs .bio-container,
+                  html.__battv_cb_theater_fs #tabs_content_container,
+                  html.__battv_cb_theater_fs .room-list,
+                  html.__battv_cb_theater_fs .more_rooms,
+                  html.__battv_cb_theater_fs #header,
+                  html.__battv_cb_theater_fs .nav-bar,
+                  html.__battv_cb_theater_fs footer,
                   .__battv_cb_fs_hidden {
                     display: none !important;
                     pointer-events: none !important;
+                  }
+                  .__battv_cb_theater_player {
+                    position: fixed !important;
+                    inset: 0 !important;
+                    top: 0 !important;
+                    left: 0 !important;
+                    right: 0 !important;
+                    bottom: 0 !important;
+                    width: 100vw !important;
+                    height: 100vh !important;
+                    max-width: 100vw !important;
+                    max-height: 100vh !important;
+                    min-width: 100vw !important;
+                    min-height: 100vh !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    border: none !important;
+                    border-radius: 0 !important;
+                    z-index: 2147483640 !important;
+                    background: #000 !important;
+                    overflow: visible !important;
+                    box-sizing: border-box !important;
+                  }
+                  .__battv_cb_theater_player video {
+                    width: 100% !important;
+                    height: 100% !important;
+                    max-width: 100% !important;
+                    max-height: 100% !important;
+                    object-fit: contain !important;
+                    z-index: 1 !important;
+                  }
+                  .__battv_cb_theater_player button,
+                  .__battv_cb_theater_player [role="button"],
+                  .__battv_cb_theater_player [role="menu"],
+                  .__battv_cb_theater_player [role="listbox"],
+                  .__battv_cb_theater_player [role="slider"],
+                  .__battv_cb_theater_player input[type="range"],
+                  .__battv_cb_theater_player .vjs-control-bar,
+                  .__battv_cb_theater_player .vjs-menu,
+                  .__battv_cb_theater_player [class*="control" i],
+                  .__battv_cb_theater_player [class*="toolbar" i],
+                  .__battv_cb_theater_player [class*="quality" i],
+                  .__battv_cb_theater_player [class*="volume" i],
+                  .__battv_cb_theater_player [class*="settings" i],
+                  .__battv_cb_theater_player [class*="menu" i] {
+                    z-index: 2147483645 !important;
+                    pointer-events: auto !important;
+                  }
+                  html.__battv_cb_theater_fs body > div[role="dialog"],
+                  html.__battv_cb_theater_fs body > div[role="menu"],
+                  html.__battv_cb_theater_fs body > div[role="listbox"],
+                  html.__battv_cb_theater_fs body > div[data-popper-placement],
+                  html.__battv_cb_theater_fs body > div[class*="popover" i],
+                  html.__battv_cb_theater_fs body > div[class*="dropdown" i],
+                  html.__battv_cb_theater_fs body > div[class*="menu" i] {
+                    z-index: 2147483647 !important;
+                    visibility: visible !important;
+                    pointer-events: auto !important;
                   }
                   ` : `
                   html.__battv_lock_scroll .chat-holder,
@@ -1632,6 +1783,11 @@ jobs:
               try {
                 const s = document.createElement("script");
                 if (isChaturbate) {
+                  // Optimizacion segura para 1080p en Chromecast HD (1.5 GB RAM):
+                  // 1. Mantiene MSE/hls.js (selector completo de calidades y volumen).
+                  // 2. Configura SOLO limites de memoria/worker en Hls.DefaultConfig (backBufferLength: 4,
+                  //    maxBufferSize: 24MB, enableWorker: true) SIN tocar LL-HLS, m3u8 ni playbackRate.
+                  // 3. Detecta cambios de sala SPA para cortar audio/video anterior al instante.
                   s.textContent = `(function(){
                     try {
                       const origCanPlay = HTMLMediaElement.prototype.canPlayType;
@@ -1639,6 +1795,38 @@ jobs:
                         if (type && /mpegurl/i.test(type)) return "";
                         return origCanPlay.apply(this, arguments);
                       };
+
+                      const SAFE_1080P_MEM_OPTS = {
+                        enableWorker: true,
+                        backBufferLength: 4,
+                        maxBufferLength: 14,
+                        maxMaxBufferLength: 22,
+                        maxBufferSize: 24000000,
+                        startFragPrefetch: true,
+                        fragLoadingMaxRetry: 8,
+                        manifestLoadingMaxRetry: 8
+                      };
+
+                      function patchHlsMemoryOnly(HlsCtor) {
+                        try {
+                          if (HlsCtor && HlsCtor.DefaultConfig && typeof HlsCtor.DefaultConfig === "object") {
+                            Object.assign(HlsCtor.DefaultConfig, SAFE_1080P_MEM_OPTS);
+                          }
+                        } catch (_) {}
+                      }
+
+                      let _HlsRef = window.Hls;
+                      if (_HlsRef) patchHlsMemoryOnly(_HlsRef);
+                      try {
+                        Object.defineProperty(window, "Hls", {
+                          get: function() { return _HlsRef; },
+                          set: function(val) {
+                            _HlsRef = val;
+                            patchHlsMemoryOnly(val);
+                          },
+                          configurable: true
+                        });
+                      } catch (_) {}
 
                       let lastPath = location.pathname;
                       function notifyRouteChangeIfPathChanged() {
@@ -1689,6 +1877,7 @@ jobs:
                       if (window.Notification) {
                         try {
                           Notification.requestPermission = function() { return Promise.resolve("denied"); };
+                          Object.defineProperty(Notification, "permission", { get: function() { return "denied"; }, configurable: true });
                         } catch (_) {}
                       }
                       if (navigator.serviceWorker && navigator.serviceWorker.register) {
@@ -1808,6 +1997,7 @@ jobs:
                       if (window.Notification) {
                         try {
                           Notification.requestPermission = spoofNative(function() { return Promise.resolve("denied"); }, "requestPermission");
+                          Object.defineProperty(Notification, "permission", { get: function() { return "denied"; }, configurable: true });
                         } catch (_) {}
                       }
                       if (navigator.serviceWorker && navigator.serviceWorker.register) {
@@ -1968,6 +2158,7 @@ jobs:
                       if (window.Notification) {
                         try {
                           Notification.requestPermission = function() { return Promise.resolve("denied"); };
+                          Object.defineProperty(Notification, "permission", { get: function() { return "denied"; }, configurable: true });
                         } catch (_) {}
                       }
                       if (navigator.serviceWorker && navigator.serviceWorker.register) {
@@ -2058,6 +2249,7 @@ jobs:
 
             if (isChaturbate) {
               window.addEventListener("__battv_cb_route_change", function () {
+                clearCustomFullscreenClasses();
                 stopAllMediaInFrame(false);
               });
             }
@@ -2291,6 +2483,7 @@ jobs:
 
             function isProtectedAppOrPlayerElement(el) {
               if (!el || !el.tagName) return true;
+              if (el === document.fullscreenElement || el === document.mozFullScreenElement) return true;
               const tag = el.tagName.toUpperCase();
               if (tag === "VIDEO" || tag === "BUTTON" || tag === "BODY" || tag === "HTML" || tag === "MAIN" || tag === "HEADER" || tag === "NAV" || tag === "SCRIPT" || tag === "STYLE") {
                 return true;
@@ -2298,6 +2491,7 @@ jobs:
               if (el.classList && (
                   el.classList.contains("__battv_iframe_fullscreen") ||
                   el.classList.contains("__battv_player_fill_frame") ||
+                  el.classList.contains("__battv_cb_theater_player") ||
                   el.classList.contains("__battv_fs_ancestor"))) {
                 return true;
               }
@@ -2350,8 +2544,6 @@ jobs:
               return false;
             }
 
-            // Regla cosmetica ligera anti In-Page Push (sin romper reproductores ni pantalla completa):
-            // Oculta div o iframe con position:fixed y z-index > 99999 que no contengan video ni controles reales.
             function inspectCandidateAdOverlay(el) {
               if (!el || el.nodeType !== 1 || !el.isConnected) return;
               const tag = el.tagName.toUpperCase();
@@ -2361,7 +2553,6 @@ jobs:
               if (isProtectedAppOrPlayerElement(el)) return;
 
               try {
-                // 1. Shadow DOM publicitario (Adsterra Social Bar / In-Page Push)
                 if (el.hasAttribute && el.hasAttribute("data-battv-shadow")) {
                   const sr = el.shadowRoot;
                   if (sr && !sr.querySelector("video, iframe")) {
@@ -2375,7 +2566,6 @@ jobs:
                   }
                 }
 
-                // 2. Iframe flotante In-Page Push (position:fixed + z-index > 99999, nunca iframes principales de video)
                 if (tag === "IFRAME") {
                   const csF = window.getComputedStyle(el);
                   const zF = parseInt(csF.zIndex, 10) || 0;
@@ -2391,7 +2581,6 @@ jobs:
                   return;
                 }
 
-                // 3. No tocar contenedores que envuelven un iframe de video principal
                 if (el.querySelector && el.querySelector("iframe")) {
                   const innerFrames = el.getElementsByTagName("iframe");
                   for (let f = 0; f < innerFrames.length; f++) {
@@ -2410,7 +2599,6 @@ jobs:
                   return;
                 }
 
-                // 4. Regla generica In-Page Push: div con position:fixed y z-index > 99999 sin video ni controles
                 const cs = window.getComputedStyle(el);
                 const pos = cs.position;
                 const zIdx = parseInt(cs.zIndex, 10) || 0;
@@ -2425,7 +2613,7 @@ jobs:
                     el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
                     el.remove();
                   }
-                } else if (isTopFrame && el.parentElement === document.body && (pos === "fixed" || pos === "sticky")) {
+                } else if (isTopFrame && (el.parentElement === document.body || el.parentElement === document.documentElement) && (pos === "fixed" || pos === "sticky")) {
                   if (el.querySelector && el.querySelector("a[target='_blank']")) {
                     el.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
                     el.remove();
@@ -2436,15 +2624,23 @@ jobs:
 
             let sweepPending = false;
             function scheduleSweepDirectBodyAds() {
-              if (sweepPending || isChaturbate || isOtherProtectedSite || !document.body) return;
+              if (sweepPending || isChaturbate || isOtherProtectedSite || !document.documentElement) return;
               sweepPending = true;
               setTimeout(function () {
                 sweepPending = false;
                 try {
-                  if (!document.body) return;
-                  const children = document.body.children;
-                  for (let i = children.length - 1; i >= 0; i--) {
-                    inspectCandidateAdOverlay(children[i]);
+                  if (document.body) {
+                    const children = document.body.children;
+                    for (let i = children.length - 1; i >= 0; i--) {
+                      inspectCandidateAdOverlay(children[i]);
+                    }
+                  }
+                  const htmlChildren = document.documentElement ? document.documentElement.children : [];
+                  for (let j = htmlChildren.length - 1; j >= 0; j--) {
+                    const hc = htmlChildren[j];
+                    if (hc && hc !== document.head && hc !== document.body) {
+                      inspectCandidateAdOverlay(hc);
+                    }
                   }
                 } catch (_) {}
               }, 200);
@@ -2473,7 +2669,7 @@ jobs:
                       topEl.style.setProperty("pointer-events", "none", "important");
                       continue;
                     }
-                    if (topEl.parentElement === document.body) {
+                    if (topEl.parentElement === document.body || topEl.parentElement === document.documentElement) {
                       const cs = window.getComputedStyle(topEl);
                       const zIdx = parseInt(cs.zIndex, 10) || 0;
                       const isCompletelyEmptyTrap = (txt.length === 0 && !topEl.querySelector("svg, button, img, canvas, video, iframe"));
@@ -2638,6 +2834,7 @@ jobs:
             let watchedVideosSet = new WeakSet();
             let lastFullscreenPromptMs = 0;
             let customFsActive = false;
+            let lastCbTheaterToggleMs = 0;
 
             function ensureBridgeConnected() {
               if (port) return port;
@@ -2695,11 +2892,34 @@ jobs:
               } catch (_) {}
             }
 
-            function markFullscreenAncestors(el) {
-              let curr = el ? el.parentElement : null;
+            function isFloatingMenuPortal(el) {
+              if (!el || !el.tagName) return true;
+              const tag = el.tagName.toUpperCase();
+              if (tag === "SCRIPT" || tag === "STYLE" || tag === "LINK" || tag === "NOSCRIPT") return true;
+              const role = (el.getAttribute("role") || "").toLowerCase();
+              if (role === "menu" || role === "listbox" || role === "dialog" || role === "tooltip") return true;
+              if (el.hasAttribute("data-popper-placement")) return true;
+              const cls = (typeof el.className === "string") ? el.className.toLowerCase() : "";
+              return cls.includes("popover") || cls.includes("dropdown") || cls.includes("menu") || cls.includes("modal") || cls.includes("tooltip");
+            }
+
+            function markFullscreenAncestors(el, hideNonPlayerSiblings) {
+              let curr = el;
               while (curr && curr !== document.body && curr !== document.documentElement) {
-                curr.classList.add("__battv_fs_ancestor");
-                curr = curr.parentElement;
+                const parent = curr.parentElement;
+                if (hideNonPlayerSiblings && parent) {
+                  const siblings = parent.children;
+                  for (let i = 0; i < siblings.length; i++) {
+                    const sib = siblings[i];
+                    if (sib !== curr && !isFloatingMenuPortal(sib)) {
+                      sib.classList.add("__battv_cb_fs_hidden");
+                    }
+                  }
+                }
+                if (parent && parent !== document.body && parent !== document.documentElement) {
+                  parent.classList.add("__battv_fs_ancestor");
+                }
+                curr = parent;
               }
               if (document.documentElement) {
                 document.documentElement.classList.add("__battv_lock_scroll");
@@ -2710,11 +2930,19 @@ jobs:
               customFsActive = false;
               try {
                 if (document.documentElement) {
-                  document.documentElement.classList.remove("__battv_lock_scroll", "__battv_cb_perf_fs");
+                  document.documentElement.classList.remove("__battv_lock_scroll", "__battv_cb_theater_fs");
                 }
-                const nodes = document.querySelectorAll(".__battv_iframe_fullscreen, .__battv_player_fill_frame, .__battv_cb_fs_hidden, .__battv_fs_ancestor");
+                const nodes = document.querySelectorAll(
+                  ".__battv_iframe_fullscreen, .__battv_player_fill_frame, .__battv_cb_theater_player, .__battv_cb_fs_hidden, .__battv_fs_ancestor"
+                );
                 for (let i = 0; i < nodes.length; i++) {
-                  nodes[i].classList.remove("__battv_iframe_fullscreen", "__battv_player_fill_frame", "__battv_cb_fs_hidden", "__battv_fs_ancestor");
+                  nodes[i].classList.remove(
+                    "__battv_iframe_fullscreen",
+                    "__battv_player_fill_frame",
+                    "__battv_cb_theater_player",
+                    "__battv_cb_fs_hidden",
+                    "__battv_fs_ancestor"
+                  );
                 }
               } catch (_) {}
             }
@@ -2730,17 +2958,13 @@ jobs:
 
             function onDomFullscreenChanged() {
               const isDomFs = !!(document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement);
-              if (isDomFs) {
-                if (isChaturbate && document.documentElement) {
-                  document.documentElement.classList.add("__battv_cb_perf_fs");
-                }
-              } else {
+              if (!isDomFs && !customFsActive) {
                 clearCustomFullscreenClasses();
               }
               if (isTopFrame) {
                 postToNative({
                   type: "WEB_FULLSCREEN_STATE",
-                  enabled: isDomFs
+                  enabled: isDomFs || customFsActive
                 });
               }
               setTimeout(function () {
@@ -2944,6 +3168,58 @@ jobs:
               return v.closest(selectors) || v.parentElement || v;
             }
 
+            function isChaturbateTheaterButton(target) {
+              if (!isChaturbate || !target || !target.closest) return false;
+              const btn = target.closest(
+                "[data-testid='theater-mode-button'], [data-testid*='theater' i], [data-testid*='theatre' i], " +
+                "button[aria-label*='theater' i], button[title*='theater' i], " +
+                "button[aria-label*='theatre' i], button[title*='theatre' i], " +
+                "button[aria-label*='teatro' i], button[title*='teatro' i], " +
+                "[role='button'][aria-label*='theater' i], [role='button'][title*='theater' i], " +
+                "button[class*='theater' i], [role='button'][class*='theater' i], " +
+                "button[id*='theater' i], a[id*='theater' i], " +
+                "div[aria-label*='theater' i], div[title*='theater' i]"
+              );
+              if (!btn || btn.querySelector("video")) return false;
+              return true;
+            }
+
+            // Modo Teatro a Pantalla Completa exclusivo de Chaturbate:
+            // Llena 100vw x 100vh con el reproductor, apaga chat/bio/cabecera para liberar GPU en 1080p
+            // y conserva los controles de calidad, audio y Theater Mode siempre visibles y clicables.
+            function enterChaturbateTheaterFullscreen() {
+              try {
+                injectTvStyles();
+                const v = findActiveVideo() || findChaturbateVideoAnyState();
+                if (!v) return false;
+                attachStreamStabilizer(v);
+                const playerRoot = getChaturbatePlayerRoot(v);
+                if (!playerRoot) return false;
+
+                clearCustomFullscreenClasses();
+                customFsActive = true;
+                if (document.documentElement) {
+                  document.documentElement.classList.add("__battv_cb_theater_fs", "__battv_lock_scroll");
+                }
+                playerRoot.classList.add("__battv_cb_theater_player");
+                markFullscreenAncestors(playerRoot, true);
+
+                try {
+                  playerRoot.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 240, clientY: 240 }));
+                } catch (_) {}
+
+                if (isTopFrame) {
+                  postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: true });
+                }
+                setTimeout(function () {
+                  try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+                }, 90);
+                return true;
+              } catch (_) {
+                return false;
+              }
+            }
+
             function findPlayerFullscreenButtonInScope(root) {
               const scope = root || document;
               const selector =
@@ -3001,7 +3277,7 @@ jobs:
               if (!playerIframe) return;
               customFsActive = true;
               playerIframe.classList.add("__battv_iframe_fullscreen");
-              markFullscreenAncestors(playerIframe);
+              markFullscreenAncestors(playerIframe, false);
               const reqFn = playerIframe.requestFullscreen || playerIframe.mozRequestFullScreen || playerIframe.webkitRequestFullscreen;
               if (reqFn) {
                 try {
@@ -3031,14 +3307,17 @@ jobs:
                 injectTvStyles();
                 enableIframeFullscreenAndEagerLoad();
 
-                if (document.fullscreenElement || document.mozFullScreenElement) {
-                  if (isChaturbate && document.documentElement) {
-                    document.documentElement.classList.add("__battv_cb_perf_fs");
-                  }
+                // En Chaturbate: abrir SIEMPRE en Modo Teatro a Pantalla Completa (sin bloquear menues de calidad/audio)
+                if (isChaturbate) {
+                  enterChaturbateTheaterFullscreen();
                   return;
                 }
 
-                const v = findActiveVideo() || (isChaturbate ? findChaturbateVideoAnyState() : null);
+                if (document.fullscreenElement || document.mozFullScreenElement) {
+                  return;
+                }
+
+                const v = findActiveVideo();
                 if (v) {
                   attachStreamStabilizer(v);
                   const playerRoot = getPlayerRootContainer(v);
@@ -3053,29 +3332,15 @@ jobs:
                   }
 
                   setTimeout(function () {
-                    if (document.fullscreenElement || document.mozFullScreenElement) {
-                      if (isChaturbate && document.documentElement) {
-                        document.documentElement.classList.add("__battv_cb_perf_fs");
-                      }
-                      return;
-                    }
-
+                    if (document.fullscreenElement || document.mozFullScreenElement) return;
                     requestNativeFsOnElement(playerRoot || v);
 
                     setTimeout(function () {
-                      if (document.fullscreenElement || document.mozFullScreenElement) {
-                        if (isChaturbate && document.documentElement) {
-                          document.documentElement.classList.add("__battv_cb_perf_fs");
-                        }
-                        return;
-                      }
+                      if (document.fullscreenElement || document.mozFullScreenElement) return;
                       if (playerRoot) {
                         customFsActive = true;
                         playerRoot.classList.add("__battv_player_fill_frame");
-                        markFullscreenAncestors(playerRoot);
-                      }
-                      if (isChaturbate && document.documentElement) {
-                        document.documentElement.classList.add("__battv_cb_perf_fs");
+                        markFullscreenAncestors(playerRoot, false);
                       }
                       if (!isTopFrame) {
                         try { window.top.postMessage({ __battvExpandIframe: true }, "*"); } catch (_) {}
@@ -3181,9 +3446,27 @@ jobs:
               });
             }
 
-            document.addEventListener("pointerdown", function () {
+            function toggleChaturbateTheaterFromUserTap(e) {
+              const now = Date.now();
+              if (now - lastCbTheaterToggleMs < 380) return;
+              lastCbTheaterToggleMs = now;
+              e.preventDefault();
+              e.stopPropagation();
+              const shouldEnable = !isInAnyFullscreen();
+              if (shouldEnable) {
+                enterChaturbateTheaterFullscreen();
+              } else {
+                exitFullscreenInCurrentFrame();
+              }
+              postToNative({ type: "REQUEST_UNIFIED_FULLSCREEN", enable: shouldEnable });
+            }
+
+            document.addEventListener("pointerdown", function (e) {
               if (isOnlyJerk) {
                 cleanOnlyJerkCloseAdWidget();
+              }
+              if (isChaturbate && isChaturbateTheaterButton(e.target)) {
+                toggleChaturbateTheaterFromUserTap(e);
               }
             }, true);
 
@@ -3223,6 +3506,12 @@ jobs:
                 setTimeout(enableIframeFullscreenAndEagerLoad, 120);
                 setTimeout(cleanOnlyJerkCloseAdWidget, 250);
                 setTimeout(enableIframeFullscreenAndEagerLoad, 450);
+              }
+
+              // En Chaturbate: tanto el boton de Theater Mode como el de Fullscreen abren/cierran el Modo Teatro a Pantalla Completa
+              if (isChaturbate && (isChaturbateTheaterButton(e.target) || isPlayerFullscreenButton(e.target))) {
+                toggleChaturbateTheaterFromUserTap(e);
+                return;
               }
 
               if (isPlayerFullscreenButton(e.target)) {
@@ -3396,7 +3685,6 @@ jobs:
               }
             }
 
-            // MutationObserver con throttle (220ms) para eliminar tarjetas In-Page Push sin consumir CPU
             function setupLightweightRootAdObserver() {
               if (isCleanLiveStreamSite) return;
               try {
@@ -3444,15 +3732,23 @@ jobs:
 
                 if (isOtherProtectedSite) {
                   obs.observe(document.documentElement || document, { childList: true, subtree: true });
-                } else if (document.body) {
-                  // Dentro de iframes de video observamos subtree:true (throttled) para atrapar tarjetas In-Page Push anidadas
-                  obs.observe(document.body, { childList: true, subtree: !isTopFrame });
                 } else {
-                  document.addEventListener("DOMContentLoaded", function () {
+                  const observeTargets = function () {
+                    if (document.documentElement) {
+                      obs.observe(document.documentElement, { childList: true, subtree: false });
+                    }
                     if (document.body) {
                       obs.observe(document.body, { childList: true, subtree: !isTopFrame });
                     }
-                  }, { once: true });
+                  };
+                  if (document.body) {
+                    observeTargets();
+                  } else {
+                    if (document.documentElement) {
+                      obs.observe(document.documentElement, { childList: true, subtree: false });
+                    }
+                    document.addEventListener("DOMContentLoaded", observeTargets, { once: true });
+                  }
                 }
               } catch (_) {}
             }
