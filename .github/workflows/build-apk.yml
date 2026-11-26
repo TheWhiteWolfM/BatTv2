@@ -53,14 +53,14 @@ jobs:
           -keep class com.battv.browser.** { *; }
           EOF_PROGUARD
 
-      - name: Actualizar a versionCode 42 (v6.7), barra flotante sin relayout, ACTION_SCROLL y perfil 1080p/RAM
+      - name: Actualizar a versionCode 43 (v6.8), scroll controlado en el borde, barra flotante y perfil 1080p/RAM
         run: |
           sed -i 's/\\vert{}\\vert{}/||/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
           sed -i 's/\\vert{}/|/g' android-geckoview/app/src/main/java/com/battv/browser/*.kt
-          sed -i 's/versionCode [0-9]\+/versionCode 42/g' android-geckoview/app/build.gradle
-          sed -i 's/versionName "[^"]*"/versionName "6.7"/g' android-geckoview/app/build.gradle
-          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v42@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
-          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v42/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/versionCode [0-9]\+/versionCode 43/g' android-geckoview/app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "6.8"/g' android-geckoview/app/build.gradle
+          sed -i 's/shield_v[0-9]\+@battv.browser/shield_v43@battv.browser/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
+          sed -i 's/battv_shield_v[0-9]\+/battv_shield_v43/g' android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt
 
           python3 - << 'EOF_PY'
           import re
@@ -94,7 +94,7 @@ jobs:
           with open(gradle_path, "w", encoding="utf-8") as f:
               f.write(g)
 
-          # 2. Parchar MainActivity.kt (barra flotante en FrameLayout sin relayout, ACTION_SCROLL, cursor sin redibujo y cierre total)
+          # 2. Parchar MainActivity.kt (barra flotante, scroll mas lento SOLO en el borde, cursor sin redibujo y cierre total)
           main_path = "android-geckoview/app/src/main/java/com/battv/browser/MainActivity.kt"
           with open(main_path, "r", encoding="utf-8") as f:
               code = f.read()
@@ -105,11 +105,38 @@ jobs:
               code
           )
 
+          # Scroll estrictamente en el borde (14px en vez de 116px) y toque corto mas suave
+          code = replace_once(
+              code,
+              "private const val SHORT_TAP_GLIDE_DISTANCE_PX = 76.0",
+              "private const val SHORT_TAP_GLIDE_DISTANCE_PX = 36.0",
+              "SHORT_TAP_GLIDE_DISTANCE_PX"
+          )
+          code = replace_once(
+              code,
+              "private const val EDGE_SCROLL_ZONE_PX = 116f",
+              "private const val EDGE_SCROLL_ZONE_PX = 14f",
+              "EDGE_SCROLL_ZONE_PX"
+          )
           code = replace_once(
               code,
               "private const val CURSOR_AUTO_HIDE_MS = 2500L",
               "private const val CURSOR_AUTO_HIDE_MS = 4500L",
               "CURSOR_AUTO_HIDE_MS"
+          )
+
+          # Quitar el margen extra de 24px en toques cortos para que solo mueva al tocar el borde
+          code = replace_once(
+              code,
+              "cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX + 24f",
+              "cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX",
+              "short tap top edge"
+          )
+          code = replace_once(
+              code,
+              "cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX - 24f)",
+              "cursorOverlay.cursorY >= (webContainer.height - EDGE_SCROLL_ZONE_PX)",
+              "short tap bottom edge"
           )
 
           code = replace_once(
@@ -159,6 +186,7 @@ jobs:
               "autoHideTopBarRunnable"
           )
 
+          # Velocidad de scroll vertical mas pausada y controlada (9.0 * dtScale) y solo al tocar el borde
           old_scroll_calc = (
               "        if (!isFullScreenVideo) {\n"
               "          val targetScrollSpeed = BASE_SCROLL_FRAME_SPEED_PX +\n"
@@ -177,7 +205,7 @@ jobs:
           )
           new_scroll_calc = (
               "        if (!isFullScreenVideo) {\n"
-              "          val constantScrollStep = 17.0 * dtScale\n"
+              "          val constantScrollStep = 9.0 * dtScale\n"
               "          if (activeDpadKeyCode == KeyEvent.KEYCODE_DPAD_UP && cursorOverlay.cursorY <= EDGE_SCROLL_ZONE_PX) {\n"
               "            remainingShortTapScrollPx = 0.0\n"
               "            scrollWebPageNative(-constantScrollStep)\n"
@@ -467,12 +495,13 @@ jobs:
               "KEYCODE_MENU"
           )
 
+          # ACTION_SCROLL suave y controlado (divisor 64.0, tope 0.45) para evitar saltos rapidos
           new_scroll_fn = (
               "private fun scrollWebPageNative(deltaYPixels: Double) {\n"
               "    if (abs(deltaYPixels) < 0.1) return\n"
               "    try {\n"
               "      val now = SystemClock.uptimeMillis()\n"
-              "      val vScroll = (-deltaYPixels / 42.0).toFloat().coerceIn(-1.5f, 1.5f)\n"
+              "      val vScroll = (-deltaYPixels / 64.0).toFloat().coerceIn(-0.45f, 0.45f)\n"
               "      scrollPointerCoords[0].apply {\n"
               "        clear()\n"
               "        x = cursorOverlay.cursorX.coerceIn(12f, max(12f, webContainer.width - 12f))\n"
@@ -889,7 +918,7 @@ jobs:
           with open(main_path, "w", encoding="utf-8") as f:
               f.write(code)
 
-          # 3. Parchar BatTvGeckoViewManager.kt (perfil optimizado para 1080p en 1.5GB RAM + MediaCodec HW + WebRender GPU)
+          # 3. Parchar BatTvGeckoViewManager.kt (perfil GPU/HW decode + RAM 1.5GB)
           mgr_path = "android-geckoview/app/src/main/java/com/battv/browser/BatTvGeckoViewManager.kt"
           with open(mgr_path, "r", encoding="utf-8") as f:
               mgr = f.read()
@@ -1085,14 +1114,14 @@ jobs:
           with open(mgr_path, "w", encoding="utf-8") as f:
               f.write(mgr)
 
-          print("Parches v6.7 aplicados y verificados correctamente.")
+          print("Parches v6.8 aplicados y verificados correctamente.")
           EOF_PY
 
-      - name: Generar Motor Nativo Ultraligero v42.0 (Chaturbate Theater Mode Fullscreen + 1080p Sin Cortes + Anti In-Page Push)
+      - name: Generar Motor Nativo Ultraligero v43.0 (Chaturbate Theater Mode Nativo + Controles Visibles + Anti In-Page Push)
         run: |
           set -e
           EXT_BASE="android-geckoview/app/src/main/assets/extensions"
-          SHIELD_DIR="$EXT_BASE/battv_shield_v42"
+          SHIELD_DIR="$EXT_BASE/battv_shield_v43"
           rm -rf "$EXT_BASE"
           mkdir -p "$SHIELD_DIR"
 
@@ -1114,11 +1143,11 @@ jobs:
           {
             "manifest_version": 2,
             "name": "Bat TV Native Shield & Cinema 60FPS Engine",
-            "version": "42.0.0",
-            "description": "Theater Mode en pantalla completa para Chaturbate con 1080p estable en 1.5GB RAM y bloqueo In-Page Push en todos los iframes.",
+            "version": "43.0.0",
+            "description": "Theater Mode nativo de Chaturbate con controles y chat intactos, 1080p estable y bloqueo In-Page Push.",
             "browser_specific_settings": {
               "gecko": {
-                "id": "shield_v42@battv.browser",
+                "id": "shield_v43@battv.browser",
                 "strict_min_version": "115.0"
               }
             },
@@ -1271,7 +1300,6 @@ jobs:
             }
 
             if (typeof browser !== "undefined" && browser.webRequest && browser.webRequest.onBeforeRequest) {
-              // CERO IPC en segmentos de video (.m4s, .ts, .m3u8) y APIs: solo patrones exactos de anuncios/VAST/In-Page Push
               const XHR_AD_URL_PATTERNS = Array.from(BLOCKED_AD_DOMAINS).map(function (d) {
                 return "*://*." + d + "/*";
               }).concat([
@@ -1576,11 +1604,9 @@ jobs:
                   }
                 ` : "";
 
-                // En Chaturbate:
-                // - Mantiene el boton de Theater Mode, calidad y volumen siempre clicables.
-                // - En Modo Teatro Pantalla Completa (.__battv_cb_theater_fs + .__battv_cb_theater_player),
-                //   apaga con display:none todo el resto de la pagina (chat, bio, GIFs, cabecera, salas)
-                //   dedicando el 100% de la GPU/CPU al directo 1080p y dejando visibles los menues de calidad y volumen.
+                // En Chaturbate: NO ocultamos chat ni controles inferiores para que Theater Mode nativo
+                // conserve al 100% sus botones de chat, calidad, audio y salir.
+                // Solo limitamos los mensajes muy viejos del chat (>20) y quitamos animaciones pesadas para liberar RAM/CPU.
                 const adHideCss = isByseStealthEmbed ? "" : (isCleanLiveStreamSite ? `
                   .chat-holder, .chat-box, #chat, .msg-list-wrapper, .room-list, .endless_page_template {
                     contain: layout style paint !important;
@@ -1596,94 +1622,6 @@ jobs:
                     transition: none !important;
                     box-shadow: none !important;
                     text-shadow: none !important;
-                  }
-                  [data-testid*="theater" i],
-                  button[aria-label*="theater" i],
-                  button[title*="theater" i],
-                  button[aria-label*="teatro" i],
-                  button[title*="teatro" i] {
-                    pointer-events: auto !important;
-                  }
-                  html.__battv_cb_theater_fs,
-                  html.__battv_cb_theater_fs body {
-                    overflow: hidden !important;
-                    background: #000 !important;
-                  }
-                  html.__battv_cb_theater_fs .chat-holder,
-                  html.__battv_cb_theater_fs .chat-box,
-                  html.__battv_cb_theater_fs #chat,
-                  html.__battv_cb_theater_fs .msg-list-wrapper,
-                  html.__battv_cb_theater_fs [data-testid="chat-tab-content"],
-                  html.__battv_cb_theater_fs [data-testid="room-chat"],
-                  html.__battv_cb_theater_fs [data-testid="bio-tab-content"],
-                  html.__battv_cb_theater_fs .bio-container,
-                  html.__battv_cb_theater_fs #tabs_content_container,
-                  html.__battv_cb_theater_fs .room-list,
-                  html.__battv_cb_theater_fs .more_rooms,
-                  html.__battv_cb_theater_fs #header,
-                  html.__battv_cb_theater_fs .nav-bar,
-                  html.__battv_cb_theater_fs footer,
-                  .__battv_cb_fs_hidden {
-                    display: none !important;
-                    pointer-events: none !important;
-                  }
-                  .__battv_cb_theater_player {
-                    position: fixed !important;
-                    inset: 0 !important;
-                    top: 0 !important;
-                    left: 0 !important;
-                    right: 0 !important;
-                    bottom: 0 !important;
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    max-width: 100vw !important;
-                    max-height: 100vh !important;
-                    min-width: 100vw !important;
-                    min-height: 100vh !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    border: none !important;
-                    border-radius: 0 !important;
-                    z-index: 2147483640 !important;
-                    background: #000 !important;
-                    overflow: visible !important;
-                    box-sizing: border-box !important;
-                  }
-                  .__battv_cb_theater_player video {
-                    width: 100% !important;
-                    height: 100% !important;
-                    max-width: 100% !important;
-                    max-height: 100% !important;
-                    object-fit: contain !important;
-                    z-index: 1 !important;
-                  }
-                  .__battv_cb_theater_player button,
-                  .__battv_cb_theater_player [role="button"],
-                  .__battv_cb_theater_player [role="menu"],
-                  .__battv_cb_theater_player [role="listbox"],
-                  .__battv_cb_theater_player [role="slider"],
-                  .__battv_cb_theater_player input[type="range"],
-                  .__battv_cb_theater_player .vjs-control-bar,
-                  .__battv_cb_theater_player .vjs-menu,
-                  .__battv_cb_theater_player [class*="control" i],
-                  .__battv_cb_theater_player [class*="toolbar" i],
-                  .__battv_cb_theater_player [class*="quality" i],
-                  .__battv_cb_theater_player [class*="volume" i],
-                  .__battv_cb_theater_player [class*="settings" i],
-                  .__battv_cb_theater_player [class*="menu" i] {
-                    z-index: 2147483645 !important;
-                    pointer-events: auto !important;
-                  }
-                  html.__battv_cb_theater_fs body > div[role="dialog"],
-                  html.__battv_cb_theater_fs body > div[role="menu"],
-                  html.__battv_cb_theater_fs body > div[role="listbox"],
-                  html.__battv_cb_theater_fs body > div[data-popper-placement],
-                  html.__battv_cb_theater_fs body > div[class*="popover" i],
-                  html.__battv_cb_theater_fs body > div[class*="dropdown" i],
-                  html.__battv_cb_theater_fs body > div[class*="menu" i] {
-                    z-index: 2147483647 !important;
-                    visibility: visible !important;
-                    pointer-events: auto !important;
                   }
                   ` : `
                   html.__battv_lock_scroll .chat-holder,
@@ -1783,11 +1721,6 @@ jobs:
               try {
                 const s = document.createElement("script");
                 if (isChaturbate) {
-                  // Optimizacion segura para 1080p en Chromecast HD (1.5 GB RAM):
-                  // 1. Mantiene MSE/hls.js (selector completo de calidades y volumen).
-                  // 2. Configura SOLO limites de memoria/worker en Hls.DefaultConfig (backBufferLength: 4,
-                  //    maxBufferSize: 24MB, enableWorker: true) SIN tocar LL-HLS, m3u8 ni playbackRate.
-                  // 3. Detecta cambios de sala SPA para cortar audio/video anterior al instante.
                   s.textContent = `(function(){
                     try {
                       const origCanPlay = HTMLMediaElement.prototype.canPlayType;
@@ -2249,6 +2182,7 @@ jobs:
 
             if (isChaturbate) {
               window.addEventListener("__battv_cb_route_change", function () {
+                cbNativeTheaterActive = false;
                 clearCustomFullscreenClasses();
                 stopAllMediaInFrame(false);
               });
@@ -2491,7 +2425,6 @@ jobs:
               if (el.classList && (
                   el.classList.contains("__battv_iframe_fullscreen") ||
                   el.classList.contains("__battv_player_fill_frame") ||
-                  el.classList.contains("__battv_cb_theater_player") ||
                   el.classList.contains("__battv_fs_ancestor"))) {
                 return true;
               }
@@ -2834,7 +2767,8 @@ jobs:
             let watchedVideosSet = new WeakSet();
             let lastFullscreenPromptMs = 0;
             let customFsActive = false;
-            let lastCbTheaterToggleMs = 0;
+            let cbNativeTheaterActive = false;
+            let cbProgrammaticClickInFlight = false;
 
             function ensureBridgeConnected() {
               if (port) return port;
@@ -2892,34 +2826,11 @@ jobs:
               } catch (_) {}
             }
 
-            function isFloatingMenuPortal(el) {
-              if (!el || !el.tagName) return true;
-              const tag = el.tagName.toUpperCase();
-              if (tag === "SCRIPT" || tag === "STYLE" || tag === "LINK" || tag === "NOSCRIPT") return true;
-              const role = (el.getAttribute("role") || "").toLowerCase();
-              if (role === "menu" || role === "listbox" || role === "dialog" || role === "tooltip") return true;
-              if (el.hasAttribute("data-popper-placement")) return true;
-              const cls = (typeof el.className === "string") ? el.className.toLowerCase() : "";
-              return cls.includes("popover") || cls.includes("dropdown") || cls.includes("menu") || cls.includes("modal") || cls.includes("tooltip");
-            }
-
-            function markFullscreenAncestors(el, hideNonPlayerSiblings) {
-              let curr = el;
+            function markFullscreenAncestors(el) {
+              let curr = el ? el.parentElement : null;
               while (curr && curr !== document.body && curr !== document.documentElement) {
-                const parent = curr.parentElement;
-                if (hideNonPlayerSiblings && parent) {
-                  const siblings = parent.children;
-                  for (let i = 0; i < siblings.length; i++) {
-                    const sib = siblings[i];
-                    if (sib !== curr && !isFloatingMenuPortal(sib)) {
-                      sib.classList.add("__battv_cb_fs_hidden");
-                    }
-                  }
-                }
-                if (parent && parent !== document.body && parent !== document.documentElement) {
-                  parent.classList.add("__battv_fs_ancestor");
-                }
-                curr = parent;
+                curr.classList.add("__battv_fs_ancestor");
+                curr = curr.parentElement;
               }
               if (document.documentElement) {
                 document.documentElement.classList.add("__battv_lock_scroll");
@@ -2930,26 +2841,44 @@ jobs:
               customFsActive = false;
               try {
                 if (document.documentElement) {
-                  document.documentElement.classList.remove("__battv_lock_scroll", "__battv_cb_theater_fs");
+                  document.documentElement.classList.remove("__battv_lock_scroll");
                 }
-                const nodes = document.querySelectorAll(
-                  ".__battv_iframe_fullscreen, .__battv_player_fill_frame, .__battv_cb_theater_player, .__battv_cb_fs_hidden, .__battv_fs_ancestor"
-                );
+                const nodes = document.querySelectorAll(".__battv_iframe_fullscreen, .__battv_player_fill_frame, .__battv_fs_ancestor");
                 for (let i = 0; i < nodes.length; i++) {
-                  nodes[i].classList.remove(
-                    "__battv_iframe_fullscreen",
-                    "__battv_player_fill_frame",
-                    "__battv_cb_theater_player",
-                    "__battv_cb_fs_hidden",
-                    "__battv_fs_ancestor"
-                  );
+                  nodes[i].classList.remove("__battv_iframe_fullscreen", "__battv_player_fill_frame", "__battv_fs_ancestor");
                 }
               } catch (_) {}
+            }
+
+            function isChaturbateNativeTheaterActive() {
+              if (!isChaturbate) return false;
+              try {
+                const btn = findChaturbateTheaterButton();
+                if (btn) {
+                  const pressed = (btn.getAttribute("aria-pressed") || "").toLowerCase();
+                  if (pressed === "true") return true;
+                  const desc = ((btn.getAttribute("aria-label") || "") + " " + (btn.getAttribute("title") || "") + " " + (btn.textContent || "")).toLowerCase();
+                  if (/exit\s*theater|exit\s*theatre|salir.*teatro|default\s*view|normal\s*view/i.test(desc)) {
+                    return true;
+                  }
+                }
+                const theaterContainer = document.querySelector(
+                  "#theater_mode_video, .theater_mode, .theater-mode, [data-testid='theater-mode-container'], [class*='theaterMode' i], [class*='theater-mode' i]"
+                );
+                if (theaterContainer) {
+                  const cs = window.getComputedStyle(theaterContainer);
+                  if (cs.display !== "none" && cs.visibility !== "hidden" && (theaterContainer.clientHeight || 0) >= window.innerHeight * 0.72) {
+                    return true;
+                  }
+                }
+              } catch (_) {}
+              return cbNativeTheaterActive;
             }
 
             function isInAnyFullscreen() {
               return !!(
                 customFsActive ||
+                cbNativeTheaterActive ||
                 document.fullscreenElement ||
                 document.mozFullScreenElement ||
                 document.webkitFullscreenElement
@@ -2958,13 +2887,13 @@ jobs:
 
             function onDomFullscreenChanged() {
               const isDomFs = !!(document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement);
-              if (!isDomFs && !customFsActive) {
+              if (!isDomFs && !customFsActive && !cbNativeTheaterActive) {
                 clearCustomFullscreenClasses();
               }
               if (isTopFrame) {
                 postToNative({
                   type: "WEB_FULLSCREEN_STATE",
-                  enabled: isDomFs || customFsActive
+                  enabled: isDomFs || customFsActive || cbNativeTheaterActive
                 });
               }
               setTimeout(function () {
@@ -3168,56 +3097,64 @@ jobs:
               return v.closest(selectors) || v.parentElement || v;
             }
 
+            const CB_THEATER_SELECTOR =
+              "[data-testid='theater-mode-button'], [data-testid*='theater' i], [data-testid*='theatre' i], " +
+              "button[aria-label*='theater' i], button[title*='theater' i], " +
+              "button[aria-label*='theatre' i], button[title*='theatre' i], " +
+              "button[aria-label*='teatro' i], button[title*='teatro' i], " +
+              "[role='button'][aria-label*='theater' i], [role='button'][title*='theater' i], " +
+              "button[class*='theater' i], [role='button'][class*='theater' i], " +
+              "button[id*='theater' i], a[id*='theater' i], " +
+              "div[aria-label*='theater' i], div[title*='theater' i]";
+
             function isChaturbateTheaterButton(target) {
               if (!isChaturbate || !target || !target.closest) return false;
-              const btn = target.closest(
-                "[data-testid='theater-mode-button'], [data-testid*='theater' i], [data-testid*='theatre' i], " +
-                "button[aria-label*='theater' i], button[title*='theater' i], " +
-                "button[aria-label*='theatre' i], button[title*='theatre' i], " +
-                "button[aria-label*='teatro' i], button[title*='teatro' i], " +
-                "[role='button'][aria-label*='theater' i], [role='button'][title*='theater' i], " +
-                "button[class*='theater' i], [role='button'][class*='theater' i], " +
-                "button[id*='theater' i], a[id*='theater' i], " +
-                "div[aria-label*='theater' i], div[title*='theater' i]"
-              );
+              const btn = target.closest(CB_THEATER_SELECTOR);
               if (!btn || btn.querySelector("video")) return false;
               return true;
             }
 
-            // Modo Teatro a Pantalla Completa exclusivo de Chaturbate:
-            // Llena 100vw x 100vh con el reproductor, apaga chat/bio/cabecera para liberar GPU en 1080p
-            // y conserva los controles de calidad, audio y Theater Mode siempre visibles y clicables.
-            function enterChaturbateTheaterFullscreen() {
-              try {
-                injectTvStyles();
-                const v = findActiveVideo() || findChaturbateVideoAnyState();
-                if (!v) return false;
-                attachStreamStabilizer(v);
-                const playerRoot = getChaturbatePlayerRoot(v);
-                if (!playerRoot) return false;
-
-                clearCustomFullscreenClasses();
-                customFsActive = true;
-                if (document.documentElement) {
-                  document.documentElement.classList.add("__battv_cb_theater_fs", "__battv_lock_scroll");
-                }
-                playerRoot.classList.add("__battv_cb_theater_player");
-                markFullscreenAncestors(playerRoot, true);
-
-                try {
-                  playerRoot.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 240, clientY: 240 }));
-                } catch (_) {}
-
-                if (isTopFrame) {
-                  postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: true });
-                }
-                setTimeout(function () {
-                  try { window.dispatchEvent(new Event("resize")); } catch (_) {}
-                }, 90);
-                return true;
-              } catch (_) {
-                return false;
+            function findChaturbateTheaterButton() {
+              if (!isChaturbate) return null;
+              const candidates = document.querySelectorAll(CB_THEATER_SELECTOR);
+              for (let i = 0; i < candidates.length; i++) {
+                const btn = candidates[i];
+                if (!btn || btn.disabled || btn.querySelector("video")) continue;
+                const cs = window.getComputedStyle(btn);
+                if (cs.display === "none" || cs.visibility === "hidden") continue;
+                return btn;
               }
+              return null;
+            }
+
+            // Abre el Theater Mode NATIVO de Chaturbate (sin ocultar chat ni controles) y activa modo inmersivo en Android
+            function clickChaturbateNativeTheaterButton(wantEnable) {
+              if (!isChaturbate) return false;
+              try {
+                const v = findActiveVideo() || findChaturbateVideoAnyState();
+                const root = v ? getChaturbatePlayerRoot(v) : null;
+                if (root) {
+                  try {
+                    root.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 220, clientY: 220 }));
+                  } catch (_) {}
+                }
+                const alreadyActive = isChaturbateNativeTheaterActive();
+                if (wantEnable === alreadyActive) {
+                  cbNativeTheaterActive = wantEnable;
+                  postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: wantEnable });
+                  return true;
+                }
+                const btn = findChaturbateTheaterButton();
+                if (btn) {
+                  cbProgrammaticClickInFlight = true;
+                  try { btn.click(); } catch (_) {}
+                  setTimeout(function () { cbProgrammaticClickInFlight = false; }, 120);
+                  cbNativeTheaterActive = wantEnable;
+                  postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: wantEnable });
+                  return true;
+                }
+              } catch (_) {}
+              return false;
             }
 
             function findPlayerFullscreenButtonInScope(root) {
@@ -3277,7 +3214,7 @@ jobs:
               if (!playerIframe) return;
               customFsActive = true;
               playerIframe.classList.add("__battv_iframe_fullscreen");
-              markFullscreenAncestors(playerIframe, false);
+              markFullscreenAncestors(playerIframe);
               const reqFn = playerIframe.requestFullscreen || playerIframe.mozRequestFullScreen || playerIframe.webkitRequestFullscreen;
               if (reqFn) {
                 try {
@@ -3307,9 +3244,14 @@ jobs:
                 injectTvStyles();
                 enableIframeFullscreenAndEagerLoad();
 
-                // En Chaturbate: abrir SIEMPRE en Modo Teatro a Pantalla Completa (sin bloquear menues de calidad/audio)
+                // En Chaturbate: abrir el Theater Mode NATIVO de la pagina (con todos sus controles y chat)
+                // en vez de la pantalla completa normal que oculta las opciones inferiores.
                 if (isChaturbate) {
-                  enterChaturbateTheaterFullscreen();
+                  if (!clickChaturbateNativeTheaterButton(true)) {
+                    setTimeout(function () {
+                      clickChaturbateNativeTheaterButton(true);
+                    }, 260);
+                  }
                   return;
                 }
 
@@ -3340,7 +3282,7 @@ jobs:
                       if (playerRoot) {
                         customFsActive = true;
                         playerRoot.classList.add("__battv_player_fill_frame");
-                        markFullscreenAncestors(playerRoot, false);
+                        markFullscreenAncestors(playerRoot);
                       }
                       if (!isTopFrame) {
                         try { window.top.postMessage({ __battvExpandIframe: true }, "*"); } catch (_) {}
@@ -3368,6 +3310,10 @@ jobs:
 
             function exitFullscreenInCurrentFrame() {
               try {
+                if (isChaturbate && (cbNativeTheaterActive || isChaturbateNativeTheaterActive())) {
+                  clickChaturbateNativeTheaterButton(false);
+                }
+                cbNativeTheaterActive = false;
                 clearCustomFullscreenClasses();
                 if (document.fullscreenElement && document.exitFullscreen) {
                   document.exitFullscreen().catch(function () {});
@@ -3387,14 +3333,16 @@ jobs:
 
             function isPlayerFullscreenButton(target) {
               if (!target || !target.closest) return false;
-              const btn = target.closest(
-                ".jw-icon-fullscreen, .vjs-fullscreen-control, [data-plyr='fullscreen'], " +
-                ".art-icon-fullscreen, .fp-fullscreen, .dplayer-full-icon, .fluid_control_fullscreen, " +
-                "[data-testid='fullscreen-button'], [data-testid*='fullscreen' i], " +
-                "button[class*='fullscreen' i], div[class*='fullscreen' i], " +
-                "[aria-label*='fullscreen' i], [aria-label*='pantalla completa' i], " +
-                "[title*='fullscreen' i], [title*='pantalla completa' i]"
-              );
+              if (isChaturbate && isChaturbateTheaterButton(target)) return false;
+              const selector = isChaturbate
+                ? ".vjs-fullscreen-control, [data-testid='fullscreen-button'], button[aria-label*='fullscreen' i], button[title*='fullscreen' i], button[aria-label*='pantalla completa' i], button[title*='pantalla completa' i]"
+                : ".jw-icon-fullscreen, .vjs-fullscreen-control, [data-plyr='fullscreen'], " +
+                  ".art-icon-fullscreen, .fp-fullscreen, .dplayer-full-icon, .fluid_control_fullscreen, " +
+                  "[data-testid='fullscreen-button'], [data-testid*='fullscreen' i], " +
+                  "button[class*='fullscreen' i], div[class*='fullscreen' i], " +
+                  "[aria-label*='fullscreen' i], [aria-label*='pantalla completa' i], " +
+                  "[title*='fullscreen' i], [title*='pantalla completa' i]";
+              const btn = target.closest(selector);
               return !!btn;
             }
 
@@ -3446,27 +3394,9 @@ jobs:
               });
             }
 
-            function toggleChaturbateTheaterFromUserTap(e) {
-              const now = Date.now();
-              if (now - lastCbTheaterToggleMs < 380) return;
-              lastCbTheaterToggleMs = now;
-              e.preventDefault();
-              e.stopPropagation();
-              const shouldEnable = !isInAnyFullscreen();
-              if (shouldEnable) {
-                enterChaturbateTheaterFullscreen();
-              } else {
-                exitFullscreenInCurrentFrame();
-              }
-              postToNative({ type: "REQUEST_UNIFIED_FULLSCREEN", enable: shouldEnable });
-            }
-
-            document.addEventListener("pointerdown", function (e) {
+            document.addEventListener("pointerdown", function () {
               if (isOnlyJerk) {
                 cleanOnlyJerkCloseAdWidget();
-              }
-              if (isChaturbate && isChaturbateTheaterButton(e.target)) {
-                toggleChaturbateTheaterFromUserTap(e);
               }
             }, true);
 
@@ -3508,9 +3438,31 @@ jobs:
                 setTimeout(enableIframeFullscreenAndEagerLoad, 450);
               }
 
-              // En Chaturbate: tanto el boton de Theater Mode como el de Fullscreen abren/cierran el Modo Teatro a Pantalla Completa
-              if (isChaturbate && (isChaturbateTheaterButton(e.target) || isPlayerFullscreenButton(e.target))) {
-                toggleChaturbateTheaterFromUserTap(e);
+              // En Chaturbate:
+              // 1. NUNCA bloquear el boton de Theater Mode: dejar que Chaturbate abra su Theater Mode nativo
+              //    con todas sus opciones abajo (chat, calidad, audio, salir) y solo sincronizar el modo inmersivo de Android.
+              if (isChaturbate && isChaturbateTheaterButton(e.target)) {
+                if (cbProgrammaticClickInFlight) return;
+                const nextState = !cbNativeTheaterActive;
+                setTimeout(function () {
+                  cbNativeTheaterActive = nextState;
+                  postToNative({ type: "WEB_FULLSCREEN_STATE", enabled: cbNativeTheaterActive });
+                }, 180);
+                return;
+              }
+
+              // 2. Si el usuario pulsa el icono de Pantalla Completa en Chaturbate y existe Theater Mode,
+              //    redirigir al Theater Mode nativo de Chaturbate (evita pantalla completa normal sin opciones).
+              if (isChaturbate && isPlayerFullscreenButton(e.target)) {
+                if (!document.fullscreenElement && !document.mozFullScreenElement) {
+                  const theaterBtn = findChaturbateTheaterButton();
+                  if (theaterBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    clickChaturbateNativeTheaterButton(!cbNativeTheaterActive);
+                    return;
+                  }
+                }
                 return;
               }
 
