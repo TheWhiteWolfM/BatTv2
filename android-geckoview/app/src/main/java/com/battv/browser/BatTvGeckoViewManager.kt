@@ -25,57 +25,57 @@ class BatTvGeckoViewManager(
     companion object {
         private const val TAG = "BatTvGeckoManager"
 
-        const val BATTV_SHIELD_ID = "shield_v19@battv.browser"
-        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v19/"
-
-        const val POPUP_BLOCKER_ID = BATTV_SHIELD_ID
-        const val UBLOCK_ORIGIN_ID = BATTV_SHIELD_ID
-        const val VIOLENTMONKEY_ID = BATTV_SHIELD_ID
+        const val BATTV_SHIELD_ID = "shield_v44@battv.browser"
+        const val BATTV_SHIELD_URI = "resource://android/assets/extensions/battv_shield_v44/"
 
         const val NATIVE_BRIDGE_NAME = "battv_bridge"
-
-        const val TV_MODE_USER_AGENT =
-            "Mozilla/5.0 (Android 14; Mobile; rv:130.0) Gecko/130.0 Firefox/130.0"
 
         const val PC_MODE_USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
 
-        private val AD_AND_POPUP_DOMAINS = listOf(
+        private val AD_AND_POPUP_DOMAINS = hashSetOf(
             "vidoomy.com", "viwom.com", "wortise.com", "aniview.com", "primis.tech",
             "adinplay.com", "brid.tv", "doubleclick.net", "googlesyndication.com",
-            "googleadservices.com", "popads.net", "popcash.net", "propellerads.com",
-            "exoclick.com", "exosrv.com", "exdynsrv.com", "orbsrv.com", "magsrv.com",
-            "realsrv.com", "juicyads.com", "adsterra.com", "monetag.com", "acscdn.com",
+            "googleadservices.com", "google-analytics.com", "googletagmanager.com",
+            "popads.net", "popcash.net", "propellerads.com", "exoclick.com", "exosrv.com",
+            "exdynsrv.com", "orbsrv.com", "magsrv.com", "realsrv.com", "juicyads.com",
+            "adsterra.com", "monetag.com", "acscdn.com", "onclckmn.com", "onclicka.com",
             "onclickads.net", "hilltopads.net", "yellowishgather.com", "galaksion.com",
             "clickadu.com", "adcash.com", "richads.com", "admaven.com", "bidgear.com",
             "trafficjunky.net", "trafficstars.com", "tsyndicate.com", "rollerads.com",
             "evadav.com", "optad360.io", "teads.tv", "taboola.com", "outbrain.com",
-            "1xbet.com", "bet365.com", "mostbet.com", "caliente.mx", "pushground.com",
-            "yllix.com", "plugrush.com", "adspyglass.com", "clksite.com", "clkmon.com",
-            "betteradsystem.com", "blurtsbrerd.com", "capsidsflyleaf.com",
-            "skypipevatican.com", "21wiz.com", "aarems.org", "twinrdsyn.com",
-            "adsco.re", "a-ads.com", "adskeeper.com", "adskeeper.co.uk", "wpadmngr.com",
-            "onmarshtompor.com", "alwingulla.com", "profitablecpmrate.com",
-            "highperformanceformat.com", "surfe.pro", "go2buddyspin.com",
-            "cactusheadroomscaling.com", "ero-advertising.com", "adtng.com",
-            "xlivrdr.com", "bngpt.com", "bongacams.com", "livejasmin.com",
-            "awempire.com", "jerkmate.com", "cam4.com", "stripchat.com",
-            "adxpansion.com", "spotscenered.info", "traforama.com", "mondiad.com"
+            "mgid.com", "revcontent.com", "criteo.com", "pubmatic.com",
+            "rubiconproject.com", "openx.net", "smartadserver.com", "1xbet.com",
+            "bet365.com", "mostbet.com", "caliente.mx", "codere.mx", "betano.com",
+            "bwin.com", "pin-up.bet", "pin-up.casino", "20bet.com", "22bet.com",
+            "melbet.com", "1win.pro", "1win.com", "apuestasroyal.com",
+            "pushground.com", "yllix.com", "plugrush.com", "adspyglass.com",
+            "clksite.com", "clkmon.com", "betteradsystem.com", "blurtsbrerd.com",
+            "capsidsflyleaf.com", "skypipevatican.com", "21wiz.com", "aarems.org",
+            "twinrdsyn.com", "adsco.re", "a-ads.com", "adskeeper.com",
+            "adskeeper.co.uk", "wpadmngr.com", "onmarshtompor.com", "alwingulla.com",
+            "profitablecpmrate.com", "highperformanceformat.com", "effectivegatecpm.com",
+            "topcreativeformat.com", "wayfarerorthodox.com", "surfe.pro",
+            "go2buddyspin.com", "cactusheadroomscaling.com", "ero-advertising.com",
+            "adtng.com", "xlivrdr.com", "bngpt.com", "bongacams.com",
+            "livejasmin.com", "awempire.com", "jerkmate.com", "cam4.com",
+            "stripchat.com", "chatmate.tv", "chatmate.com", "adxpansion.com",
+            "spotscenered.info", "traforama.com", "mondiad.com",
+            "t6r-rotator-marketingg.com", "rotator-marketingg.com",
+            "358g46.fun", "dfuybl-bclxb.love", "fbpbpmjjg-f.club"
         )
 
         private val SCAM_AND_AD_URL_PATTERNS = listOf(
             "/popunder", "/tabunder", "/clickunder", "utm_source=pop", "ad_type=pop",
             "/apu.php", "/afu.php", "/cig.", "/0/p.", "zoneid=", "directlink",
             "reclama-tu", "felicitaciones", "spin-wheel", "lucky-winner",
-            "phone-cleaner", "virus-scan", "battery-alert", "/splash.php"
+            "phone-cleaner", "virus-scan", "battery-alert", "/splash.php",
+            "rotator-marketing"
         )
 
         private val GECKO_DISPOSABLE_CACHE_DIRS = setOf(
-            "cache2",
             "OfflineCache",
             "thumbnails",
-            "shader-cache",
-            "startupCache",
             "safebrowsing",
             "crashes",
             "minidumps",
@@ -106,8 +106,8 @@ class BatTvGeckoViewManager(
 
         val sessionSettings = GeckoSessionSettings.Builder()
             .usePrivateMode(false)
-            .useTrackingProtection(false)
-            .suspendMediaWhenInactive(false)
+            .useTrackingProtection(true)
+            .suspendMediaWhenInactive(true)
             .userAgentMode(
                 if (isDesktopMode) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
                 else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
@@ -116,7 +116,11 @@ class BatTvGeckoViewManager(
                 if (isDesktopMode) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
                 else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
             )
-            .userAgentOverride(if (isDesktopMode) PC_MODE_USER_AGENT else TV_MODE_USER_AGENT)
+            .apply {
+                if (isDesktopMode) {
+                    userAgentOverride(PC_MODE_USER_AGENT)
+                }
+            }
             .build()
 
         session = GeckoSession(sessionSettings)
@@ -125,6 +129,7 @@ class BatTvGeckoViewManager(
         setupNativeShieldExtension(runtime.webExtensionController)
 
         session.open(runtime)
+        geckoView.setDynamicToolbarMaxHeight(0)
         geckoView.setSession(session)
         session.setActive(true)
         session.setFocused(true)
@@ -143,7 +148,6 @@ class BatTvGeckoViewManager(
         return sharedRuntime ?: synchronized(Companion) {
             sharedRuntime ?: run {
                 try {
-                    deleteDirectoryContents(appContext.cacheDir)
                     appContext.externalCacheDir?.let { deleteDirectoryContents(it) }
                     val mozillaDir = File(appContext.filesDir, "mozilla")
                     if (mozillaDir.exists()) {
@@ -155,9 +159,16 @@ class BatTvGeckoViewManager(
                 val builder = GeckoRuntimeSettings.Builder()
                     .javaScriptEnabled(true)
                     .consoleOutput(false)
+                    .remoteDebuggingEnabled(false)
                     .aboutConfigEnabled(false)
                     .doubleTapZoomingEnabled(false)
                     .automaticFontSizeAdjustment(false)
+
+                runCatching {
+                    builder.javaClass
+                        .getMethod("useMaxScreenDepth", Boolean::class.javaPrimitiveType)
+                        .invoke(builder, false)
+                }
 
                 if (cfgFile != null) {
                     builder.configFilePath(cfgFile.absolutePath)
@@ -171,78 +182,77 @@ class BatTvGeckoViewManager(
     }
 
     /**
-     * Configuración optimizada para compatibilidad del 100% de reproductores
-     * (Doramasflix, OnlyJerk Player 01..05, JKAnime, DramaChino, LiveCamRips y Chaturbate):
-     * - network.cookie.cookieBehavior: 0 y sameSite.laxByDefault: false permiten que los iframes
-     *   de vídeo de terceros (Streamwish, Dood, Mixdrop, Voe, Lulustream, Primeload) autentiquen
-     *   su sesión sin quedarse en pantalla negra.
+     * Perfil optimizado para Chromecast con Google TV 1080p (1.5 GB RAM, Cortex-A35, Mali-G31 MP2):
+     * - Decodificacion por hardware forzada (MediaCodec) y salto al siguiente keyframe para directos fluidos.
+     * - Limites estrictos de memoria para evitar cierres por LMK de Android TV.
+     * - HTTP/3 desactivado y tope de conexiones moderado para no saturar CPU/Wi-Fi.
+     * - WebRender hardware + desactivacion de backdrop-filter/smoothScroll para eliminar lag de UI.
      */
     private fun writeHighPerformanceTvGeckoConfig(appContext: Context): File? {
         return try {
             val cfgFile = File(appContext.filesDir, "battv_gecko_config.yaml")
             val yamlContent = """
                 prefs:
-                  browser.cache.disk.enable: false
-                  browser.cache.disk.capacity: 0
+                  media.hardware-video-decoding.enabled: true
+                  media.hardware-video-decoding.force-enabled: true
+                  media.android-media-codec.enabled: true
+                  media.android-media-codec.preferred: true
+                  media.decoder.recycle.enabled: false
+                  media.decoder.skip-to-next-key-frame.enabled: true
+                  media.ruin-av-sync.enabled: false
+                  media.av1.enabled: false
+                  media.suspend-bkgnd-video.enabled: true
+                  media.autoplay.default: 0
+                  media.autoplay.blocking_policy: 0
+                  media.hls.enabled: true
+                  media.eme.enabled: true
+                  media.mediasource.enabled: true
+                  media.mediasource.mp4.enabled: true
+                  media.mediasource.webm.enabled: true
+                  media.cache_size: 32768
+                  media.memory_cache_max_size: 16384
+                  media.memory_caches_combined_limit_kb: 32768
+                  media.cache_readahead_limit: 24
+                  media.cache_resume_threshold: 10
+                  gfx.webrender.all: true
+                  gfx.webrender.software: false
+                  gfx.canvas.accelerated: true
+                  layout.css.backdrop-filter.enabled: false
+                  layout.css.scroll-driven-animations.enabled: false
+                  general.smoothScroll: false
+                  general.smoothScroll.msdPhysics.enabled: false
+                  nglayout.initialpaint.delay: 0
+                  browser.sessionhistory.max_total_viewers: 0
+                  browser.cache.memory.enable: true
+                  browser.cache.memory.capacity: 24576
+                  browser.cache.disk.enable: true
+                  browser.cache.disk.capacity: 32768
                   browser.cache.disk.smart_size.enabled: false
                   browser.cache.offline.enable: false
-                  browser.cache.memory.enable: true
-                  browser.cache.memory.capacity: 20480
-                  browser.sessionhistory.max_total_viewers: 0
+                  image.decode-immediately.enabled: false
+                  image.mem.surfacecache.max_size_kb: 16384
+                  image.mem.discardable: true
+                  image.mem.min_discard_timeout_ms: 10000
+                  dom.min_background_timeout_value: 1000
                   browser.safebrowsing.malware.enabled: false
                   browser.safebrowsing.phishing.enabled: false
                   browser.safebrowsing.downloads.enabled: false
                   datareporting.policy.dataSubmissionEnabled: false
                   datareporting.healthreport.uploadEnabled: false
                   toolkit.telemetry.enabled: false
-                  gfx.webrender.all: true
-                  gfx.canvas.accelerated: true
-                  layout.frame_rate: 60
-                  layout.css.backdrop-filter.enabled: false
-                  content.notify.ontimer: true
-                  content.notify.interval: 16666
-                  image.mem.decode_bytes_at_a_time: 65536
-                  image.mem.shared: true
                   apz.overscroll.enabled: false
-                  apz.fling_min_velocity_threshold: "0.4"
-                  media.suspend-bkgnd-video.enabled: false
-                  media.cache_size: 49152
-                  media.memory_cache_max_size: 24576
-                  media.memory_caches_combined_limit_kb: 49152
-                  media.cache_readahead_limit: 50
-                  media.cache_resume_threshold: 6
-                  media.preload.default: 2
-                  media.autoplay.default: 0
-                  media.autoplay.blocking_policy: 0
-                  media.hls.enabled: true
-                  media.av1.enabled: false
-                  media.android-media-codec.enabled: true
-                  media.android-media-codec.preferred: true
-                  media.hardware-video-decoding.enabled: true
-                  media.hardware-video-decoding.force-enabled: true
-                  media.decoder.recycle.enabled: true
-                  media.decoder.skip-to-next-key-frame.enabled: false
-                  media.ruin-av-sync.enabled: false
-                  media.eme.enabled: true
-                  media.mediasource.enabled: true
-                  media.mediasource.mp4.enabled: true
-                  media.mediasource.webm.enabled: true
+                  apz.allow_zooming: false
                   dom.disable_open_during_load: true
                   dom.popup_maximum: 0
                   full-screen-api.enabled: true
                   full-screen-api.allow-trusted-requests-only: false
                   full-screen-api.warning.delay: -1
                   full-screen-api.warning.timeout: 0
-                  nglayout.initialpaint.delay: 0
                   network.http.http3.enable: false
-                  network.http.max-connections: 36
-                  network.http.max-persistent-connections-per-server: 8
-                  network.http.speculative-parallel-limit: 6
-                  network.http.pacing.requests.enabled: false
+                  network.http.max-connections: 48
+                  network.http.max-persistent-connections-per-server: 6
                   network.http.sendRefererHeader: 2
                   network.dns.disablePrefetch: false
-                  network.dns.disablePrefetchFromHTTPS: false
-                  network.predictor.enabled: true
                   network.cookie.cookieBehavior: 0
                   network.cookie.sameSite.laxByDefault: false
                   network.cookie.sameSite.noneRequiresSecure: false
@@ -328,52 +338,33 @@ class BatTvGeckoViewManager(
         } catch (_: Exception) {}
     }
 
-    fun isKnownAdOrPopupUri(uriString: String): Boolean {
-        val lower = uriString.lowercase()
-        val host = runCatching { Uri.parse(uriString).host?.lowercase() ?: "" }.getOrDefault("")
-        for (domain in AD_AND_POPUP_DOMAINS) {
-            if (host == domain) return true
-            if (host.endsWith(".$domain")) return true
-            if (lower.contains(domain)) return true
+    private fun isHostBlocked(host: String): Boolean {
+        if (host.isEmpty()) return false
+        if (AD_AND_POPUP_DOMAINS.contains(host)) return true
+        var idx = host.indexOf('.')
+        while (idx != -1) {
+            val sub = host.substring(idx + 1)
+            if (AD_AND_POPUP_DOMAINS.contains(sub)) return true
+            idx = host.indexOf('.', idx + 1)
         }
+        return false
+    }
+
+    fun isKnownAdOrPopupUri(uriString: String): Boolean {
+        val parsed = runCatching { Uri.parse(uriString) }.getOrNull() ?: return false
+        val host = parsed.host?.lowercase()?.removePrefix("www.") ?: ""
+        if (isHostBlocked(host)) return true
+
+        val lower = uriString.lowercase()
         for (pattern in SCAM_AND_AD_URL_PATTERNS) {
             if (lower.contains(pattern)) {
                 return true
             }
         }
-        val path = runCatching { Uri.parse(uriString).path ?: "" }.getOrDefault("")
-        if (path.length > 20 && (path.startsWith("/ciG.") || path.startsWith("/cIg.") || path.startsWith("/b/"))) {
+        val path = parsed.path ?: ""
+        if (path.length > 20 && (path.startsWith("/ciG.") || path.startsWith("/cIg.") || path.contains("/0/P."))) {
             return true
         }
-        return false
-    }
-
-    fun isSameOrTrustedNavigationTarget(currentPageUrl: String, targetUrl: String): Boolean {
-        if (currentPageUrl.isBlank()) return true
-        if (!currentPageUrl.startsWith("http", ignoreCase = true)) return true
-
-        val curHost = runCatching { Uri.parse(currentPageUrl).host?.lowercase()?.removePrefix("www.") ?: "" }.getOrDefault("")
-        val tarHost = runCatching { Uri.parse(targetUrl).host?.lowercase()?.removePrefix("www.") ?: "" }.getOrDefault("")
-        if (curHost.isEmpty()) return true
-        if (tarHost.isEmpty()) return true
-        if (curHost == tarHost) return true
-        if (tarHost.endsWith(".$curHost")) return true
-        if (curHost.endsWith(".$tarHost")) return true
-
-        if (curHost.contains("google.")) return true
-        if (curHost.contains("bing.com")) return true
-        if (curHost.contains("duckduckgo.com")) return true
-
-        val curParts = curHost.split(".")
-        val tarParts = tarHost.split(".")
-        if (curParts.size >= 2 && tarParts.size >= 2) {
-            val curBrand = curParts[curParts.size - 2]
-            val tarBrand = tarParts[tarParts.size - 2]
-            if (curBrand.length >= 4 && curBrand == tarBrand) {
-                return true
-            }
-        }
-
         return false
     }
 
@@ -392,7 +383,7 @@ class BatTvGeckoViewManager(
         session.settings.userAgentOverride = if (isDesktopMode) {
             PC_MODE_USER_AGENT
         } else {
-            TV_MODE_USER_AGENT
+            null
         }
 
         if (reloadIfActive && currentUrl.isNotBlank() && currentUrl != "about:blank") {
@@ -401,12 +392,8 @@ class BatTvGeckoViewManager(
         }
     }
 
-    fun isExtensionLoaded(extensionId: String): Boolean {
+    fun isExtensionLoaded(@Suppress("UNUSED_PARAMETER") extensionId: String): Boolean {
         return installedExtensions.containsKey(BATTV_SHIELD_ID)
-    }
-
-    fun getExtensionDashboardUrl(extensionId: String, fallbackPath: String): String? {
-        return null
     }
 
     fun resolveInputToUrl(rawInput: String): String {
@@ -438,7 +425,6 @@ class BatTvGeckoViewManager(
     fun pruneDisposableStorageNow() {
         Thread {
             try {
-                deleteDirectoryContents(context.cacheDir)
                 context.externalCacheDir?.let { deleteDirectoryContents(it) }
                 val mozillaDir = File(context.filesDir, "mozilla")
                 if (mozillaDir.exists()) {
@@ -479,7 +465,13 @@ class BatTvGeckoViewManager(
                 if (GECKO_DISPOSABLE_CACHE_DIRS.contains(child.name)) {
                     bytes += getFolderSize(child)
                     child.deleteRecursively()
-                } else if (child.name != "storage" && child.name != "extensions") {
+                } else if (child.name == "storage") {
+                    val tempDir = File(child, "temporary")
+                    if (tempDir.exists()) {
+                        bytes += getFolderSize(tempDir)
+                        tempDir.deleteRecursively()
+                    }
+                } else if (child.name != "extensions") {
                     bytes += cleanDisposableGeckoDirs(child)
                 }
             } else if (child.isFile && child.name == "prefs.js") {
@@ -534,7 +526,18 @@ class BatTvGeckoViewManager(
                 session.setActive(false)
                 session.close()
             }
-            pruneDisposableStorageNow()
+        } catch (_: Exception) {}
+        try {
+            val mozillaDir = File(context.filesDir, "mozilla")
+            if (mozillaDir.exists()) {
+                cleanDisposableGeckoDirs(mozillaDir)
+            }
+        } catch (_: Exception) {}
+        try {
+            if (::runtime.isInitialized) {
+                runtime.shutdown()
+                sharedRuntime = null
+            }
         } catch (_: Exception) {}
     }
 }
